@@ -1,4 +1,5 @@
-# Follow: https://www.tensorflow.org/install/
+# Test GPU with tensorflow
+# Follow: https://www.tensorflow.org/install/ to install tensorflow
 
 import tensorflow as tf
 from tensorflow.python.client import device_lib
