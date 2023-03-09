@@ -2,12 +2,20 @@
 
 # Create environment
 1. Follow the official guide to install [tensorflow](https://www.tensorflow.org/install/pip)
-2. To test GPU open Anaconda Prompt as admin and type
+2. To test GPU open Anaconda Prompt as admin and type 
 ```
 conda activate tf
 python ./test/tf_GPU.py
 
 ```
+to test with tensorflow or 
+```
+conda activate tf
+python ./test/pt_GPU.py
+
+```
+to test with pytorch
+
 3. Install opencv using [conda](https://anaconda.org/conda-forge/opencv)
 4. Test cv2 with your webcam
 ```
