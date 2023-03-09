@@ -1,7 +1,7 @@
 # surgical-copilot
 
 # Create environment
-1. Follow the official guide to install [tensorflow](https://www.tensorflow.org/install/pip)
+1. Follow the official guide to install [tensorflow](https://www.tensorflow.org/install/pip) and/or [pytorch](https://pytorch.org/)
 2. To test GPU open Anaconda Prompt as admin and type 
 ```
 conda activate tf
