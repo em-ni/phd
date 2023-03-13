@@ -1,5 +1,6 @@
 data_collection/data/*
 object_detection/vision/*
+object_detection/ignore/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
