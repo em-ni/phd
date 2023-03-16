@@ -9,6 +9,7 @@ sources:
 
 import torch
 import torch.nn as nn
+import config
 
 """ 
 This is a code block defining the architecture configuration for the YOLOv3 (You Only Look Once version 3) object detection model. 
@@ -237,8 +238,8 @@ class YOLOv3(nn.Module):
 
 
 if __name__ == "__main__":
-    num_classes = 20
-    IMAGE_SIZE = 416 # Yolo v1 uses 448 but Yolo v3 uses 416 as input size (muultiscale training)
+    num_classes = config.NUM_CLASSES
+    IMAGE_SIZE = 416 # Yolo v1 uses 448 but Yolo v3 uses 416 as input size (multiscale training)
     model = YOLOv3(num_classes=num_classes)
     x = torch.randn((2, 3, IMAGE_SIZE, IMAGE_SIZE))
     out = model(x)
