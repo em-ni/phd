@@ -25,7 +25,8 @@ import config
 import torch
 import torch.optim as optim
 
-from model import YOLOv3
+from YOLOv3 import YOLOv3
+from YOLOv3Tiny import YOLOv3Tiny
 from tqdm import tqdm
 from utils import (
     mean_average_precision,
@@ -77,6 +78,7 @@ def train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors):
 
 def main():
     model = YOLOv3(num_classes=config.NUM_CLASSES).to(config.DEVICE)
+    #model = YOLOv3Tiny(num_classes=config.NUM_CLASSES).to(config.DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE, weight_decay=config.WEIGHT_DECAY)
     loss_fn = YoloLoss()
     scaler = torch.cuda.amp.GradScaler()
