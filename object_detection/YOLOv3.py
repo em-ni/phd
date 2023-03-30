@@ -37,6 +37,7 @@ For example, if a convolutional layer has a stride of 2 and the input feature ma
 This is because the filter is applied to every other input location in both the horizontal and vertical dimensions, resulting in a halving of the feature map size in each dimension.
 Striding can be useful for reducing the spatial size of the feature maps and increasing the receptive field of the network, while also reducing the computational cost of the 
 network by reducing the number of computations required per layer. However, it can also result in a loss of spatial resolution and details in the output feature maps.
+https://www.youtube.com/watch?v=lxk_nmpqI5M     
 
 Information about architecture config:
 Tuple is structured by (filters, kernel_size, stride) 
