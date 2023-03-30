@@ -51,8 +51,5 @@ if __name__ == "__main__":
     x = torch.randn((2, 3, IMAGE_SIZE, IMAGE_SIZE))
     out = model(x)
     print(out.shape)
-    """ assert out.shape == (2, 3, IMAGE_SIZE//32, IMAGE_SIZE//32, num_classes + 5)
-    assert model(x)[0].shape == (2, 3, IMAGE_SIZE//32, IMAGE_SIZE//32, num_classes + 5)
-    assert model(x)[1].shape == (2, 3, IMAGE_SIZE//16, IMAGE_SIZE//16, num_classes + 5)
-    assert model(x)[2].shape == (2, 3, IMAGE_SIZE//8, IMAGE_SIZE//8, num_classes + 5) """
+    # The output should be torch.Size([2, 255, 13, 13]) where 255 = 3 * (5 + 80) where 3 is the number of anchors and 80 is the number of classes
     print("Success!")

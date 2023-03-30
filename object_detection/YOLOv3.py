@@ -18,26 +18,8 @@ The configuration is stored in a list called config. Each item in the list repre
 The tuples represent convolutional layers and are structured as (filters, kernel_size, stride), where filters is the number of filters in the layer, kernel_size is the size of 
 the convolutional kernel, and stride is the stride of the convolution. 
 The strings indicate a specific type of layer, such as "B" for a residual block, "S" for a scale prediction block, and "U" for upsampling and concatenation with a previous layer.
-The architecture is based on the Darknet-53 architecture, with additional layers added for detection at different scales. The final output of the network is a set of bounding boxes 
-and associated object class probabilities for each object detected in the input image.
-
-Filters Note: In a convolutional neural network (CNN), a filter is a small matrix of weights that is applied to the input data to produce a feature map. 
-The size of the filter is usually square, and the number of elements in the filter is determined by the product of its height and width. 
-The number of filters in a convolutional layer determines the number of output channels in the layer's output feature map.
-For example, if a convolutional layer has 32 filters, it means that the layer will output a feature map with 32 channels. 
-Each filter in the layer will be applied to the input data to produce one channel in the output feature map. 
-Each filter learns to detect a different feature or pattern in the input data, and the output channels represent different combinations of these learned features.
-Increasing the number of filters in a convolutional layer can increase the network's ability to capture complex patterns and features in the input data, 
-but it also increases the number of parameters in the network and the computational cost of training and inference.
-
-Stride Note: In a convolutional neural network (CNN), the stride determines the step size at which the convolutional filter is applied to the input data. 
-When a stride of 1 is used, the filter is applied to adjacent input locations with no overlap. When a stride of 2 is used, the filter is applied to every other input location, 
-resulting in a downsampling of the output feature map by a factor of 2 in each spatial dimension.
-For example, if a convolutional layer has a stride of 2 and the input feature map is 28x28, the output feature map will be 14x14. 
-This is because the filter is applied to every other input location in both the horizontal and vertical dimensions, resulting in a halving of the feature map size in each dimension.
-Striding can be useful for reducing the spatial size of the feature maps and increasing the receptive field of the network, while also reducing the computational cost of the 
-network by reducing the number of computations required per layer. However, it can also result in a loss of spatial resolution and details in the output feature maps.
-https://www.youtube.com/watch?v=lxk_nmpqI5M     
+The architecture is based on the Darknet-53 architecture, with additional layers added for detection at different scales. 
+The final output of the network is a set of bounding boxes and associated object class probabilities for each object detected in the input image. 
 
 Information about architecture config:
 Tuple is structured by (filters, kernel_size, stride) 
@@ -45,16 +27,6 @@ Every conv is a same convolution.
 List is structured by "B" indicating a residual block followed by the number of repeats
 "S" is for scale prediction block and computing the yolo loss
 "U" is for upsampling the feature map and concatenating with a previous layer
-
-Residual Block Note: A residual block is a building block of deep neural networks that are designed to facilitate the training of deep neural networks with many layers. 
-It was introduced as part of the ResNet (Residual Network) architecture, which won the 2015 ImageNet competition.
-In a residual block, the input to the block is passed through two or more layers of convolutional neural networks (CNNs), and then the output of the last layer is added to the 
-original input. The resulting sum is then passed through an activation function, such as ReLU (rectified linear unit).
-This process of adding the original input to the output of the convolutional layers is called shortcut connection or skip connection. 
-It allows the gradient to flow directly from the input to the output, which makes it easier for the network to learn the identity function and residual functions 
-(the difference between the input and output), and hence it helps in training deeper networks.
-The use of residual blocks has been shown to improve the performance of deep neural networks in a variety of tasks such as image classification, object detection, and 
-semantic segmentation.
 
 Scale Note: In the context of the YOLOv3 object detection model architecture, a "scale prediction" block is a layer that predicts object detections at a specific scale of the input 
 image.
@@ -65,14 +37,6 @@ Each "scale prediction" block takes the feature map generated by the previous la
 It then outputs a set of bounding boxes and associated object class probabilities for each object detected at that scale.
 By generating detection outputs at multiple scales, the YOLOv3 model is able to detect objects of different sizes and aspect ratios with greater accuracy.
 
-Upsampling Note: In the context of neural networks, "upsampling" refers to the process of increasing the spatial resolution of a feature map. 
-This is typically done by inserting additional pixels (or other values) between existing ones in the feature map, using techniques such as nearest-neighbor interpolation or 
-bilinear interpolation.
-Upsampling is often used in neural network architectures for tasks such as image segmentation or object detection, where high-resolution feature maps are required to accurately 
-localize objects or boundaries. In these tasks, downsampling operations (such as pooling or strided convolutions) are often used to reduce the spatial dimensions of the feature maps 
-while increasing the number of channels, which can improve the network's ability to capture high-level features. However, this also reduces the spatial resolution and can result 
-in loss of detail or accuracy.
-Upsampling operations are used to recover the lost spatial resolution, and to merge information from different scales or levels of abstraction in the network. In many neural network architectures, upsampling is combined with concatenation or skip connections, where the upsampled feature map is concatenated with a lower-level feature map that has been downsampled, to allow for both high-level and low-level information to be combined in the final output.
 """
 config = [
     (32, 3, 1),
@@ -88,17 +52,17 @@ config = [
     ["B", 4],  # To this point is Darknet-53
     (512, 1, 1),
     (1024, 3, 1),
-    "S",
+    "S", # Scale prediction block: output1 = 13x13 grid
     (256, 1, 1),
     "U",
     (256, 1, 1),
     (512, 3, 1),
-    "S",
+    "S", # Scale prediction block: output2 = 26x26 grid
     (128, 1, 1),
     "U",
     (128, 1, 1),
     (256, 3, 1),
-    "S",
+    "S", # Scale prediction block: output3 = 52x52 grid
 ]
 # This will be used to create the model in class YOLOv3
 
@@ -164,6 +128,9 @@ class ScalePrediction(nn.Module):
             CNNBlock(in_channels, 2 * in_channels, kernel_size=3, padding=1),
             CNNBlock(2 * in_channels, (num_classes + 5) * 3, bn_act=False, kernel_size=1),
         )
+        # The number of channels in the output of the last convolutional layer is equal to the number of classes plus 5 times 3. 
+        # 3 is for the number of scales (13x13, 26x26, 52x52) while 5 is for the number of bounding box parameters (x, y, w, h, confidence).
+        # Note that x, y, w, h are the coordinates of the bounding box center and confidence is the probability that the object is present in the bounding box.
         self.num_classes = num_classes
 
     def forward(self, x):
@@ -244,7 +211,56 @@ if __name__ == "__main__":
     model = YOLOv3(num_classes=num_classes)
     x = torch.randn((2, 3, IMAGE_SIZE, IMAGE_SIZE))
     out = model(x)
+    # The output of the model is a list of tensors, each corresponding to a scale.
+    # The first output is a 13x13 grid, the second is a 26x26 grid and the third is a 52x52 grid.
+    # So the total number of predictions is 3 * 13 * 13 + 3 * 26 * 26 + 3 * 52 * 52 = 10647, because each grid cell predicts 3 bounding boxes called anchors. 
+    # The anchors are fixed and are defined in the config file. 
+    # Then the model produces multiple bounding box predictions at different scales for each grid cell. 
+    # It is then up to the post-processing step to combine these predictions and filter out the best ones.
     assert model(x)[0].shape == (2, 3, IMAGE_SIZE//32, IMAGE_SIZE//32, num_classes + 5)
     assert model(x)[1].shape == (2, 3, IMAGE_SIZE//16, IMAGE_SIZE//16, num_classes + 5)
     assert model(x)[2].shape == (2, 3, IMAGE_SIZE//8, IMAGE_SIZE//8, num_classes + 5)
     print("Success!")
+
+'''
+NOTES ON CNN
+Filters Note: In a convolutional neural network (CNN), a filter is a small matrix of weights that is applied to the input data to produce a feature map. 
+The size of the filter is usually square, and the number of elements in the filter is determined by the product of its height and width. 
+The number of filters in a convolutional layer determines the number of output channels in the layer's output feature map.
+For example, if a convolutional layer has 32 filters, it means that the layer will output a feature map with 32 channels. 
+Each filter in the layer will be applied to the input data to produce one channel in the output feature map. 
+Each filter learns to detect a different feature or pattern in the input data, and the output channels represent different combinations of these learned features.
+Increasing the number of filters in a convolutional layer can increase the network's ability to capture complex patterns and features in the input data, 
+but it also increases the number of parameters in the network and the computational cost of training and inference.
+
+Stride Note: In a convolutional neural network (CNN), the stride determines the step size at which the convolutional filter is applied to the input data. 
+When a stride of 1 is used, the filter is applied to adjacent input locations with no overlap. When a stride of 2 is used, the filter is applied to every other input location, 
+resulting in a downsampling of the output feature map by a factor of 2 in each spatial dimension.
+For example, if a convolutional layer has a stride of 2 and the input feature map is 28x28, the output feature map will be 14x14. 
+This is because the filter is applied to every other input location in both the horizontal and vertical dimensions, resulting in a halving of the feature map size in each dimension.
+Striding can be useful for reducing the spatial size of the feature maps and increasing the receptive field of the network, while also reducing the computational cost of the 
+network by reducing the number of computations required per layer. However, it can also result in a loss of spatial resolution and details in the output feature maps.
+https://www.youtube.com/watch?v=lxk_nmpqI5M    
+
+Residual Block Note: A residual block is a building block of deep neural networks that are designed to facilitate the training of deep neural networks with many layers. 
+It was introduced as part of the ResNet (Residual Network) architecture, which won the 2015 ImageNet competition.
+In a residual block, the input to the block is passed through two or more layers of convolutional neural networks (CNNs), and then the output of the last layer is added to the 
+original input. The resulting sum is then passed through an activation function, such as ReLU (rectified linear unit).
+This process of adding the original input to the output of the convolutional layers is called shortcut connection or skip connection. 
+It allows the gradient to flow directly from the input to the output, which makes it easier for the network to learn the identity function and residual functions 
+(the difference between the input and output), and hence it helps in training deeper networks.
+The use of residual blocks has been shown to improve the performance of deep neural networks in a variety of tasks such as image classification, object detection, and 
+semantic segmentation.
+
+Upsampling Note: In the context of neural networks, "upsampling" refers to the process of increasing the spatial resolution of a feature map. 
+This is typically done by inserting additional pixels (or other values) between existing ones in the feature map, using techniques such as nearest-neighbor interpolation or 
+bilinear interpolation.
+Upsampling is often used in neural network architectures for tasks such as image segmentation or object detection, where high-resolution feature maps are required to accurately 
+localize objects or boundaries. In these tasks, downsampling operations (such as pooling or strided convolutions) are often used to reduce the spatial dimensions of the feature maps 
+while increasing the number of channels, which can improve the network's ability to capture high-level features. However, this also reduces the spatial resolution and can result 
+in loss of detail or accuracy.
+Upsampling operations are used to recover the lost spatial resolution, and to merge information from different scales or levels of abstraction in the network. 
+In many neural network architectures, upsampling is combined with concatenation or skip connections, where the upsampled feature map is concatenated with a lower-level feature map 
+that has been downsampled, to allow for both high-level and low-level information to be combined in the final output.
+
+'''

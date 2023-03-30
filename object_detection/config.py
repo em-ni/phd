@@ -31,8 +31,10 @@ ANCHORS = [
     [(0.28, 0.22), (0.38, 0.48), (0.9, 0.78)],
     [(0.07, 0.15), (0.15, 0.11), (0.14, 0.29)],
     [(0.02, 0.03), (0.04, 0.07), (0.08, 0.06)],
-]  # Note these have been rescaled to be between [0, 1]
-
+]  
+# The value of the i-th anchor is the width and height of the bounding box. 
+# Note these have been rescaled to be between [0, 1], then the i-th anchor for scale 13 is 0.28 and 0.22. This means that the width of the bounding box is 0.28 * 416 = 117 pixels and the height is 0.22 * 416 = 91 pixels.
+# Find where the anchors values come from in the paper...
 
 scale = 1.1
 train_transforms = A.Compose(
