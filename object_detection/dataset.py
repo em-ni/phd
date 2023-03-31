@@ -16,15 +16,14 @@ Dataset structure:
         - labels
             - train
             - val
-
-
-Anchors Note: In the context of the YOLO object detection algorithm, anchors are a set of predefined bounding boxes with different aspect ratios and scales that are used to predict 
-the position and size of objects in an image.
-YOLO divides the input image into a grid of cells and predicts a fixed number of bounding boxes, or detections, for each cell. 
-Each bounding box consists of 5 values: the x and y coordinates of the center of the box, the width and height of the box, and the confidence score that the box contains an object.
-To help the algorithm predict accurate bounding boxes, YOLO uses a set of anchor boxes that have different aspect ratios and scales. 
-During training, the algorithm adjusts the parameters of these anchor boxes to improve the accuracy of the predictions. 
-By using multiple anchor boxes with different shapes and sizes, YOLO is able to accurately detect objects of varying sizes and aspect ratios in an image.
+    TODO:
+    CUSTOM
+        - images
+            - train
+            - val
+        - labels
+            - train
+            - val
       
 """
 
@@ -124,30 +123,27 @@ def test():
     transform = config.test_transforms
 
     dataset = YOLODataset(
-        "COCO/train.csv",
-        "COCO/images/images/",
-        "COCO/labels/labels_new/",
+        "PASCAL_VOC/8examples.csv",
+        "PASCAL_VOC/images/",
+        "PASCAL_VOC/labels/",
         S=[13, 26, 52],
         anchors=anchors,
         transform=transform,
     )
     S = [13, 26, 52]
-    scaled_anchors = torch.tensor(anchors) / (
-        1 / torch.tensor(S).unsqueeze(1).unsqueeze(1).repeat(1, 3, 2)
-    )
+    scaled_anchors = torch.tensor(anchors) / ( 1 / torch.tensor(S).unsqueeze(1).unsqueeze(1).repeat(1, 3, 2) )
     loader = DataLoader(dataset=dataset, batch_size=1, shuffle=True)
+
     for x, y in loader:
         boxes = []
 
         for i in range(y[0].shape[1]):
             anchor = scaled_anchors[i]
-            print(anchor.shape)
-            print(y[i].shape)
-            boxes += cells_to_bboxes(
-                y[i], is_preds=False, S=y[i].shape[2], anchors=anchor
-            )[0]
+            print("anchor shape: ", anchor.shape)
+            print("y_i shape: ", y[i].shape)
+            boxes += cells_to_bboxes( y[i], is_preds=False, S=y[i].shape[2], anchors=anchor)[0]
         boxes = nms(boxes, iou_threshold=1, threshold=0.7, box_format="midpoint")
-        print(boxes)
+        print("boxes: ", boxes)
         plot_image(x[0].permute(1, 2, 0).to("cpu"), boxes)
 
 

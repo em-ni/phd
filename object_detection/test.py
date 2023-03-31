@@ -1,4 +1,7 @@
-import cv2
+"""
+Test the model on a couple of examples from the test set
+"""
+
 import torch
 import numpy as np
 from utils import get_loaders, plot_couple_examples

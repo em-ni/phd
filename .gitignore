@@ -3,6 +3,7 @@ object_detection/vision/*
 object_detection/ignore/*
 object_detection/PASCAL_VOC/*
 object_detection/checkpoint.pth.tar
+object_detection/test_images/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

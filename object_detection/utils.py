@@ -85,8 +85,7 @@ def non_max_suppression(bboxes, iou_threshold, threshold, box_format="corners"):
     Does Non Max Suppression given bboxes
 
     Parameters:
-        bboxes (list): list of lists containing all bboxes with each bboxes
-        specified as [class_pred, prob_score, x1, y1, x2, y2]
+        bboxes (list): where each element is a bounding box of format [class, prob_score, x1, y1, x2, y2]
         iou_threshold (float): threshold where predicted bboxes is correct
         threshold (float): threshold to remove predicted bboxes (independent of IoU)
         box_format (str): "midpoint" or "corners" used to specify bboxes
@@ -104,17 +103,8 @@ def non_max_suppression(bboxes, iou_threshold, threshold, box_format="corners"):
     while bboxes:
         chosen_box = bboxes.pop(0)
 
-        bboxes = [
-            box
-            for box in bboxes
-            if box[0] != chosen_box[0]
-            or intersection_over_union(
-                torch.tensor(chosen_box[2:]),
-                torch.tensor(box[2:]),
-                box_format=box_format,
-            )
-            < iou_threshold
-        ]
+        bboxes = [box for box in bboxes if box[0] != chosen_box[0] 
+                  or intersection_over_union(torch.tensor(chosen_box[2:]), torch.tensor(box[2:]), box_format=box_format, ) < iou_threshold]
 
         bboxes_after_nms.append(chosen_box)
 
@@ -233,7 +223,7 @@ def mean_average_precision(
 
 
 def plot_image(image, boxes):
-    """Plots predicted bounding boxes on the image"""
+    """Plots predicted bounding boxes on the image using matplotlib"""
     cmap = plt.get_cmap("tab20b")
     class_labels = config.COCO_LABELS if config.DATASET=='COCO' else config.PASCAL_CLASSES
     colors = [cmap(i) for i in np.linspace(0, 1, len(class_labels))]
@@ -275,17 +265,12 @@ def plot_image(image, boxes):
         )
 
     plt.show()
+   
 
-
-def get_evaluation_bboxes(
-    loader,
-    model,
-    iou_threshold,
-    anchors,
-    threshold,
-    box_format="midpoint",
-    device="cuda",
-):
+def get_evaluation_bboxes(loader, model, iou_threshold, anchors, threshold, box_format="midpoint", device="cuda"):
+    """
+    Returns all bboxes with score > threshold
+    """
     # make sure model is in eval before get bboxes
     model.eval()
     train_idx = 0
@@ -336,17 +321,16 @@ def get_evaluation_bboxes(
 
 def cells_to_bboxes(predictions, anchors, S, is_preds=True):
     """
-    Scales the predictions coming from the model to
-    be relative to the entire image such that they for example later
-    can be plotted or.
+    Scales the predictions coming from the model to be relative to the entire image such that they can be plotted.
     INPUT:
-    predictions: tensor of size (N, 3, S, S, num_classes+5)
+    predictions: tensor of size (N, 3, S, S, num_classes+5), where N is the batch size, 3 is the number of anchors,  
+    num_classes is the number of classes and 5 is the number of elements in the bounding box (x, y, width, height, objectness score)
     anchors: the anchors used for the predictions
     S: the number of cells the image is divided in on the width (and height)
     is_preds: whether the input is predictions or the true bounding boxes
     OUTPUT:
-    converted_bboxes: the converted boxes of sizes (N, num_anchors, S, S, 1+5) with class index,
-                      object score, bounding box coordinates
+    converted_bboxes: the converted boxes of sizes (N, num_anchors, S, S, 1+5) with class index, object score, bounding box coordinates
+    1+5 because we add the class index to the bounding box coordinates
     """
     BATCH_SIZE = predictions.shape[0]
     num_anchors = len(anchors)
@@ -499,6 +483,9 @@ def get_loaders(train_csv_path, test_csv_path):
     return train_loader, test_loader, train_eval_loader
 
 def plot_couple_examples(model, loader, thresh, iou_thresh, anchors):
+    """
+    Plot couple examples from the dataset
+    """
     model.eval()
     x, y = next(iter(loader))
     x = x.to("cuda")
@@ -525,11 +512,20 @@ def plot_couple_examples(model, loader, thresh, iou_thresh, anchors):
 
 
 def seed_everything(seed=42):
+    """
+    The purpose of this function is to set seeds for various random number generators used in Python, NumPy, and PyTorch, 
+    as well as configuring some PyTorch settings, to ensure the reproducibility of results in a machine learning or deep learning project.
+    """
     os.environ['PYTHONHASHSEED'] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+
+    # Ensures that the cuDNN operations produce deterministic (reproducible) results
+    torch.backends.cudnn.deterministic = True 
+
+    # The benchmark mode, when enabled, allows cuDNN to select the most efficient algorithm for the specific input sizes and hardware, potentially resulting in faster execution. 
+    # However, the selected algorithm may vary between runs, leading to non-deterministic behavior.
+    torch.backends.cudnn.benchmark = False 
