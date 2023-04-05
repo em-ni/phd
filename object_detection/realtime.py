@@ -95,13 +95,13 @@ if __name__ == "__main__":
     # Get scaled anchors as a tensor of shape (3, 3, 2) where 3 is the number of anchor boxes and 2 is the width and height of each anchor box.
     scaled_anchors = ( torch.tensor(config.ANCHORS) * torch.tensor(config.S).unsqueeze(1).unsqueeze(1).repeat(1, 3, 2) ).to(config.DEVICE)
 
-    # get class labels and generate random colors for each class
+    # Get class labels and generate random colors for each class
     # TODO - add personal class labels
     class_labels = config.COCO_LABELS if config.DATASET=='COCO' else config.PASCAL_CLASSES
     colors = np.random.randint(0, 255, size=(len(class_labels), 3), dtype=int).tolist()
 
     # Test with webcam or image
-    web = True
+    web = False
     if web == True:
         # Test with webcam
         cap = cv2.VideoCapture(0)
@@ -135,7 +135,7 @@ if __name__ == "__main__":
         cv2.destroyAllWindows()
     else:
         # Test with a single image
-        img = cv2.imread("people.jpg")
+        img = cv2.imread("test_images/people.jpg")
         cv2.imshow("before prediction", img)
         input_tensor = preprocess_frame(img)
         y = model(input_tensor)

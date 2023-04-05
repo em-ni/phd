@@ -15,7 +15,7 @@ IMAGE_SIZE = 416
 NUM_CLASSES = 20 # 20 for PASCAL_VOC and 80 for COCO
 LEARNING_RATE = 1e-5
 WEIGHT_DECAY = 1e-4
-NUM_EPOCHS = 20
+NUM_EPOCHS = 100
 CONF_THRESHOLD = 0.05
 MAP_IOU_THRESH = 0.5
 NMS_IOU_THRESH = 0.45
@@ -49,11 +49,9 @@ train_transforms = A.Compose(
         A.ColorJitter(brightness=0.6, contrast=0.6, saturation=0.6, hue=0.6, p=0.4),
         A.OneOf(
             [
-                A.ShiftScaleRotate(
-                    rotate_limit=20, p=0.5, border_mode=cv2.BORDER_CONSTANT
-                ),
-                A.IAAAffine(shear=15, p=0.5, mode="constant"), # Deprecated use Affine
-                #A.Affine(shear=15, p=0.5, mode="constant"), # Deprecated use Affine
+                A.ShiftScaleRotate(rotate_limit=20, p=0.5, border_mode=cv2.BORDER_CONSTANT),
+                #A.IAAAffine(shear=15, p=0.5, mode="constant"), # Deprecated use Affine
+                A.Affine(shear=15, p=0.5, mode=cv2.BORDER_CONSTANT), 
             ],
             p=1.0,
         ),

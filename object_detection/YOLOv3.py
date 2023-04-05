@@ -21,6 +21,12 @@ The strings indicate a specific type of layer, such as "B" for a residual block,
 The architecture is based on the Darknet-53 architecture, with additional layers added for detection at different scales. 
 The final output of the network is a set of bounding boxes and associated object class probabilities for each object detected in the input image. 
 The number of parameters in the model is ~62M
+Estimates of memory requirements:
+1. Forward Memory = 62M x Batch Size x 4 bytes = 248 MB x Batch Size = 8 GB for batch size of 32
+2. Backward Memory = 0.5 x Forward Memory = 4 GB for batch size of 32
+3. Total Memory = Forward Memory + Backward Memory = 12 GB for batch size of 32
+4. Inference Memory = 248 MB (for a single image)
+5. Measured Memory during training = 11 GB for batch size of 32 (done a good estimate!)
 
 Information about architecture:
 Tuple is structured by (filters, kernel_size, stride) 
