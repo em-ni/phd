@@ -6,8 +6,18 @@ sofa/
 - build/
     - master/
     - v22.12/
--src
-    -... git clone sofa here
+- ext_plugin_repo/
+    - ... git clone BeamAdapter 
+    - ... git clone plugin.Cosserat (and change folder name to Cosserat)
+    - ... git clone ModelOrderReduction
+    - SofaMAMMOBOT
+    - ... git clone SPLIB
+    - ... git clone STLIB
+- ... git clone SofaGym
+- src/
+    - ... git clone sofa
+- utils/
+    - ... git clone SofaMAMMOBOT
 ~~~
 
 1. install boost, TinyXML and Eigen3 (:x64-windows) with vcpkg  
