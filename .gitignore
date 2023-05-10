@@ -1,18 +1,18 @@
 # Ignore build files
-C:/Users/manun/Desktop/github/test/sofa/build/v22.12/*
+sofa/build/v22.12/*
 
 # Ignore cloned plugins
-C:\Users\manun\Desktop\github\sofa\ext_plugin_repo\BeamAdapter
-C:\Users\manun\Desktop\github\sofa\ext_plugin_repo\Cosserat
-C:\Users\manun\Desktop\github\sofa\ext_plugin_repo\ModelOrderReduction
-C:\Users\manun\Desktop\github\sofa\ext_plugin_repo\SofaMAMMOBOT
-C:\Users\manun\Desktop\github\sofa\ext_plugin_repo\SoftRobots
-C:\Users\manun\Desktop\github\sofa\ext_plugin_repo\SPLIB
-C:\Users\manun\Desktop\github\sofa\ext_plugin_repo\STLIB
-C:\Users\manun\Desktop\github\sofa\SofaGym
+sofa/ext_plugin_repo/BeamAdapter
+sofa/ext_plugin_repo/Cosserat
+sofa/ext_plugin_repo/ModelOrderReduction
+sofa/ext_plugin_repo/SofaMAMMOBOT
+sofa/ext_plugin_repo/SoftRobots
+sofa/ext_plugin_repo/SPLIB
+sofa/ext_plugin_repo/STLIB
+sofa/SofaGym
 
 # Ignore cloned src
-C:\Users\manun\Desktop\github\sofa\src
+sofa/src
 
 # Ignore cloned utils
-"C:\Users\manun\Desktop\github\sofa\utils\2022-RAL-SOFA-soft-growing-robots"
+sofa/utils/2022-RAL-SOFA-soft-growing-robots
