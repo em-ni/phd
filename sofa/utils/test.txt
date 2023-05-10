@@ -1,0 +1,7 @@
+conda activate sofa
+
+cd C:\Users\z5440219\OneDrive - UNSW\Desktop\github\test\sofa\SofaGym
+
+python test_env.py -e trunk-v0 -ep 100 -s 100
+
+
