@@ -52,7 +52,7 @@ syms Rc Rs Rh Ec Es Eh Ic Is Ih Ac As Ah 'real'
 
 
 % Consider tube and hollow channel as parallel beams (same formulation as
-% parallel springs9
+% parallel springs)
 M = [1/(Ec*Ac) + Es*As + Eh*Ah, 1/(Ec*Ac) + Es*As + Eh*Ah;
     Rc/(Ec*Ic) + 2*Rs*(Es*Is+Eh*Ih), -Rc/(Ec*Ic) - 2*Rh*(Es*Is+Eh*Ih)];
 
@@ -80,31 +80,48 @@ kc = simplify(subs(kc));
 vpa(kc)
 
 % Subsitute data 
-Fp = Fp*1e6;
+syms P 'real'
+P = P*1e6; % [MPa]
 
-L = 5;
-k_0 = 0;
-Rc = 0.4;
-Rs = 0.15;
-Rh = 0.15;
+% Initial length
+L = 0.005; % [m]
+
+% Initial curvature
+k_0 = 0; % [1/m]
+
+% Outer radii
+Rc = 0.0004; % [m]
+Rs = 0.00015; % [m]
+Rh = 0.00015; % [m]
+
+% Inner radii
+Rci = 0.0003; % [m]
+Rsi = 0.00001; % [m]
+Rhi = 0.00001; % [m]
+
+Ec = 1.2*1e9; % Find
+Es = 0.05*1e9; % 0.001 - 0.05 GPa
+Eh = 1.2*1e9; % Find
 
 Ac = pi*Rc^2;
-As = pi*Rs^2;
-Ah = pi*Rh^2;
+As = pi*Rs^2; 
+Ah = pi*Rh^2; 
 
-Ec = 1e-6*0.2; % Find
-Es = 1e-6*0.05; % 0.001 - 0.05 GPa
-Eh = 1e-6*0.1; % Find
+Fp = P*As;
 
-Ic = pi*(0.8^4 - 0.6^4)/64; % pi*(do^4 - di^4)/64
-Is = pi*(0.3^4)/64;
-Ih = pi*(0.3^4 - 0.1^4)/64;
+Ic = pi*(0.0008^4 - 0.0006^4)/64; % pi*(do^4 - di^4)/64 ????
+%Is = 1e1; %*pi*(0.0003^4)/64;
+Ih = 1e1; %pi*(0.0003^4 - 0.0001^4)/64;
 
 epsilon = simplify(subs(epsilon));
-L_p = epsilon + L;
+L_p = (epsilon + L)*1e3; %[mm]
 vpa(L_p) %0.111067
 
 kc = simplify(subs(kc));
-k_p = kc + k_0;
+k_p = (kc + k_0)*1e-3; %[1/mm]
 vpa(k_p) % 0.038811
+
+P = 1;
+k_p = simplify(subs(k_p));
+fplot(k_p)
 
