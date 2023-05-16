@@ -16,3 +16,6 @@ sofa/src
 
 # Ignore cloned utils
 sofa/utils/2022-RAL-SOFA-soft-growing-robots
+
+# Ignore trash from onedrive
+sofa/trash
