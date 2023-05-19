@@ -9,3 +9,5 @@ sofa_add_subdirectory(plugin ./STLIB  STLIB)
 sofa_add_subdirectory(plugin ./SoftRobots  SoftRobots)
 sofa_add_subdirectory(plugin ./ModelOrderReduction  ModelOrderReduction)
 sofa_add_subdirectory(plugin ./Cosserat  Cosserat)
+
+sofa_add_subdirectory(plugin ./MyPlugin MyPlugin
