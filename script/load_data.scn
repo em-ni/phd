@@ -1,0 +1,16 @@
+<Node name="root" dt="0.02" gravity="0 0 -9.8">
+    <MeshObjLoader name="loader" filename="series_1_surface.obj"/>
+    <OglModel name="visual" src="@loader" />
+    <MechanicalObject/>
+    <TetrahedronSetTopologyContainer name="Container" src="@loader"/>
+    <TetrahedronSetTopologyModifier/>
+    <TetrahedronSetGeometryAlgorithms template="Vec3d" name="GeomAlgo"/>
+    <UniformMass totalmass="1" />
+    <DiagonalMass massDensity="1" />
+
+
+    <!-- This is a comment 
+
+    <ImageContainer name="ImageContainer" filename="series_1_volume.mhd" template="ImageUC"/>
+    <ImageToSPH name="image2sph" inputImage="@ImageContainer" showResultingSPH="false" />
+</Node>
