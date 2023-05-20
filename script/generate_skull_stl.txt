@@ -1,0 +1,5 @@
+cd %UserProfile%\Desktop\github\test\script
+
+conda activate sofa
+
+python dicom2stl/dicom2stl.py -t bone -o skull.stl dicom2stl/examples/Data/ct_head.nii.gz
