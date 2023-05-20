@@ -1,0 +1,3 @@
+[submodule "script/script/dicom2stl"]
+	path = script/script/dicom2stl
+	url = https://github.com/dave3d/dicom2stl.git
