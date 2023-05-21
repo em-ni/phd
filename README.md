@@ -6,6 +6,9 @@ sofa/
 - build/
     - master/
     - v22.12/
+- ext_plugin_repo
+    - here all the external plugins
+- git clone sofagym
 -src
     -... git clone sofa here
 ~~~
