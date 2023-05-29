@@ -1,4 +1,4 @@
-cd %UserProfile%\Desktop\github\test\script
+cd ${HOME}/Desktop/github/test/script
 
 conda activate sofa
 
