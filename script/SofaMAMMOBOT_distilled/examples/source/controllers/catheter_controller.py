@@ -37,13 +37,13 @@ class CatheterController(SC.Controller):
         self.rschange = False
         self.cat_x, self.cat_y, self.cat_z = [], [], []
         # Error here
-        createForceField(self.catheter, self.cath_tip, initialF=0)
-        self.force = self.catheter.ForceField
+        """ createForceField(self.catheter, self.cath_tip, initialF=0)
+        self.force = self.catheter.ForceField """
         self.flag = False
 
     def onKeypressedEvent(self, event):
         key = event['key']
-
+        print('Key pressed: ', key)
         if key in self.commands:
             self.object = key
 
@@ -51,6 +51,7 @@ class CatheterController(SC.Controller):
             if self.object == '1':
                 restScale = self.tendon.tendon_mobject.restScale.value
                 if key == '+':
+                    print('Plus: ', key)
                     self.catheter.removeChild(self.tendon)
                     if restScale < 1.0:
                         createTendon(self.catheter, restScale=restScale+self.rsrate)

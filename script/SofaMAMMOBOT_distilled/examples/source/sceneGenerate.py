@@ -10,8 +10,9 @@ def MainHeader(parent):
     rootNode.gravity = [0, 0, 0]
 
     rootNode.addObject('RequiredPlugin',
-                       pluginName='SofaRigid SoftRobots SofaPython3 SofaSparseSolver SofaOpenglVisual SofaConstraint SofaGeneralTopology SofaImplicitOdeSolver SofaSimpleFem SofaLoader SofaGeneralLoader SofaEngine SofaGeneralSimpleFem SofaDeformable SofaMiscCollision SofaBoundaryCondition SofaGeneralEngine SofaGeneralDeformable SofaGeneralObjectInteraction SofaMeshCollision MultiThreading')
+                       pluginName='SofaRigid SoftRobots SofaPython3 SofaSparseSolver SofaOpenglVisual SofaConstraint SofaGeneralTopology SofaImplicitOdeSolver SofaSimpleFem SofaLoader SofaGeneralLoader SofaEngine SofaGeneralSimpleFem SofaDeformable SofaMiscCollision SofaBoundaryCondition SofaGeneralEngine SofaGeneralDeformable SofaGeneralObjectInteraction SofaMeshCollision ')
     
+    # Not found: MultiThreading
     SofaRuntime.importPlugin("SofaComponentAll")
 
     rootNode.addObject('VisualStyle',

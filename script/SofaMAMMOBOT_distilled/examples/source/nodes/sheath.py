@@ -53,6 +53,7 @@ def SheathNode(parent, name = "Sheath", gridSize: list = [1, 1, 25], collgridSiz
     triangle.addObject('MeshObjLoader', name='loader', filename='MAMMOBOT_meshes/Sheath/sheath_v5_3.obj')
     triangle.addObject('MeshTopology', src='@loader')
     triangle.addObject('MechanicalObject', src='@loader')
+    # Paper: III.C System Elements (Nodes)
     triangle.addObject('SurfacePressureForceField', name='pressure_field', pressure=pressure, pulseMode=0,
                        pressureSpeed=0, mainDirection=[0, 0, 0])
     triangle.addObject('BarycentricMapping', input='@..', output='@.')

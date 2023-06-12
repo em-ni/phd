@@ -31,9 +31,11 @@ def CatheterNode(parent, name="catheter", gridSize: list = [1, 4, 152], collgrid
     #assert len(gridSize) == 3 & len(collgridSize) == 3, "The list for the gridSize must be of length 3"
     #assert len(translation) == 3 & len(rotation) == 3 & len(scale) == 3, "The list for the following list must be 3"
     catheter = parent.createChild("catheter")
+    # Paper: III.B Linear Systems and Solver
     catheter.addObject('EulerImplicitSolver', name='odesolver', rayleighMass=0.1, rayleighStiffness=0.1)
     catheter.addObject('CGLinearSolver', iterations=30, tolerance=1e-5, threshold=1e-5)
 
+    # Paper: III.A Sparse Grid Topology (to create meshes from CAD file, .obj in this case)
     catheter.addObject('SparseGridTopology', name='sp_topology', n=gridSize,
                        fileTopology='MAMMOBOT_meshes/Catheter/catheter_v1_3.obj')
     catheter.addObject('MechanicalObject', name='catheter_mobject', topology='@sp_topology', dx=translation[0], dy=translation[1],
@@ -65,6 +67,7 @@ def CatheterNode(parent, name="catheter", gridSize: list = [1, 4, 152], collgrid
     cath_surface.addObject('SparseGridTopology', name='cath_loader', n=collgridSize,
                            fileTopology='MAMMOBOT_meshes/Catheter/catheter_v1_3_cover.obj')
     cath_surface.addObject('MechanicalObject', src='@cath_loader')
+    # Paper: III.B Collision Model
     cath_surface.addObject('SphereCollisionModel', simulated=1, moving=1, selfCollision=0,
                            proximity=0, radius=0.95, contactStiffness=1e4, contactFriction=0,
                            contactRestitution=0)
