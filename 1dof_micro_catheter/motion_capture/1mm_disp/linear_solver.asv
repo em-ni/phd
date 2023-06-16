@@ -6,16 +6,15 @@ clc
 syms xc xs xh Fp P 'real';
 
 % Geometry and material properties
-syms Rc Rs Rh Ec Es Eh sIc Is Ih Ic Ac As Ah  'real'
+syms Rc Rs Rh Ec Es Eh Esh Ecsh sIc Is Ih Ic Ish Icsh Ac As Ah Ash  'real'
 syms hc 'real'
 
-%% Solve symbolic system of equations
-% Consider tube and hollow channel as parallel beams (same formulation as
-%parallel springs) MODIFY WITH NEW FORMULATION
-% M = [- 1/(Es*As + Eh*Ah) - 1/(Ec*Ac), - 1/(Es*As + Eh*Ah) - 1/(Ec*Ac);
-%     -(2*Rh+2*Rs-hc)/(Es*Is + Eh*Ih) + 1/(Ec*Ic), + hc*(1/(Es*Is + Eh*Ih) - 1/(Ec*Ic));];
+% %% Solve symbolic system of equations
+% % Consider tube and hollow channel as parallel beams (same formulation as parallel springs)
+% M = [- 1/(Esh*Ash) - 1/(Ec*Ac), - 1/(Esh*Ash) - 1/(Ec*Ac);
+%     -(2*Rh+2*Rs-hc)/((Esh*Ish) + 1/(Ec*Ic)), + hc*(1/(Esh*Ish) - 1/(Ec*Ic));];
 % 
-% Y = [-Fp*(Es*As + Eh*Ah); -Fp*(2*Rh+Rs-hc)/(Es*Is + Eh*Ih);];
+% Y = [-Fp*(Esh*Ash); -Fp*(2*Rh+Rs-hc)/(Esh*Ish);];
 % 
 % disp("##### Two systems problem results #####")
 % N = [M, Y];
@@ -40,23 +39,21 @@ syms hc 'real'
 % vpa(kc)
 
 %% Substitute Data 
-% V: Verified data
-% X: To be checked
 % Initial length
-L = 5*1e-3; % [m] V
+L = 5*1e-3; % [m]
 
 % Initial curvature
-k_0 = 0; % [1/m] V
+k_0 = 0; % [1/m]
 
 % Outer radii
-Rc = 0.4*1e-3; % [m] V
-Rs = 0.15*1e-3; % [m] X
-Rh = 0.15*1e-3; % [m] V
+Rc = 0.4*1e-3; % [m]
+Rs = 0.15*1e-3; % [m]
+Rh = 0.15*1e-3; % [m]
 
 % Inner radii
-Rci = 0.3*1e-3; % [m] X
-Rsi = 0.075*1e-3; % [m] X
-Rhi = 0.075*1e-3; % [m] X
+Rci = 0.3*1e-3; % [m]
+Rsi = 0.075*1e-3; % [m]
+Rhi = 0.075*1e-3; % [m]
 
 % Area
 Ac = pi*(Rc^2 - Rci^2); % External coil
@@ -79,6 +76,10 @@ Ec = spring_c*L/Ac; % [Pa]
 spring_h = 0.035; % [N/m]
 Eh = spring_h*L/As; % [Pa]
 
+% Combined Young's modulus
+% Esh = Es + Eh; % Combined tube + hollow channel (use parallel springs)
+% Ecsh = Es + Ec + Eh;
+
 % Moment of inertia
 % Height of the centroid of every section
 yc = Rc;
@@ -92,9 +93,7 @@ Acn = Ac*Ec/Es;
 Acshn = Asn + Ahn + Acn;
 
 % Neutral axis
-y_bar_area = (ys*As + yh*Ahn + yc*Acn)/(As + Ahn + Acn);
-y_bar_parallel = (ys*Es*As + yh*Eh*Ah + yc*Ec*Ac)/(Es*As + Eh*Ah + Ec*Ac);
-y_bar = y_bar_parallel;
+y_bar = (ys*As + yh*Ahn + yc*Acn)/(As + Ahn + Acn);
 %y_bar = Rc;
 
 % Distances from centroid to neutral axis (take absolute value)
@@ -112,6 +111,9 @@ Icsh = Ic + Ish;
 % Inputs
 P = P*1e6; % [Pa] -> [MPa]
 Fp = P*Ap; % [N]
+
+% centroid height
+hc = 0.5*1e-3; % [m] , suppose is in the center for now
 
 % epsilon = simplify(subs(epsilon));
 % L_p = (epsilon + L)*1e3; %[m] -> [mm]
@@ -141,9 +143,14 @@ fprintf('\nParallel spring method: \nepsilon = %s\n',char(vpa(epsilon_parallel))
 
 disp(" ")
 disp("CURVATURE (target coef: 0.038811)")
+k = M / (Es*Icsh)*1e-3; %[1/m] -> [1/mm];
 k_parallel = M / (Es*Is + Ec*Ic + Eh*Ih)*1e-3;
+k = simplify(k);
 k_parallel = simplify(k_parallel);
+%fprintf('Transformed cross-section method:\nk = %s\n',char(vpa(k))) % 0.038811
 fprintf('\nParallel spring method: \nk = %s\n',char(vpa(k_parallel))) % 0.038811
+
+
 
 %% Considerd three bodies separately
 % % Define M and Y matrices
