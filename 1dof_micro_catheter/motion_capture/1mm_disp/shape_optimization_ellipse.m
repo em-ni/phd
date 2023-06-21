@@ -4,15 +4,15 @@ close all;
 clc;
 
 % Initial length
-L = 5*1e-3; % [m] V
+L = 5*1e-3; 
 
 % Outer radii
-Rc = 0.4*1e-3; % [m] V
-Rh = 0.15*1e-3; % [m] V
+Rc = 0.4*1e-3;  
+Rh = 0.15*1e-3;  
 
 % Inner radii
-Rci = 0.3*1e-3; % [m] V
-Rhi = 0.075*1e-3; % [m] V
+Rci = 0.3*1e-3;  
+Rhi = 0.075*1e-3;  
 
 % Area
 % External coil
@@ -22,22 +22,22 @@ Ac = pi*(Rc^2 - Rci^2);
 Ah = pi*(Rh^2 - Rhi^2); 
 
 % Young's modulus
-Es = 1.648e6; % 
-spring_c = 0.035; % [N/m] 
-Ec = spring_c*L/Ac; % [Pa]
-spring_h = 0.035; % [N/m] 
-Eh = spring_h*L/Ah; % [Pa] 
+Es = 1.648e6; 
+spring_c = 0.035;
+Ec = spring_c*L/Ac;
+spring_h = 0.035; 
+Eh = spring_h*L/Ah; 
 
 %Inputs
-P = 1e6; % [N/m2]
+P = 1e6; 
 
 % Function definitions
 k_parallel = @(a, ai, bi) calculate_k(a, ai, bi, Ac, Ah, Es, Ec, Eh, Rc, Rh, Rci, Rhi, P);
 epsilon_parallel = @(a, ai, bi) calculate_epsilon(a, ai, bi, Ac, Ah, Es, Ec, Eh, P);
 
 % Objective function
-k_data = 0.038811; % [1/m]
-epsilon_data = 0.111067; % [1]
+k_data = 0.038811; 
+epsilon_data = 0.111067; 
 
 % Define the objective function
 % x = [a, ai, bi]
@@ -51,7 +51,7 @@ lb = 1e-3*[0.15, 0.05, 0.05];
 ub = 1e-3*[0.2, 0.19, 0.14];
 
 % Define the initial conditions
-X0 = 1e-3*[[0.1, 0.05, 0.05]; [0.2, 0.19, 0.14]; lb + (ub-lb).*rand(1,3); lb + (ub-lb).*rand(1,3); lb + (ub-lb).*rand(1,3); lb + (ub-lb).*rand(1,3)];
+X0 = 1e-3*[1e3*lb; 1e3*ub; lb + (ub-lb).*rand(1,3); lb + (ub-lb).*rand(1,3); lb + (ub-lb).*rand(1,3); lb + (ub-lb).*rand(1,3)];
 
 % Define array to store results
 results = [];
@@ -84,6 +84,8 @@ for i = 1:size(X0,1)
     % Store results
     results = [results; x, k_val, epsilon_val, error];
 
+    % Very good results! Starting from the boundary of the search space every solution converges to the same result, I supposed that it's a global minimum
+
 end
 
 % Sort results by error (column 6)
@@ -102,8 +104,7 @@ end
 % Define function to calculate k
 function k = calculate_k(a, ai, bi, Ac, Ah, Es, Ec, Eh, Rc, Rh, Rci, Rhi, P)
 
-    %a = 0.15*1e-3; % [m] X
-    b = 0.15*1e-3; % [m] V constrained if shape is fixed
+    b = 0.15*1e-3;
     As = pi*(a*b - ai*bi);
     Ap = pi*(ai*bi);
 
@@ -127,9 +128,9 @@ function k = calculate_k(a, ai, bi, Ac, Ah, Es, Ec, Eh, Rc, Rh, Rci, Rhi, P)
 
     % Input moment from pressure
     hp = Rc + b;
-    e = hp - y_bar; % [m] (center of the silicon tube - neutral axis)
-    Fp = P*Ap; % [N]
-    M = Fp * e; % [Nm]
+    e = hp - y_bar; 
+    Fp = P*Ap; 
+    M = Fp * e; 
     
     k = M / (Es*Is + Ec*Ic + Eh*Ih)*1e-3;
 end
@@ -141,7 +142,7 @@ function epsilon = calculate_epsilon(a, ai, bi, Ac, Ah, Es, Ec, Eh, P)
     Ap = pi*(ai*bi);
     
     % Input moment from pressure
-    Fp = P*Ap; % [N]
+    Fp = P*Ap;
 
-    epsilon = Fp / (Es*As + Ec*Ac + Eh*Ah); % parallel springs
+    epsilon = Fp / (Es*As + Ec*Ac + Eh*Ah);
 end

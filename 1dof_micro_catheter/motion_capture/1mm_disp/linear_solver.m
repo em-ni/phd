@@ -176,7 +176,7 @@ end
 if ismember('ellipse',silicon_shape)
     % Find the optimal shape by solving
     % min_(x in X) a(k_parallel(x) - k_data)^2 + b(epsilon_parallel(x) - epsilon_data)^2
-    % with x = [a, ai, bi] and X = [0.1, 0.2]x[0.05, 0.19]x[0.05, 0.14]
+    % with x = [a, ai, bi] and X = [a_min, a_max]x[ai_min, ai_max]x[bi_min, bi_max]
     a = 0.1*1e-3; % [m] X
     b = 0.15*1e-3; % [m] V constrained if shape is fixed
     ai = 0.051*1e-3; % [m] X
