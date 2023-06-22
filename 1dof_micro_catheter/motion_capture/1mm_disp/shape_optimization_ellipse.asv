@@ -132,11 +132,10 @@ y_coil = Rci * sin(theta);
 
 % Plot the ellipses
 figure;
-hold on
-plot(x_outer, y_outer, 'k'); % Plot outer ellipse
-plot(x_inner, y_inner, 'k'); % Plot inner ellipse
-plot(x_hollow, y_hollow, 'k'); % Plot hollow channel
-plot(x_coil, y_coil, 'k'); % Plot internal coil
+plot(x_outer, y_outer, ); % Plot outer ellipse
+plot(x_inner, y_inner); % Plot inner ellipse
+plot(x_hollow, y_hollow); % Plot hollow channel
+plot(x_coil, y_coil); % Plot external coil
 title('Concentric Ellipses');
 xlabel('x');
 ylabel('y');

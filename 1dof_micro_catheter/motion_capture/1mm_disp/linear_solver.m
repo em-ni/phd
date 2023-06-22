@@ -3,7 +3,7 @@ close all
 clc
 
 % Find the best shape and the model is finished
-silicon_shape = ['circle', 'ellipse']; % 'semi circle',
+silicon_shape = ['circle', 'ellipse', 'shifted ellipse']; % 'semi circle',
 
 syms P 'real';
 P = P*1e6; % [Pa] -> [MPa]
@@ -236,6 +236,76 @@ if ismember('ellipse',silicon_shape)
 
 end
 
+if ismember('shifted ellipse', silicon_shape)
+
+    % Find the optimal shape by solving
+    % min_(x in X) a(k_parallel(x) - k_data)^2 + b(epsilon_parallel(x) - epsilon_data)^2
+    % with x = [a, ai, bi, h] and X = [a_min, a_max]x[ai_min, ai_max]x[bi_min, bi_max]x[h_min, h_max]
+    a = 0.1*1e-3; % [m] X
+    b = 0.15*1e-3; % [m] V constrained if shape is fixed
+    ai = 0.051*1e-3; % [m] X
+    bi = 0.073*1e-3; % [m] X
+    h = Rc + b + 1e-7;%0.0003*1e-3; % [m] X
+
+    As_ext = pi*(a*b);
+    As_int = pi*(ai*bi);
+    As = As_ext - As_int;
+    Ap = pi*(ai*bi);
+    
+    % Young's modulus
+    Es = 1.648e6; % 
+    spring_c = 0.035; % [N/m] 
+    Ec = spring_c*L/Ac; % [Pa]
+    spring_h = 0.035; % [N/m] 
+    Eh = spring_h*L/Ah; % [Pa] 
+    
+    % Moment of inertia
+    % Height of the centroid of every section
+    yc = Rc;
+    yh = Rh + Rc - Rci;
+    ys_ext = Rc + b; % Centroid of external ellipse (real tube)
+    ys_int = h; % Centroid of internal ellipse (hole in the tube)
+    ys = (ys_ext*As_ext - ys_int*As_int) / As; % Centroid of the whole structure
+
+    % Neutral axis
+    y_bar = (ys*Es*As + yh*Eh*Ah + yc*Ec*Ac)/(Es*As + Eh*Ah + Ec*Ac);
+    
+    % Distances from centroid to neutral axis (take absolute value)
+    dc = abs(yc - y_bar);
+    dh = abs(yh - y_bar);
+    ds_ext = abs(ys_ext - y_bar);
+    ds_int = abs(ys_int - y_bar);
+    
+    % Inertia moments
+    Ic = pi*(Rc^4 - Rci^4)/4 + Ac*dc^2; 
+    Ih = pi*(Rh^4 - Rhi^4)/4 + Ah*dh^2 ;
+    Is_ext = pi*(a*b^3)/4 + As_ext*ds_ext^2;
+    Is_int = pi*(ai*bi^3)/4 + As_int*ds_int^2;   
+    Is = Is_ext - Is_int;
+
+    % Inputs
+    Fp = P*Ap; % [N]
+    
+    %% Simplest case (consider the structure as a whole)
+    %Input moment from pressure
+    e = h - y_bar; % [m] (center of the silicon tube - neutral axis)
+    M = Fp * e; % [Nm]
+    
+    disp(" ")
+    disp("Shifted Ellipse")
+    fprintf('Area = %s\n', num2str(double(vpa(As)), '%.0e'));
+    fprintf('Inertia = %s\n', num2str(double(vpa(Is)), '%.0e'));
+    fprintf('Pressure height = %s\n', num2str(double(vpa(hp)), '%.0e'));
+    fprintf('Neutral axis = %s\n', num2str(double(vpa(y_bar)), '%.0e'));  
+    disp("Axial elongation (target coef: 0.111067)")
+    epsilon_parallel = Fp / (Es*As + Ec*Ac + Eh*Ah); % parallel springs
+    epsilon_parallel = simplify(epsilon_parallel);
+    fprintf('epsilon = %s\n',char(vpa(epsilon_parallel))) % 0.111067
+    disp("Curvature (target coef: 0.038811)")
+    k_parallel = M / (Es*Is + Ec*Ic + Eh*Ih)*1e-3;
+    k_parallel = simplify(k_parallel);
+    fprintf('k = %s\n',char(vpa(k_parallel))) % 0.038811
+end
 
 
 %% Solve symbolic system of equations
