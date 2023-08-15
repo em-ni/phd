@@ -1,10 +1,11 @@
-data_collection/data/*
-object_detection/vision/*
-object_detection/ignore/*
-object_detection/PASCAL_VOC/*
-object_detection/checkpoint.pth.tar
-object_detection/test_images/*
-1dof_micro_catheter/motion_capture/1mm_disp/data/video/*
+camera/data_collection/data/*
+camera/object_detection/vision/*
+camera/object_detection/ignore/*
+camera/object_detection/PASCAL_VOC/*
+camera/object_detection/checkpoint.pth.tar
+camera/object_detection/test_images/*
+1dof_micro_catheter/length15cm/motion_capture/1mm_disp/data/*
+1dof_micro_catheter/length40cm/motion_capture/1mm_disp/data/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
