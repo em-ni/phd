@@ -115,6 +115,11 @@ if ismember('circle',silicon_shape)
     k_parallel = simplify(k_parallel);
     fprintf('k = %s\n',char(vpa(k_parallel))) % 0.038811
 
+    % Save results
+    k_circle = k_parallel;
+    epsilon_circle = epsilon_parallel;
+    save('data/nominal_circle.mat','epsilon_circle', 'k_circle')
+
 end 
 if ismember('semi circle',silicon_shape)
     % Area

@@ -2,7 +2,7 @@ from scipy import optimize
 from utils import *
 
 # Read the cropped video
-cap = cv2.VideoCapture('data/video/curvature_crop.mov')
+cap = cv2.VideoCapture('data/video/curvature_crop.mp4')
 
 # Get the video's width and height
 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -13,6 +13,21 @@ fourcc = cv2.VideoWriter_fourcc(*'mp4v') # or use 'XVID'
 out_circle = cv2.VideoWriter('data/video/circle.mp4', fourcc, 20.0, (width, height))
 out_edges = cv2.VideoWriter('data/video/edges.mp4', fourcc, 20.0, (width, height))
 
+# Initialize slope history for filtering
+m1_history = []
+
+# Initialize radius history for filtering
+radius_history = []
+
+# Initialize previous values
+prev_x_c = None
+prev_y_c = None
+prev_radius = None
+prev_arc_length = 80
+
+# Max history length
+history_length = 5
+history_length_radius = 1
 
 # Process each frame
 while(cap.isOpened()):
@@ -27,6 +42,10 @@ while(cap.isOpened()):
         # Detect edges
         edges = cv2.Canny(thresh, 50, 150)
         
+        # Extract a set of points from the edges of the robot
+        points = np.where((edges > 0))
+        points = np.column_stack((points[1], points[0]))
+
         # Filter the red color of the robot tip (you might need to adjust the color range)
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         lower_red = np.array([0,50,50])
@@ -39,13 +58,9 @@ while(cap.isOpened()):
 
         # Draw the average point on the frame (for debugging)
         if not np.isnan(x_tip) and not np.isnan(y_tip):
-            cv2.circle(frame, (int(x_tip), int(y_tip)), 1, (0, 255, 0), 5)        
+            cv2.circle(frame, (int(x_tip), int(y_tip)), 1, (0, 255, 0), 5)                  
         
-        # Detect circle and compute the curvature
-        # Extract a set of points from the edges of the robot
-        points = np.where((edges > 0))
-        points = np.column_stack((points[1], points[0]))
-           
+        # Detect circle and compute the curvature       
         if len(points) > 0:
             # Get the coordinates of the base of the robot
             # Get the 10 points with the highets y and average their coordinates
@@ -58,7 +73,7 @@ while(cap.isOpened()):
 
             # Reduce the number of points using cv2.reduce
             rows, cols = edges.shape[:2]
-            rows_per_step = 2  # Reduce the number of points by a factor of rows_per_step
+            rows_per_step = 1  # Reduce the number of points by a factor of rows_per_step
             reduced_points = []
             for row in range(0, rows, rows_per_step):
                 column_indices = np.where(edges[row, :] > 0)[0]
@@ -83,16 +98,51 @@ while(cap.isOpened()):
 
             # Extract the result
             x_c, y_c, radius = result.x
+
+            # Filter x_c, y_c, and radius values
+            if np.isnan(x_c):
+                if prev_x_c is not None:
+                    x_c = prev_x_c
+            else:
+                prev_x_c = x_c
+
+            if np.isnan(y_c):
+                if prev_y_c is not None:
+                    y_c = prev_y_c
+            else:
+                prev_y_c = y_c
+
+            if np.isnan(radius):
+                if prev_radius is not None:
+                    radius = prev_radius
+            else:
+                prev_radius = radius
+
+            # Filter radius
+            # Append the value to the history
+            radius_history.append(radius)
+
+            # Ensure the history does not exceed max length
+            if len(radius_history) > history_length_radius:
+                radius_history.pop(0)
+
+            # Compute the average
+            avg_radius = np.mean(radius_history)
+
             center = (int(x_c), int(y_c))
-            radius = int(radius)
+            radius = int(avg_radius)
             curvature = 1 / radius
 
             # Compute arc length
             arc_length = compute_arc_length(x_c, y_c, radius, x_base, y_base, x_tip, y_tip)
 
+            if np.isnan(arc_length):
+                arc_length = prev_arc_length
+                prev_arc_length = arc_length
+
             # Store radius, curvature and arc length in a csv file
-            with open('curvature.csv', 'a') as f:
-                f.write('{:.2f},{:.2f},{:.2f}\n'.format(radius, curvature, arc_length))
+            with open('data/cv_output.csv', 'a') as f:
+                f.write('{:.2f},{:.2f},{:.2f},{:.2f},{:.2f}\n'.format(radius, curvature, arc_length, x_base, y_base))
 
             # Check radius thresold
             if radius < 600:               
@@ -104,6 +154,48 @@ while(cap.isOpened()):
             cv2.putText(frame, 'Radius: {:.2f} px'.format(radius) , (10, 50), font, 0.5, (204, 229, 255), 1, cv2.LINE_AA)
             cv2.putText(frame, 'Curvature: {:.2f}'.format(curvature), (10, 90), font, 0.5, (204, 229, 255), 1, cv2.LINE_AA)
             cv2.putText(frame, 'Arc Length: {:.2f}'.format(arc_length), (10, 130), font, 0.5, (204, 229, 255), 1, cv2.LINE_AA)
+
+            # Draw the tangent line on the edges frame to display the tip orientation
+            if not np.isnan(x_tip) and not np.isnan(y_tip):
+                # Draw red point on tip coordinates 
+                edges = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+                cv2.circle(edges, (int(x_tip), int(y_tip)), 1, (206, 0, 88), 5)
+
+                # Filter slope
+                # Get the slope of the line between the center and the tip
+                m1 = (y_tip - y_c) / (x_tip - x_c)
+
+                # Append the value to the history
+                m1_history.append(m1)
+
+                # Ensure the history does not exceed max length
+                if len(m1_history) > history_length:
+                    m1_history.pop(0)
+
+                # Compute the average
+                avg_m1 = np.mean(m1_history)
+
+                # Get tangent line equation                
+                m2 = -1 / avg_m1
+                b = y_tip - m2 * x_tip
+
+                # Fixed length of the arrow
+                arrow_length = 50
+
+                # Calculate angle of the vector using the slope
+                theta = np.arctan(avg_m1) - np.pi / 2 # Subtract Pi/2 for 90 degree rotation
+
+                # Calculate the x and y coordinates for the end of the vector
+                x2 = x_tip + arrow_length * np.cos(theta)
+                y2 = y_tip + arrow_length * np.sin(theta) # Add because the y-axis is inverted in image coordinates
+
+                # Draw arrowed line
+                cv2.arrowedLine(edges, (int(x_tip), int(y_tip)), (int(x2), int(y2)), (206, 0, 88), 2, tipLength=0.2)
+
+            # Draw the tip position predicted by the model
+            #x_tip_pred, y_tip_pred, theta_pred = tip_cartesian(k_coeff, p, arc_length, x_base, y_base)
+            # ADDED in 
+
 
         # Display the frame (for debugging)
         cv2.imshow('Frame', frame)
