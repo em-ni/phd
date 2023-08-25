@@ -51,7 +51,7 @@ arc_length = arc_length*conv_rate;
 % % Displacement
 % subplot(2,1,1);
 % hold on;
-% grid on;
+% grid off;
 % plot(lin.Lin(1,:),lin.Lin(2,:),'Linewidth',2);
 % xlabel('Time [s]','fontsize',16)
 % ylabel('Displacement [mm]','fontsize',16)
@@ -63,7 +63,7 @@ arc_length = arc_length*conv_rate;
 % % Pressure
 % subplot(2,1,2);
 % hold on;
-% grid on;
+% grid off;
 % plot(pressure.Pressure(1,:),pressure.Pressure(2,:),'Linewidth',2);
 % xlabel('Time [s]','fontsize',16)
 % ylabel('Pressure [MPa]','fontsize',16)
@@ -79,7 +79,7 @@ arc_length = arc_length*conv_rate;
 % % Radius
 % subplot(3,1,1);
 % hold on;
-% grid on;
+% grid off;
 % plot(radius,'Linewidth',2);
 % xlabel('Time [s]','fontsize',16)
 % ylabel('Radius [mm]','fontsize',16)
@@ -91,7 +91,7 @@ arc_length = arc_length*conv_rate;
 % % Curvature
 % subplot(3,1,2);
 % hold on;
-% grid on;
+% grid off;
 % plot(curvature,'Linewidth',2);
 % xlabel('Time [s]','fontsize',16)
 % ylabel('Curvature [1/mm]','fontsize',16)
@@ -103,7 +103,7 @@ arc_length = arc_length*conv_rate;
 % % Arc length
 % subplot(3,1,3);
 % hold on;
-% grid on;
+% grid off;
 % plot(arc_length,'Linewidth',2);
 % xlabel('Time [s]','fontsize',16)
 % ylabel('Arc length','fontsize',16)
@@ -131,7 +131,7 @@ arc_length_f = filter(lpFilt_e, arc_length);
 % % Create the first subplot for displacement
 % subplot(2,1,1);
 % hold on;
-% grid on;
+% grid off;
 % plot(lin.Lin(1,:),lin_f,'Linewidth',2);
 % xlabel('Time [s]','fontsize',16)
 % ylabel('Filtered displacement [mm]','fontsize',16)
@@ -143,7 +143,7 @@ arc_length_f = filter(lpFilt_e, arc_length);
 % % Create the second subplot for pressure
 % subplot(2,1,2);
 % hold on;
-% grid on;
+% grid off;
 % plot(pressure.Pressure(1,:),pressure_f,'Linewidth',2);
 % xlabel('Time [s]','fontsize',16)
 % ylabel('Filtered pressure [MPa]','fontsize',16)
@@ -158,7 +158,7 @@ arc_length_f = filter(lpFilt_e, arc_length);
 % % Create the first subplot for radius
 % subplot(3,1,1);
 % hold on;
-% grid on;
+% grid off;
 % plot(radius_f,'Linewidth',2);
 % xlabel('Time [s]','fontsize',16)
 % ylabel('Filtered radius [mm]','fontsize',16)
@@ -170,7 +170,7 @@ arc_length_f = filter(lpFilt_e, arc_length);
 % % Create the second subplot for curvature
 % subplot(3,1,2);
 % hold on;
-% grid on;
+% grid off;
 % plot(curvature_f,'Linewidth',2);
 % xlabel('Time [s]','fontsize',16)
 % ylabel('Filtered curvature [1/mm]','fontsize',16)
@@ -182,7 +182,7 @@ arc_length_f = filter(lpFilt_e, arc_length);
 % % Create the third subplot for arc length
 % subplot(3,1,3);
 % hold on;
-% grid on;
+% grid off;
 % ylim([4 6]);
 % plot(arc_length_f,'Linewidth',2);
 % xlabel('Time [s]','fontsize',16)
@@ -192,47 +192,47 @@ arc_length_f = filter(lpFilt_e, arc_length);
 % %set(gca,'FontSize',20);
 % hold off
 
-% Filtered output figure
-figure("Name","Filtered output data");
-
-% Create the first subplot for curvature
-subplot(3,1,2);
-hold on;
-grid on;
-plot(curvature_f,'Linewidth',5);
-ylabel('[1/mm]','fontsize',40, 'Interpreter', 'latex')
-legend('Curvature','fontsize',40, 'Interpreter', 'latex')
-legend('Location', 'Best');
-set(gca,'FontSize',40, 'xtick', []);
-hold off
-
-% Create the second subplot for arc length
-subplot(3,1,1);
-hold on;
-grid on;
-ylim([4 6]);
-plot(arc_length_f,'Linewidth',5);
-ylabel('[mm]','fontsize',40, 'Interpreter', 'latex')
-legend('Arc length','fontsize',40, 'Interpreter', 'latex')
-legend('Location', 'Best');
-set(gca,'FontSize',40, 'xtick', []);
-hold off
-
-% Create the third subplot for pressure
-subplot(3,1,3);
-hold on;
-grid on;
-
-% Create a new time array starting from 1000
-time_shifted = (1:length(pressure_f)) + 750;
-
-plot(time_shifted, pressure_f,'Linewidth',5);
-xlabel('Time [ms]','fontsize',40, 'Interpreter', 'latex')
-ylabel('[MPa]','fontsize',40, 'Interpreter', 'latex')
-legend('Pressure','fontsize',40, 'Interpreter', 'latex')
-legend('Location', 'Best');
-set(gca,'FontSize',40);
-hold off
+% % Filtered output figure
+% figure("Name","Filtered output data");
+% 
+% % Create the first subplot for curvature
+% subplot(3,1,2);
+% hold on;
+% grid off;
+% plot(curvature_f,'Linewidth',5);
+% ylabel('[1/mm]','fontsize',40, 'Interpreter', 'latex')
+% legend('Curvature','fontsize',40, 'Interpreter', 'latex')
+% legend('Location', 'Best');
+% set(gca,'FontSize',40, 'xtick', []);
+% hold off
+% 
+% % Create the second subplot for arc length
+% subplot(3,1,1);
+% hold on;
+% grid off;
+% ylim([4 6]);
+% plot(arc_length_f,'Linewidth',5);
+% ylabel('[mm]','fontsize',40, 'Interpreter', 'latex')
+% legend('Arc length','fontsize',40, 'Interpreter', 'latex')
+% legend('Location', 'Best');
+% set(gca,'FontSize',40, 'xtick', []);
+% hold off
+% 
+% % Create the third subplot for pressure
+% subplot(3,1,3);
+% hold on;
+% grid off;
+% 
+% % Create a new time array starting from 1000
+% time_shifted = (1:length(pressure_f)) + 750;
+% 
+% plot(time_shifted, pressure_f,'Linewidth',5);
+% xlabel('Time [ms]','fontsize',40, 'Interpreter', 'latex')
+% ylabel('[MPa]','fontsize',40, 'Interpreter', 'latex')
+% legend('Pressure','fontsize',40, 'Interpreter', 'latex')
+% legend('Location', 'Best');
+% set(gca,'FontSize',40);
+% hold off
 
 
 
@@ -289,44 +289,51 @@ fitted_values = polyval(coefficients, pressure_f);
 % Plot pressure and curvature
 figure("Name","Pressure and curvature");
 
-% Create the second subplot for pressure
+% Create the subplot for pressure
 subplot(2,1,2);
 hold on;
-grid on;
+% grid off;
 plot(t_new, pressure_f,'Linewidth',5);
 xlabel('Time [ms]','fontsize',40, 'Interpreter', 'latex')
+
+% Adjust y-ticks and y-tick labels for pressure
+yticks_current = get(gca, 'ytick');
+set(gca, 'ytick', yticks_current);
+set(gca, 'yticklabel', yticks_current / 10);
+
 ylabel('$p$ [MPa]', 'Interpreter', 'latex', 'fontsize', 40)
 legend('Pressure','fontsize',40, 'Interpreter', 'latex')
 legend('Location', 'Best');
 set(gca,'FontSize',40);
 ylim([1 6]);
-hold off
 
-% Create the second subplot for curvature
+
+% Create the subplot for curvature
 subplot(2,1,1);
 hold on;
-grid on;
+% grid off;
 plot(t_new, curvature_f_resampled,'Linewidth',5);
 ylabel('$\kappa$ [1/mm]', 'Interpreter', 'latex', 'fontsize', 40)
 legend('Curvature','fontsize',40, 'Interpreter', 'latex')
 legend('Location', 'Best');
 set(gca,'FontSize',40, 'xtick', []);
-hold off
 
 
 
-% Plot pressure vs curvature
-figure("Name","Pressure vs curvature");
-hold on;
-grid on;
-plot(pressure_f, curvature_f_resampled, 'b');
-plot(pressure_f, fitted_values, 'r', 'LineWidth', 2)
-xlabel('Pressure [MPa]','fontsize',16)
-ylabel('Curvature [1/mm]','fontsize',16)
-legend('Pressure vs curvature', 'Linear approximation', 'fontsize',16)
-legend('Location', 'Best');
-%set(gca,'FontSize',20);
-hold off
+
+
+% % Plot pressure vs curvature
+% figure("Name","Pressure vs curvature");
+% hold on;
+% grid off;
+% plot(pressure_f, curvature_f_resampled, 'b');
+% plot(pressure_f, fitted_values, 'r', 'LineWidth', 2)
+% xlabel('Pressure [MPa]','fontsize',16)
+% ylabel('Curvature [1/mm]','fontsize',16)
+% legend('Pressure vs curvature', 'Linear approximation', 'fontsize',16)
+% legend('Location', 'Best');
+% %set(gca,'FontSize',20);
+% hold off
 
 % Store pressure_f and curvature_f_resampled to plot after
 pressure_f_curvature = pressure_f;
@@ -389,41 +396,53 @@ figure("Name","Pressure and arc_length");
 % Create the first subplot for pressure
 subplot(2,1,2);
 hold on;
-grid on;
+% grid off;
 plot(t_new, pressure_f,'Linewidth',5);
 xlabel('Time [ms]','fontsize',40, 'Interpreter', 'latex')
+
+% Adjust y-ticks and y-tick labels for pressure
+yticks_current = get(gca, 'ytick');
+set(gca, 'ytick', yticks_current);
+set(gca, 'yticklabel', yticks_current / 10);
+
+ylabel('$p$ [MPa]', 'Interpreter', 'latex', 'fontsize', 40)
 legend('Pressure','fontsize',40, 'Interpreter', 'latex')
 legend('Location', 'Best');
 set(gca,'FontSize',40);
-ylabel('$p$ [MPa]', 'Interpreter', 'latex', 'fontsize', 40)
 ylim([1 6]);
 hold off
 
 % Create the second subplot for arc_length
 subplot(2,1,1);
 hold on;
-grid on;
+% grid off;
 plot(t_new, arc_length_f_resampled,'Linewidth',5);
 legend('Arc length','fontsize',40, 'Interpreter', 'latex')
 legend('Location', 'Best');
 set(gca,'FontSize',40, 'xtick', []);
+
+% Setting more detailed y-ticks
+yticks(4:0.5:6);  % Set y-ticks from 4 to 6 with 0.1 increments
+ylim([4 6]);
+
 ylabel('$L$ [mm]', 'Interpreter', 'latex', 'fontsize', 40)
-ylim([0 6]);
 hold off
 
 
-% Plot pressure vs arc_length
-figure("Name","Pressure vs arc_length");
-hold on;
-grid on;
-plot(pressure_f, arc_length_f_resampled, 'b');
-plot(pressure_f, fitted_values, 'r', 'LineWidth', 2)
-xlabel('Pressure [MPa]','fontsize',16)
-ylabel('arc length [mm]','fontsize',16)
-legend('Pressure vs arc_length', 'Linear approximation', 'fontsize',16)
-legend('Location', 'Best');
-%set(gca,'FontSize',20);
-hold off
+
+
+% % Plot pressure vs arc_length
+% figure("Name","Pressure vs arc_length");
+% hold on;
+% grid off;
+% plot(pressure_f, arc_length_f_resampled, 'b');
+% plot(pressure_f, fitted_values, 'r', 'LineWidth', 2)
+% xlabel('Pressure [MPa]','fontsize',16)
+% ylabel('arc length [mm]','fontsize',16)
+% legend('Pressure vs arc_length', 'Linear approximation', 'fontsize',16)
+% legend('Location', 'Best');
+% %set(gca,'FontSize',20);
+% hold off
 
 % Store pressure_f and arc_length_f_resampled to plot after
 pressure_f_arc_length = pressure_f;
@@ -475,42 +494,250 @@ disp(k_opt)
 % fitted_values_curvature_rand = fitted_values_curvature(idx);
 
 % Define RGB colors
-light_grey = [187/255, 188/255, 188/255]; % RGB for light grey
-green = [0, 171/255, 132/255]; % RGB for green
-blue = [16/255, 6/255, 159/255]; % RGB for blue
+% light_grey = [187/255, 188/255, 188/255]; % RGB for light grey
+% green = [0, 171/255, 132/255]; % RGB for green
+% blue = [16/255, 6/255, 159/255]; % RGB for blue
 
-% Elongation
-figure("Name","Model Validation: Elongation");
-%figure(8);
-hold on
-grid on
-plot(pressure_f_arc_length,arc_length_f_resampled,'DisplayName','Measured Data','LineWidth', 0.5, 'Color', light_grey)
-plot(pressure_f,circle_model_elongation,'DisplayName','Circular Cross section','LineWidth', 2, 'Color', blue)
-plot(pressure_f,opt_model_elongation,'DisplayName','Optimized Shape','LineWidth', 2, 'Color', green)
-xlabel('$p$ [MPa]', 'Interpreter', 'latex', 'fontsize', 16)
-ylabel('$L$ [mm] ', 'Interpreter', 'latex', 'fontsize', 16)
-ylim([0 10])
-legend('Experimental Data', 'Circular cross section', 'Optimized Ellipse cross section',  'fontsize', 12)
-legend('Location', 'Best');
-hold off
+% Using the same colors and line widths as the second plot
+light_grey = [0.7, 0.7, 0.7]; % Assuming this color value for light_grey
+blue = [0, 0, 1];  % Default blue color in MATLAB
+green = [0, 1, 0]; % Assuming this color value for green
 
-% Curvature
+% % Elongation
+% figure("Name","Model Validation: Elongation");
+% %figure(8);
+% hold on
+% grid off
+% plot(pressure_f_arc_length,arc_length_f_resampled,'DisplayName','Measured Data','LineWidth', 0.5, 'Color', light_grey)
+% plot(pressure_f,circle_model_elongation,'DisplayName','Circular Cross section','LineWidth', 2, 'Color', blue)
+% plot(pressure_f,opt_model_elongation,'DisplayName','Optimized Shape','LineWidth', 2, 'Color', green)
+% xlabel('$p$ [MPa]', 'Interpreter', 'latex', 'fontsize', 16)
+% ylabel('$L$ [mm] ', 'Interpreter', 'latex', 'fontsize', 16)
+% ylim([0 10])
+% legend('Experimental Data', 'Circular cross section', 'Optimized Ellipse cross section',  'fontsize', 12)
+% legend('Location', 'Best');
+% hold off
+
 figure("Name","Model Validation: Curvature");
-%figure(6);
 hold on
-grid on
-plot(pressure_f_curvature, curvature_f_resampled, 'DisplayName', 'Measured Data', 'LineWidth', 3, 'Color', light_grey)
-plot(pressure_f, circle_model_curvature, 'b',  'DisplayName', 'Circular Cross section', 'LineWidth', 5)%, 'Color', blue)
-plot(pressure_f, opt_model_curvature, 'r', 'DisplayName', 'Optimized Shape', 'LineWidth', 5)%, 'Color', green)
+grid off
+% Determine unique pressure_f values and preallocate arrays for bounds
+rounded_pressures_curvature = round(pressure_f_curvature, 1);
+unique_pressures_curvature = unique(rounded_pressures_curvature);
+curvature_upper = zeros(size(unique_pressures_curvature));
+curvature_lower = zeros(size(unique_pressures_curvature));
+
+% Calculate upper and lower bounds for each unique pressure_f value
+for i = 1:length(unique_pressures_curvature)
+    idx = rounded_pressures_curvature == unique_pressures_curvature(i);
+    curvature_upper(i) = max(curvature_f_resampled(idx));
+    curvature_lower(i) = min(curvature_f_resampled(idx));
+end
+
+% Create x and y vectors for fill
+X_fill_curvature = [unique_pressures_curvature, fliplr(unique_pressures_curvature)]; 
+Y_fill_curvature = [curvature_upper, fliplr(curvature_lower)];
+
+% Use fill function to create shaded region
+fill(X_fill_curvature, Y_fill_curvature, light_grey, 'EdgeColor', 'none', 'DisplayName', 'Experimental Data', 'FaceAlpha', 0.5);
+
+% plot_k_interval = [1:10:length(pressure_f_curvature)-500];
+% plot(pressure_f_curvature(plot_k_interval), curvature_f_resampled(plot_k_interval), 'DisplayName', 'Measured Data', 'LineWidth', 3, 'Color', light_grey)%, 'Marker', '*', 'MarkerSize', 10, 'LineStyle', 'none')
+plot(pressure_f, circle_model_curvature, 'b',  'DisplayName', 'Circular Cross section', 'LineWidth', 5)
+plot(pressure_f, opt_model_curvature, 'r', 'DisplayName', 'Optimized Shape', 'LineWidth', 5)
 xlabel('$p$ [MPa]', 'Interpreter', 'latex', 'fontsize', 40)
 ylabel('$\kappa$ [1/mm]', 'Interpreter', 'latex', 'fontsize', 40)
-% plot(pressure_f_curvature,fitted_values_curvature,'DisplayName','Measured Data','LineWidth', 0.5)
-lgd = legend('Experimental Data', 'Nominal cross section', 'Optimized cross section');
+
+% Adjust x-ticks and x-tick labels for pressure
+xticks_current = get(gca, 'xtick');
+set(gca, 'xtick', xticks_current);
+set(gca, 'xticklabel', xticks_current / 10);
+
+% Set y-axis limits to focus on specific range
+ylim([0.025 0.175]);
+
+lgd = legend('Experimental Data', 'Nominal cross section', 'Optimized cross section', 'Box', 'off');
 set(lgd,'FontSize',40);
 legend('Location', 'Best');
 ax = gca;  % Get handle to current axes.
 ax.FontSize = 40;  % Set font size.
 hold off
+
+
+% Redefine curvature_f_resampled as a straight line with slope 0.0388
+curvature_f_resampled_linear = slope_k * pressure_f + intercept_k;
+
+% Compute NRMSE for circle_model_curvature_resampled wrt curvature_f_resampled_linear
+residuals_circle = circle_model_curvature - curvature_f_resampled_linear;
+NRMSE_circle = sqrt(mean(residuals_circle.^2)) / (max(curvature_f_resampled_linear) - min(curvature_f_resampled_linear));
+disp(['NRMSE for circle_model_curvature: ', num2str(NRMSE_circle)])
+
+% Compute NRMSE for opt_model_curvature_resampled wrt curvature_f_resampled_linear
+residuals_opt = opt_model_curvature - curvature_f_resampled_linear;
+NRMSE_opt = sqrt(mean(residuals_opt.^2)) / (max(curvature_f_resampled_linear) - min(curvature_f_resampled_linear));
+disp(['NRMSE for opt_model_curvature: ', num2str(NRMSE_opt)])
+
+
+%% Apply kinematic model to the data
+% Define old and new indices
+old_indices = linspace(1, length(curvature_f_resampled), length(curvature_f_resampled));
+new_indices = linspace(1, length(curvature_f_resampled), length(arc_length_f_resampled));
+
+% Interpolate curvature_f_resampled to the desired length
+curvature_f_resampled = interp1(old_indices, curvature_f_resampled, new_indices, 'linear');
+
+% Reduce dimension of all vectors
+% interval = [420:1900]; %orientation
+interval = [200:2900];
+pressure_f = pressure_f(interval);
+curvature_f_resampled = curvature_f_resampled(interval);
+arc_length_f_resampled = arc_length_f_resampled(interval);
+circle_model_curvature = circle_model_curvature(interval);
+opt_model_curvature = opt_model_curvature(interval);
+circle_model_elongation = circle_model_elongation(interval);
+opt_model_elongation = opt_model_elongation(interval);
+
+
+% Define the kinematic model
+x_t = arc_length_f_resampled .* ( 1 - cos(curvature_f_resampled.*arc_length_f_resampled)) ./ (curvature_f_resampled.*arc_length_f_resampled);
+y_t = arc_length_f_resampled .* sin(curvature_f_resampled.*arc_length_f_resampled) ./ (curvature_f_resampled.*arc_length_f_resampled);
+
+x_t_nominal = L .* ( 1 - cos(circle_model_curvature.*L)) ./ (circle_model_curvature.*L);
+y_t_nominal = L .* sin(circle_model_curvature.*L) ./ (circle_model_curvature.*L)-0.01;
+
+x_t_opt = L .* ( 1 - cos(opt_model_curvature.*L)) ./ (opt_model_curvature.*L);
+y_t_opt = L .* sin(opt_model_curvature.*L) ./ (opt_model_curvature.*L);
+
+alpha = curvature_f_resampled .* arc_length_f_resampled;
+alpha_nominal = circle_model_curvature .* L;
+alpha_opt = opt_model_curvature .* L;
+
+% Plot the results
+figure("Name","Kinematic Model: Position");
+hold on
+grid off
+
+% Determine unique x_t values and preallocate arrays for bounds
+rounded_xt = round(x_t,2);
+unique_xt = unique(rounded_xt);
+y_upper = zeros(size(unique_xt));
+y_lower = zeros(size(unique_xt));
+
+% Calculate upper and lower bounds for each unique x_t value
+for i = 1:length(unique_xt)
+    idx = rounded_xt == unique_xt(i);
+    y_upper(i) = max(y_t(idx));
+    y_lower(i) = min(y_t(idx));
+end
+
+% Create x and y vectors for fill
+X_fill_position = [unique_xt, fliplr(unique_xt)]; 
+Y_fill_position = [y_upper, fliplr(y_lower)];
+
+% Use fill function to create shaded region
+fill(X_fill_position, Y_fill_position, light_grey, 'EdgeColor', 'none', 'DisplayName', 'Experimental Data', 'FaceAlpha', 0.5);
+
+%plot(x_t, y_t, 'DisplayName', 'Measured Data', 'LineWidth', 3, 'Color', light_grey, 'Marker', '*', 'MarkerSize', 10)
+% plot_pos_interval = [1:1:length(x_t)];
+% plot(x_t(plot_pos_interval), y_t(plot_pos_interval), 'DisplayName', 'Measured Data', 'LineWidth', 3, 'Color', light_grey)%, 'Marker', '*', 'MarkerSize', 10, 'LineStyle', 'none')
+
+plot(x_t_nominal, y_t_nominal, 'b',  'DisplayName', 'Circular Cross section', 'LineWidth', 5)
+plot(x_t_opt, y_t_opt, 'r', 'DisplayName', 'Optimized Shape', 'LineWidth', 5)
+xlabel('$x_t$ [mm]', 'Interpreter', 'latex', 'fontsize', 40)
+ylabel('$y_t$ [mm] ', 'Interpreter', 'latex', 'fontsize', 40)
+
+lgd = legend('Experimental Data', 'Circular cross section', 'Optimized cross section', 'Interpreter', 'latex', 'fontsize', 40, 'Box', 'off');
+set(lgd,'FontSize',40);
+legend('Location', 'Best');
+xlim([0.4 2])
+ylim([4.35 5.25])
+
+ax = gca;  % Get handle to current axes.
+ax.FontSize = 40;  % Set font size.
+
+hold off
+
+figure("Name","Kinematic Model: Orientation");
+hold on
+grid off
+
+% Determine unique pressure values and preallocate arrays for bounds
+rounded_pressures = round(pressure_f, 1);
+unique_pressures = unique(rounded_pressures);
+alpha_upper = zeros(size(unique_pressures));
+alpha_lower = zeros(size(unique_pressures));
+
+% Calculate upper and lower bounds for each unique pressure value
+for i = 1:length(unique_pressures)
+    idx = rounded_pressures == unique_pressures(i);
+    alpha_upper(i) = max(alpha(idx));
+    alpha_lower(i) = min(alpha(idx));
+end
+
+% Create x and y vectors for fill
+X_fill = [unique_pressures, fliplr(unique_pressures)]; 
+Y_fill = [alpha_upper, fliplr(alpha_lower)];
+
+% Use fill function to create shaded region
+fill(X_fill, Y_fill, light_grey, 'EdgeColor', 'none', 'DisplayName', 'Experimental Data', 'FaceAlpha', 0.5);
+
+% plot_or_interval = [1:10:length(pressure_f)-500];
+% plot(pressure_f(plot_or_interval), alpha(plot_or_interval), 'DisplayName', 'Measured Data', 'LineWidth', 3, 'Color', light_grey)%, 'Marker', '*', 'MarkerSize', 10, 'LineStyle', 'none')
+
+plot(pressure_f, alpha_nominal, 'b', 'DisplayName', 'Circular Cross section', 'LineWidth', 5);
+plot(pressure_f, alpha_opt, 'r', 'DisplayName', 'Optimized Shape', 'LineWidth', 5);
+xlabel('$p$ [MPa]', 'Interpreter', 'latex', 'fontsize', 40);
+ylabel('$\theta$ [rad]', 'Interpreter', 'latex', 'fontsize', 40);
+
+% Adjust x-ticks and x-tick labels for pressure
+xticks_current = get(gca, 'xtick');
+set(gca, 'xtick', xticks_current);
+set(gca, 'xticklabel', xticks_current / 10);
+
+% Set y-axis limits to focus on specific range
+% xlim([1.5 6]);
+% ylim([0 1]);
+
+lgd = legend('Experimental Data', 'Nominal cross section', 'Optimized cross section', 'Box', 'off');
+set(lgd,'FontSize',40);
+
+legend('Location', 'Best');
+ax = gca;  % Get handle to current axes.
+ax.FontSize = 40;  % Set font size.
+
+hold off;
+
+
+% % Compute errors
+% % Compute NRMSE for x_t_nominal wrt x_t
+% residuals_circle = x_t_nominal - x_t;
+% NRMSE_circle = sqrt(mean(residuals_circle.^2)) / (max(x_t) - min(x_t));
+% disp(['NRMSE for x_t_nominal: ', num2str(NRMSE_circle)])
+% 
+% % Compute NRMSE for x_t_opt wrt x_t
+% residuals_opt = x_t_opt - x_t;
+% NRMSE_opt = sqrt(mean(residuals_opt.^2)) / (max(x_t) - min(x_t));
+% disp(['NRMSE for x_t_opt: ', num2str(NRMSE_opt)])
+% 
+% % Compute NRMSE for y_t_nominal wrt y_t
+% residuals_circle = y_t_nominal - y_t;
+% NRMSE_circle = sqrt(mean(residuals_circle.^2)) / (max(y_t) - min(y_t));
+% disp(['NRMSE for y_t_nominal: ', num2str(NRMSE_circle)])
+% 
+% % Compute NRMSE for y_t_opt wrt y_t
+% residuals_opt = y_t_opt - y_t;
+% NRMSE_opt = sqrt(mean(residuals_opt.^2)) / (max(y_t) - min(y_t));
+% disp(['NRMSE for y_t_opt: ', num2str(NRMSE_opt)])
+% 
+% % Compute NRMSE for alpha_nominal wrt alpha
+% residuals_circle = alpha_nominal - alpha;
+% NRMSE_circle = sqrt(mean(residuals_circle.^2)) / (max(alpha) - min(alpha));
+% disp(['NRMSE for alpha_nominal: ', num2str(NRMSE_circle)])
+% 
+% % Compute NRMSE for alpha_opt wrt alpha
+% residuals_opt = alpha_opt - alpha;
+% NRMSE_opt = sqrt(mean(residuals_opt.^2)) / (max(alpha) - min(alpha));
+% disp(['NRMSE for alpha_opt: ', num2str(NRMSE_opt)])
 
 
 
@@ -523,7 +750,7 @@ hold off
 % % Elongation
 % figure('Name','Model Validation: Strain');
 % hold on
-% grid on
+% grid off
 % plot(pressure_f_arc_length, epsilon_arc_length, 'DisplayName', 'Measured Data', 'LineWidth', 0.5, 'Color', light_grey)
 % plot(pressure_f, epsilon_circle_model, 'DisplayName', 'Circular Cross section', 'LineWidth', 2, 'Color', blue)
 % plot(pressure_f, epsilon_opt_model, 'DisplayName', 'Optimized Shape', 'LineWidth', 2, 'Color', green)

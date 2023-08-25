@@ -102,7 +102,7 @@ for i = 1:size(X0,1)
     epsilon_val = epsilon_parallel(x(1), x(2), x(3), x(4));
     
     % Calculate error
-    error = abs(k_val - k_data) + abs(epsilon_val - epsilon_data);
+    error = sqrt( mean( (k_val - k_data)^2 + (epsilon_val - epsilon_data)^2) );%uncomment to NRMSE / (max([k_data; epsilon_data]) - min([k_data; epsilon_data]));
     
     % Store results
     results = [results; x, k_val, epsilon_val, error];
@@ -115,7 +115,7 @@ end
 sorted_results = sortrows(results,6);
 
 % Display the ranked results
-disp('Ranked results (parameters a, ai, bi, calculated k, calculated epsilon, error):');
+disp('Ranked results (parameters a, ai, bi, calculated k, calculated epsilon, RMSE):');
 % Loop over the sorted results and display each result
 for i = 1:size(sorted_results, 1)
     fprintf('a = %.3f*1e-3, ai = %.3f*1e-3, bi = %.3f*1e-3, h = %.3f*1e-3, k = %.3f, epsilon = %.3f, error = %.3e\n', ...
