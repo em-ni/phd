@@ -22,3 +22,6 @@ sofa/trash
 
 # Ignore big files
 script/tests/mesh sofa/*
+
+# Ignore cache
+script/__pycache__/
