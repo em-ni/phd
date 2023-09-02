@@ -1,3 +1,32 @@
-[submodule "script/dicom2stl"]
+[submodule "dicom2stl"]
 	path = script/dicom2stl
 	url = https://github.com/dave3d/dicom2stl.git
+
+[submodule "src"]
+	path = sofa/src
+	url = https://github.com/sofa-framework/sofa.git
+
+[submodule "SofaGym"]
+	path = sofa/SofaGym
+	url = https://github.com/SofaDefrost/SofaGym.git
+
+[submodule "Cosserat"]
+    path = sofa/ext_plugin_repo/Cosserat
+	url = https://github.com/SofaDefrost/Cosserat.git
+
+[submodule "SoftRobots"]
+	path = sofa/ext_plugin_repo/SoftRobots
+	url = https://github.com/SofaDefrost/SoftRobots.git
+
+[submodule "ModelOrderReduction"]
+	path = sofa/ext_plugin_repo/ModelOrderReduction
+	url = https://github.com/SofaDefrost/ModelOrderReduction.git
+
+[submodule "SofaPython3"]
+	path = sofa/ext_plugin_repo/SofaPython3
+	url = https://github.com/sofa-framework/SofaPython3.git
+
+[submodule "STLIB"]
+	path = sofa/ext_plugin_repo/STLIB
+	url = https://github.com/SofaDefrost/STLIB.git
+	branc = v22.12
