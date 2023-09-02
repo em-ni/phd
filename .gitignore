@@ -24,7 +24,7 @@ sofa/trash
 # Ignore big files
 script/tests/mesh\ sofa/*
 script/data/mesh/*
-script/external\ examples/mesh sofa/
+script/external_examples/mesh sofa/
 
 # Ignore cache
 script/__pycache__/
