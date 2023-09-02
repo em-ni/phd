@@ -9,6 +9,7 @@ sofa/ext_plugin_repo/SofaMAMMOBOT
 sofa/ext_plugin_repo/SoftRobots
 sofa/ext_plugin_repo/SPLIB
 sofa/ext_plugin_repo/STLIB
+sofa/ext_plugin_repo/SofaPython3
 sofa/SofaGym
 
 # Ignore cloned src
@@ -21,7 +22,9 @@ sofa/utils/2022-RAL-SOFA-soft-growing-robots
 sofa/trash
 
 # Ignore big files
-script/tests/mesh sofa/*
+script/tests/mesh\ sofa/*
+script/data/mesh/*
+script/external\ examples/mesh sofa/
 
 # Ignore cache
 script/__pycache__/
