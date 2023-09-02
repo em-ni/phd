@@ -41,7 +41,7 @@ def convert_stl_to_msh(stl_file_path, msh_file_path):
     gmsh.finalize()
 
 # Use function
-convert_stl_to_msh('skull.stl', 'skull.msh')
+#convert_stl_to_msh('skull.stl', 'skull.msh')
 
 
 import trimesh
@@ -54,4 +54,23 @@ def convert_stl_to_obj(stl_path, obj_path):
     mesh.export(obj_path)
 
 # Example usage:
-convert_stl_to_obj("skull.stl", "skull.obj")
+#convert_stl_to_obj("skull.stl", "skull.obj")
+#convert_stl_to_obj("data/mesh/1dof_catheter.STL", "data/mesh/1dof_catheter.obj")
+
+
+import vtk
+# Better using gmsh software (open terminal type "gmsh")
+def stl_to_vtk(stl_filename, vtk_filename):
+    # Read STL
+    reader = vtk.vtkSTLReader()
+    reader.SetFileName(stl_filename)
+
+    # Write VTK
+    writer = vtk.vtkPolyDataWriter()
+    writer.SetFileName(vtk_filename)
+    writer.SetInputConnection(reader.GetOutputPort())
+    writer.Write()
+
+# Example usage:
+# stl_to_vtk("input.stl", "output.vtk")
+stl_to_vtk("data/mesh/1dof_catheter.stl", "data/mesh/1dof_catheter.vtk")
