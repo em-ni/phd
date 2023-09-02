@@ -19,3 +19,6 @@ sofa/utils/2022-RAL-SOFA-soft-growing-robots
 
 # Ignore trash from onedrive
 sofa/trash
+
+# Ignore big files
+script/tests/mesh sofa/*
