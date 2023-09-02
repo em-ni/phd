@@ -15,16 +15,13 @@ sofa/SofaGym
 # Ignore cloned src
 sofa/src
 
-# Ignore cloned utils
-sofa/utils/2022-RAL-SOFA-soft-growing-robots
-
 # Ignore trash from onedrive
 sofa/trash
 
 # Ignore big files
-script/tests/mesh\ sofa/*
+script/tests/mesh_sofa/*
 script/data/mesh/*
-script/external_examples/mesh sofa/
+script/external_examples/mesh_sofa/
 
 # Ignore cache
 script/__pycache__/
