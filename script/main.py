@@ -1,4 +1,4 @@
-# runSofa -l /home/emanuele/Desktop/github/test/sofa/build/v22.12/lib/libSofaPython3.so ./main.py 
+# runSofa -l /home/emanuele/Desktop/github/sim/sofa/build/v22.12/lib/libSofaPython3.so ./main.py 
 
 import Sofa
 from emptyController import EmptyController

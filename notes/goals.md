@@ -7,7 +7,7 @@ The output of this process are only the two files .obj and .msh:
 - .msh files: The .msh file format is not specific to Sofa but is commonly used in finite element analysis (FEA) and computational physics. It is a binary or ASCII file format that stores information about the mesh, which is a discretized representation of an object's geometry used for numerical calculations. A mesh consists of nodes (vertices) and elements (e.g., triangles or tetrahedra) that connect these nodes to form a meshed surface or volume. In the context of Sofa, .msh files can be used to import pre-defined meshes or generate custom meshes for objects in a simulation. The .msh file contains the necessary data to define the mesh topology, node positions, and element connectivity.
 
 In both cases, when using Sofa, you would typically load these files into the framework using appropriate components or plugins provided by Sofa. These components can interpret the data in the files and create the corresponding simulation objects with the desired geometry and mesh. </br>
-These can called from .scn file ([example](test/load_data.scn))
+These can called from .scn file ([example](test/load_data.scn)) or better from python script.
 
 ## Dicom file explained 
 Video Summary ([source](https://www.youtube.com/watch?v=eCECXr-HxVs)):

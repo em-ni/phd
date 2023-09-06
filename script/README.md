@@ -5,4 +5,4 @@ Be sure you followed setup.md
 
 # Run sofa python script
 1. cd cd ${HOME}/Desktop/github/sim/script
-2. runSofa -l /home/emanuele/Desktop/github/test/sofa/build/v22.12/lib/libSofaPython3.so ./main.py 
+2. runSofa -l /home/emanuele/Desktop/github/sim/sofa/build/v22.12/lib/libSofaPython3.so ./main.py 
