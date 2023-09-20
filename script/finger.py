@@ -5,11 +5,10 @@ from pressureController import PressureController
 import math
 
 
-youngModulusCatheters = 500
-youngModulusStiffLayerCatheters = 1500
+youngModulusFingers = 500
+youngModulusStiffLayerFingers = 1500
+translateFinger = [0, 0, 0]
 
-translationCatheter = [-120, 25, 0]
-anglesCathter = [0, 90, 0]
 
 def createScene(rootNode):
     rootNode.addObject('VisualStyle', displayFlags='showVisualModels hideBehaviorModels hideCollisionModels hideBoundingCollisionModels hideForceFields showInteractionForceFields hideWireframe')
@@ -65,48 +64,49 @@ def createScene(rootNode):
     cubeVisu.addObject('OglModel', name='Visual', src='@cube_loader', color=[0.0, 0.1, 0.5], scale=cubeScale)
     cubeVisu.addObject('RigidMapping')
 
-    # Catheter Model
-    catheter = rootNode.addChild('catheter')
-    catheter.addObject('EulerImplicitSolver', name='odesolver', rayleighStiffness=0.1, rayleighMass=0.1)
-    catheter.addObject('SparseLDLSolver', name='preconditioner')
-    catheter.addObject('MeshVTKLoader', name='loader', filename='data/mesh/full_cylinder.vtk', scale=20, translation=translationCatheter, rotation=anglesCathter) # MUST BE TETRAEDRIC MESH
-    catheter.addObject('MeshTopology', src='@loader', name='container')
-    catheter.addObject('MechanicalObject', name='tetras', template='Vec3', showIndices=False, showIndicesScale=4e-5)
-    catheter.addObject('UniformMass', totalMass=0.04)
-    catheter.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusCatheters)
-    catheter.addObject('BoxROI', name='boxROI', box=[22, 15, -10, 42, 35, 10], doUpdate=False, drawBoxes=True)
-    catheter.addObject('BoxROI', name='boxROISubTopo', box=[-100, 22.5, -8, -19, 28, 8], strict=False, drawBoxes=True)
-    catheter.addObject('RestShapeSpringsForceField', points='@boxROI.indices', stiffness=1e12, angularStiffness=1e12)
-    catheter.addObject('LinearSolverConstraintCorrection')
+    # Finger Model	
+    finger = rootNode.addChild('finger')
+    finger.addObject('EulerImplicitSolver', name='odesolver', rayleighStiffness=0.1, rayleighMass=0.1)
+    finger.addObject('SparseLDLSolver', name='preconditioner')
+    finger.addObject('MeshVTKLoader', name='loader', filename='data/mesh/pneunetCutCoarse.vtk', rotation=[360, 0, 0], translation=translateFinger)
+    finger.addObject('MeshTopology', src='@loader', name='container')
+    finger.addObject('MechanicalObject', name='tetras', template='Vec3', showIndices=False, showIndicesScale=4e-5)
+    finger.addObject('UniformMass', totalMass=0.04)
+    finger.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusFingers)
+    finger.addObject('BoxROI', name='boxROI', box=[-10, 0, -20, 0, 30, 20], drawBoxes=True)
+    finger.addObject('BoxROI', name='boxROISubTopo', box=[-100, 22.5, -8, -19, 28, 8], strict=False, drawBoxes=True)
+    finger.addObject('RestShapeSpringsForceField', points='@boxROI.indices', stiffness=1e12, angularStiffness=1e12)
+    finger.addObject('LinearSolverConstraintCorrection')
 
-    # Sub topology
-    modelSubTopo = catheter.addChild('modelSubTopo')
+    # Sub topology	
+    modelSubTopo = finger.addChild('modelSubTopo')
     modelSubTopo.addObject('TetrahedronSetTopologyContainer', position='@loader.position', tetrahedra='@boxROISubTopo.tetrahedraInROI', name='container')
-    modelSubTopo.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerCatheters - youngModulusCatheters) # MUST BE TETRAEDRIC MESH
+    modelSubTopo.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerFingers - youngModulusFingers) # MUST BE TETRAEDRIC MESH
 
     # Constraint
-    cavity = catheter.addChild('cavity')
-    cavity.addObject('MeshSTLLoader', name='loader', filename='data/mesh/tube.STL', translation=translationCatheter, rotation=anglesCathter)
+    cavity = finger.addChild('cavity')
+    cavity.addObject('MeshSTLLoader', name='loader', filename='data/mesh/pneunetCavityCut.stl', translation=translateFinger, rotation=[360, 0, 0])
     cavity.addObject('MeshTopology', src='@loader', name='topo')
     cavity.addObject('MechanicalObject', name='cavity')
     cavity.addObject('SurfacePressureConstraint', name='SurfacePressureConstraint', template='Vec3', value=0.0001, triangles='@topo.triangles', valueType='pressure')
     cavity.addObject('BarycentricMapping', name='mapping', mapForces=False, mapMasses=False)
 
-    # Collision	
-    collisionCatheter = catheter.addChild('collisionCatheter')
-    collisionCatheter.addObject('MeshSTLLoader', name='loader', filename='data/mesh/body.STL', translation=translationCatheter, rotation=anglesCathter)
-    collisionCatheter.addObject('MeshTopology', src='@loader', name='topo')
-    collisionCatheter.addObject('MechanicalObject', name='collisMech')
-    collisionCatheter.addObject('TriangleCollisionModel', selfCollision=False)
-    collisionCatheter.addObject('LineCollisionModel', selfCollision=False)
-    collisionCatheter.addObject('PointCollisionModel', selfCollision=False)
-    collisionCatheter.addObject('BarycentricMapping')
+    # Collision
+    collisionFinger = finger.addChild('collisionFinger')
+    collisionFinger.addObject('MeshSTLLoader', name='loader', filename='data/mesh/pneunetCut.stl', translation=translateFinger, rotation=[360, 0, 0])
+    collisionFinger.addObject('MeshTopology', src='@loader', name='topo')
+    collisionFinger.addObject('MechanicalObject', name='collisMech')
+    collisionFinger.addObject('TriangleCollisionModel', selfCollision=False)
+    collisionFinger.addObject('LineCollisionModel', selfCollision=False)
+    collisionFinger.addObject('PointCollisionModel', selfCollision=False)
+    collisionFinger.addObject('BarycentricMapping')
 
     # Visualization	
-    modelVisu = catheter.addChild('visu')
-    modelVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/body.STL')
-    modelVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6])
+    modelVisu = finger.addChild('visu')
+    modelVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/pneunetCut.stl')
+    modelVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6], translation=translateFinger, rotation=[360, 0, 0])
     modelVisu.addObject('BarycentricMapping')
-    
-    rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="catheter") )
+
+    # Add controller
+    rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="finger") )
     print("\nadded PressureController\n")

@@ -18,7 +18,11 @@ In both cases, when using Sofa, you would typically load these files into the fr
 provided by Sofa. These components can interpret the data in the files and create the corresponding simulation objects with the 
 desired geometry and mesh. """ 
 
+
+import argparse
 import gmsh
+import trimesh
+import vtk
 
 def convert_stl_to_msh(stl_file_path, msh_file_path):
     # Start gmsh
@@ -43,9 +47,6 @@ def convert_stl_to_msh(stl_file_path, msh_file_path):
 # Use function
 #convert_stl_to_msh('skull.stl', 'skull.msh')
 
-
-import trimesh
-
 def convert_stl_to_obj(stl_path, obj_path):
     # Load the STL file
     mesh = trimesh.load(stl_path)
@@ -57,8 +58,6 @@ def convert_stl_to_obj(stl_path, obj_path):
 #convert_stl_to_obj("skull.stl", "skull.obj")
 #convert_stl_to_obj("data/mesh/1dof_catheter.STL", "data/mesh/1dof_catheter.obj")
 
-
-import vtk
 # Better using gmsh software (open terminal type "gmsh")
 def stl_to_vtk(stl_filename, vtk_filename):
     # Read STL
@@ -73,4 +72,35 @@ def stl_to_vtk(stl_filename, vtk_filename):
 
 # Example usage:
 # stl_to_vtk("input.stl", "output.vtk")
-stl_to_vtk("data/mesh/1dof_catheter.stl", "data/mesh/1dof_catheter.vtk")
+#stl_to_vtk("data/mesh/1dof_catheter.stl", "data/mesh/1dof_catheter.vtk") 
+
+def main():
+    # Define the command line arguments using argparse
+    parser = argparse.ArgumentParser(description="Convert 3D file formats.")
+    parser.add_argument("-i", "--input", required=True, help="Path to the input file.")
+    parser.add_argument("-o", "--output", required=True, help="Path to the output file.")
+    
+    # Parse the arguments
+    args = parser.parse_args()
+
+    # Extract the file extensions to determine the conversion type
+    input_extension = args.input.split('.')[-1].lower()
+    output_extension = args.output.split('.')[-1].lower()
+
+    # Depending on the extensions, call the appropriate conversion function
+    if input_extension == "stl" and output_extension == "msh":
+        convert_stl_to_msh(args.input, args.output)
+    elif input_extension == "stl" and output_extension == "obj":
+        convert_stl_to_obj(args.input, args.output)
+    elif input_extension == "stl" and output_extension == "vtk":
+        stl_to_vtk(args.input, args.output)
+    else:
+        print(f"Conversion from {input_extension} to {output_extension} is not supported.")
+
+# Uncomment the following line to run the program
+if __name__ == "__main__":
+    main()
+
+
+
+
