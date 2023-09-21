@@ -1,13 +1,26 @@
+import argparse
 import pyvista as pv
 
-# 1. Load the VTK file
-mesh = pv.read('data/mesh/output_tetrahedral.vtk')
+def main():
+    # Define the command line arguments using argparse
+    parser = argparse.ArgumentParser(description="Visualize 3D files.")
+    parser.add_argument("-i", "--input", required=True, help="Path to the input file.")
 
-# 2. Create a plotter object
-plotter = pv.Plotter()
+    # Parse the arguments
+    args = parser.parse_args()
 
-# 3. Add the mesh to the plotter
-plotter.add_mesh(mesh)
+    # Load the VTK file
+    mesh = pv.read(args.input)
 
-# 4. Display the plot
-plotter.show()
+    # Create a plotter object
+    plotter = pv.Plotter()
+
+    # Add the mesh to the plotter
+    plotter.add_mesh(mesh)
+
+    # Display the plot
+    plotter.show()
+
+if __name__ == "__main__":
+    main()
+

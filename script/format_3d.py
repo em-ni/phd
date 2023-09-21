@@ -23,6 +23,8 @@ import argparse
 import gmsh
 import trimesh
 import vtk
+import pyvista as pv
+import meshio
 
 def convert_stl_to_msh(stl_file_path, msh_file_path):
     # Start gmsh
@@ -60,6 +62,8 @@ def convert_stl_to_obj(stl_path, obj_path):
 
 # Better using gmsh software (open terminal type "gmsh")
 def stl_to_vtk(stl_filename, vtk_filename):
+
+    ## Using vtk
     # Read STL
     reader = vtk.vtkSTLReader()
     reader.SetFileName(stl_filename)
@@ -69,6 +73,21 @@ def stl_to_vtk(stl_filename, vtk_filename):
     writer.SetFileName(vtk_filename)
     writer.SetInputConnection(reader.GetOutputPort())
     writer.Write()
+
+    ## Using pyvista
+    # Read STL
+    #mesh = pv.read(stl_filename)
+
+    # Write VTK
+    #mesh.save(vtk_filename)
+
+    ## Using meshio
+    # Read STL
+    #mesh = meshio.read(stl_filename)
+
+    # Write VTK
+    #meshio.write(vtk_filename, mesh)
+    
 
 # Example usage:
 # stl_to_vtk("input.stl", "output.vtk")

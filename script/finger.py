@@ -1,4 +1,4 @@
-# runSofa -l /home/emanuele/Desktop/github/sim/sofa/build/v22.12/lib/libSofaPython3.so ./main.py 
+# runSofa -l /home/emanuele/Desktop/github/sim/sofa/build/v22.12/lib/libSofaPython3.so ./finger.py 
 
 import Sofa
 from pressureController import PressureController
@@ -68,7 +68,7 @@ def createScene(rootNode):
     finger = rootNode.addChild('finger')
     finger.addObject('EulerImplicitSolver', name='odesolver', rayleighStiffness=0.1, rayleighMass=0.1)
     finger.addObject('SparseLDLSolver', name='preconditioner')
-    finger.addObject('MeshVTKLoader', name='loader', filename='data/mesh/pneunetCutCoarse.vtk', rotation=[360, 0, 0], translation=translateFinger)
+    finger.addObject('MeshVTKLoader', name='loader', filename='data/mesh/finger/pneunetCutCoarse.vtk', rotation=[360, 0, 0], translation=translateFinger)
     finger.addObject('MeshTopology', src='@loader', name='container')
     finger.addObject('MechanicalObject', name='tetras', template='Vec3', showIndices=False, showIndicesScale=4e-5)
     finger.addObject('UniformMass', totalMass=0.04)
@@ -81,7 +81,7 @@ def createScene(rootNode):
     # Sub topology	
     modelSubTopo = finger.addChild('modelSubTopo')
     modelSubTopo.addObject('TetrahedronSetTopologyContainer', position='@loader.position', tetrahedra='@boxROISubTopo.tetrahedraInROI', name='container')
-    modelSubTopo.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerFingers - youngModulusFingers) # MUST BE TETRAEDRIC MESH
+    modelSubTopo.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerFingers - youngModulusFingers)
 
     # Constraint
     cavity = finger.addChild('cavity')
@@ -93,7 +93,7 @@ def createScene(rootNode):
 
     # Collision
     collisionFinger = finger.addChild('collisionFinger')
-    collisionFinger.addObject('MeshSTLLoader', name='loader', filename='data/mesh/pneunetCut.stl', translation=translateFinger, rotation=[360, 0, 0])
+    collisionFinger.addObject('MeshSTLLoader', name='loader', filename='data/mesh/finger/pneunetCut.stl', translation=translateFinger, rotation=[360, 0, 0])
     collisionFinger.addObject('MeshTopology', src='@loader', name='topo')
     collisionFinger.addObject('MechanicalObject', name='collisMech')
     collisionFinger.addObject('TriangleCollisionModel', selfCollision=False)
@@ -103,7 +103,7 @@ def createScene(rootNode):
 
     # Visualization	
     modelVisu = finger.addChild('visu')
-    modelVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/pneunetCut.stl')
+    modelVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/finger/pneunetCut.stl')
     modelVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6], translation=translateFinger, rotation=[360, 0, 0])
     modelVisu.addObject('BarycentricMapping')
 

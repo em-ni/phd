@@ -9,7 +9,7 @@ youngModulusCatheters = 500
 youngModulusStiffLayerCatheters = 1500
 
 translationCatheter = [-120, 25, 0]
-anglesCathter = [0, 90, 0]
+anglesCathter = [0, 0, 0]
 
 def createScene(rootNode):
     rootNode.addObject('VisualStyle', displayFlags='showVisualModels hideBehaviorModels hideCollisionModels hideBoundingCollisionModels hideForceFields showInteractionForceFields hideWireframe')
@@ -44,7 +44,7 @@ def createScene(rootNode):
     cube = rootNode.addChild('cube')
     cube.addObject('EulerImplicitSolver', name='odesolver')
     cube.addObject('SparseLDLSolver', name='linearSolver')
-    cube.addObject('MechanicalObject', template='Rigid3', position=[-100, 70, 0, 0, 0, 0, 1])
+    cube.addObject('MechanicalObject', template='Rigid3', position=[-100, 25, 40, 0, 0, 0, 1])
     cube.addObject('UniformMass', totalMass=0.001)
     cube.addObject('UncoupledConstraintCorrection')
 
@@ -69,20 +69,20 @@ def createScene(rootNode):
     catheter = rootNode.addChild('catheter')
     catheter.addObject('EulerImplicitSolver', name='odesolver', rayleighStiffness=0.1, rayleighMass=0.1)
     catheter.addObject('SparseLDLSolver', name='preconditioner')
-    catheter.addObject('MeshVTKLoader', name='loader', filename='data/mesh/full_cylinder.vtk', scale=20, translation=translationCatheter, rotation=anglesCathter) # MUST BE TETRAEDRIC MESH
+    catheter.addObject('MeshVTKLoader', name='loader', filename='data/mesh/cylinder_with_cavity.vtk', scale=20, translation=translationCatheter, rotation=anglesCathter)
     catheter.addObject('MeshTopology', src='@loader', name='container')
     catheter.addObject('MechanicalObject', name='tetras', template='Vec3', showIndices=False, showIndicesScale=4e-5)
     catheter.addObject('UniformMass', totalMass=0.04)
     catheter.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusCatheters)
-    catheter.addObject('BoxROI', name='boxROI', box=[22, 15, -10, 42, 35, 10], doUpdate=False, drawBoxes=True)
-    catheter.addObject('BoxROI', name='boxROISubTopo', box=[-100, 22.5, -8, -19, 28, 8], strict=False, drawBoxes=True)
+    catheter.addObject('BoxROI', name='boxROI', box=[80, 15, -10, 42, 35, 10], doUpdate=False, drawBoxes=True)
+    catheter.addObject('BoxROI', name='boxROISubTopo', box=[-80, 22.5, 0, 40, 28, 8], strict=False, drawBoxes=True)
     catheter.addObject('RestShapeSpringsForceField', points='@boxROI.indices', stiffness=1e12, angularStiffness=1e12)
     catheter.addObject('LinearSolverConstraintCorrection')
 
     # Sub topology
     modelSubTopo = catheter.addChild('modelSubTopo')
     modelSubTopo.addObject('TetrahedronSetTopologyContainer', position='@loader.position', tetrahedra='@boxROISubTopo.tetrahedraInROI', name='container')
-    modelSubTopo.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerCatheters - youngModulusCatheters) # MUST BE TETRAEDRIC MESH
+    modelSubTopo.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerCatheters - youngModulusCatheters)
 
     # Constraint
     cavity = catheter.addChild('cavity')
@@ -94,7 +94,7 @@ def createScene(rootNode):
 
     # Collision	
     collisionCatheter = catheter.addChild('collisionCatheter')
-    collisionCatheter.addObject('MeshSTLLoader', name='loader', filename='data/mesh/body.STL', translation=translationCatheter, rotation=anglesCathter)
+    collisionCatheter.addObject('MeshSTLLoader', name='loader', filename='data/mesh/cylinder_with_cavity.stl', translation=translationCatheter, rotation=anglesCathter)
     collisionCatheter.addObject('MeshTopology', src='@loader', name='topo')
     collisionCatheter.addObject('MechanicalObject', name='collisMech')
     collisionCatheter.addObject('TriangleCollisionModel', selfCollision=False)
@@ -104,7 +104,7 @@ def createScene(rootNode):
 
     # Visualization	
     modelVisu = catheter.addChild('visu')
-    modelVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/body.STL')
+    modelVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/cylinder_with_cavity.stl')
     modelVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6])
     modelVisu.addObject('BarycentricMapping')
     
