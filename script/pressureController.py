@@ -46,41 +46,24 @@ class PressureController(Sofa.Core.Controller):
         #print("onKeypressedEvent") 
         key = event['key']
         increment = 0.01           
-
         
         if ord(key) == 19:  # up
             print("You pressed the Up key")
-            #esults = moveRestPos(self.root_node.getChild('finger1').tetras.position.value , 3.0, 0.0, 0.0)
-            #print(results)
-            #self.dofs.rest_position.value = results
-            
-            """             cube_translation = self.root_node.getChild('cube').getChild('cubeVisu').cube_loader.translation.value
-            print("Before increment", cube_translation)
-            # list all attributes of the object
-            print(dir(self.root_node.getChild('cube').getChild('cubeVisu').cube_loader))
-            # Move the cube up of an increment
-            increment = 100
+            pressureValue = self.constraints[0].value.value[0] + increment
+            if pressureValue > 1.5:
+                pressureValue = 1.5
+            self.constraints[0].value = [pressureValue]
 
-            # Update the position of the cube (READ ONLY :( )
-            self.root_node.getChild('cube').getChild('cubeVisu').cube_loader.translation.value = cube_translation + [increment, 0, 0]
-
-            cube_translation = self.root_node.getChild('cube').getChild('cubeVisu').cube_loader.translation.value
-            print("After increment", cube_translation) """
-
-            for i in range(1):
-                pressureValue = self.constraints[i].value.value[0] + increment
-                if pressureValue > 1.5:
-                    pressureValue = 1.5
-                self.constraints[i].value = [pressureValue]
-
-
-
-            print("done")
+            print("Pressure value: " + str(self.constraints[0].value.value[0]))
 
         if ord(key) == 21:  # down
             print("You pressed the Down key")
-            results = moveRestPos(self.dofs.rest_position.value, -3.0, 0.0, 0.0)
-            self.dofs.rest_position.value = results
+            pressureValue = self.constraints[0].value.value[0] - increment
+            if pressureValue < 0.0:
+                pressureValue = 0.0
+            self.constraints[0].value = [pressureValue]
+
+            print("Pressure value: " + str(self.constraints[0].value.value[0]))
 
         if ord(key) == 18:  # left
             print("You pressed the Left key")

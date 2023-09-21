@@ -9,7 +9,7 @@ youngModulusCatheters = 500
 youngModulusStiffLayerCatheters = 1500
 
 translationCatheter = [-120, 25, 0]
-anglesCathter = [0, 0, 0]
+anglesCathter = [0, 90, 0]
 
 def createScene(rootNode):
     rootNode.addObject('VisualStyle', displayFlags='showVisualModels hideBehaviorModels hideCollisionModels hideBoundingCollisionModels hideForceFields showInteractionForceFields hideWireframe')
@@ -32,7 +32,7 @@ def createScene(rootNode):
 
     # Add floor
     planeNode = rootNode.addChild('Plane')
-    planeNode.addObject('MeshOBJLoader', name='plane_loader', filename='data/mesh/floorFlat.obj', triangulate=True, rotation=[0, 0, 270], scale=10, translation=[-122, 0, 0])
+    planeNode.addObject('MeshOBJLoader', name='plane_loader', filename='data/mesh/floorFlat.obj', triangulate=True, rotation=[0, 0, 270], scale=10, translation=[-130, 0, 0])
     planeNode.addObject('MeshTopology', src='@plane_loader')
     planeNode.addObject('MechanicalObject', src='@plane_loader')
     planeNode.addObject('TriangleCollisionModel', simulated=False, moving=False)
@@ -86,15 +86,25 @@ def createScene(rootNode):
 
     # Constraint
     cavity = catheter.addChild('cavity')
-    cavity.addObject('MeshSTLLoader', name='loader', filename='data/mesh/tube.STL', translation=translationCatheter, rotation=anglesCathter)
+    cavity.addObject('MeshSTLLoader', name='loader', filename='data/mesh/cavity.stl', scale=20, translation=translationCatheter, rotation=anglesCathter)
     cavity.addObject('MeshTopology', src='@loader', name='topo')
     cavity.addObject('MechanicalObject', name='cavity')
     cavity.addObject('SurfacePressureConstraint', name='SurfacePressureConstraint', template='Vec3', value=0.0001, triangles='@topo.triangles', valueType='pressure')
     cavity.addObject('BarycentricMapping', name='mapping', mapForces=False, mapMasses=False)
 
+
+    """ # Constraint
+    cavity = catheter.addChild('cavity')
+    translateFinger = [0, 25, -30]
+    cavity.addObject('MeshSTLLoader', name='loader', filename='data/mesh/finger/pneunetCavityCut.stl', translation=translateFinger, rotation=[90, 0, 0])
+    cavity.addObject('MeshTopology', src='@loader', name='topo')
+    cavity.addObject('MechanicalObject', name='cavity')
+    cavity.addObject('SurfacePressureConstraint', name='SurfacePressureConstraint', template='Vec3', value=0.0001, triangles='@topo.triangles', valueType='pressure')
+    cavity.addObject('BarycentricMapping', name='mapping', mapForces=False, mapMasses=False) """
+
     # Collision	
     collisionCatheter = catheter.addChild('collisionCatheter')
-    collisionCatheter.addObject('MeshSTLLoader', name='loader', filename='data/mesh/cylinder_with_cavity.stl', translation=translationCatheter, rotation=anglesCathter)
+    collisionCatheter.addObject('MeshSTLLoader', name='loader', filename='data/mesh/cylinder_with_cavity.stl', scale=20, translation=translationCatheter, rotation=anglesCathter)
     collisionCatheter.addObject('MeshTopology', src='@loader', name='topo')
     collisionCatheter.addObject('MechanicalObject', name='collisMech')
     collisionCatheter.addObject('TriangleCollisionModel', selfCollision=False)
@@ -104,7 +114,7 @@ def createScene(rootNode):
 
     # Visualization	
     modelVisu = catheter.addChild('visu')
-    modelVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/cylinder_with_cavity.stl')
+    modelVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/cylinder_with_cavity.stl', scale = 20, translation=translationCatheter, rotation=anglesCathter)
     modelVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6])
     modelVisu.addObject('BarycentricMapping')
     
