@@ -118,5 +118,5 @@ def createScene(rootNode):
     modelVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6])
     modelVisu.addObject('BarycentricMapping')
     
-    rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="catheter") )
+    rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="catheter", real_time=True) )
     print("\nadded PressureController\n")

@@ -3,6 +3,8 @@
 import Sofa
 import Sofa.Core
 from Sofa.constants import *
+import threading
+
 
 def moveRestPos(rest_pos, dx, dy, dz):
     out = []
@@ -17,11 +19,17 @@ class PressureController(Sofa.Core.Controller):
         Sofa.Core.Controller.__init__(self, *a, **kw)
         self.root_node = kw['node']
         self.device_name = kw['device_name']
+        self.real_time = kw['real_time']
         self.constraints = []
         self.dofs = []
         
         self.dofs.append(self.root_node.getChild(self.device_name).tetras)
         self.constraints.append(self.root_node.getChild(self.device_name).cavity.SurfacePressureConstraint)
+
+        if self.real_time:
+            thread = threading.Thread(target=self.readArduino)
+            thread.start()
+
         
     # Default BaseObject functions********************************
     def init(self):
@@ -129,8 +137,48 @@ class PressureController(Sofa.Core.Controller):
             print("down arrow pressed")
             results = moveRestPos(self.dofs.rest_position.value, -3.0, 0.0, 0.0)
             self.dofs.rest_position.value = results """
+        
+    def readArduino(self):
+        import serial
+        import re
 
-def createScene(root):
+        # Set up the serial connection
+        arduino = serial.Serial('/dev/ttyACM0', 9600) 
+
+        try:
+            while True:
+                # Read a line from the serial port
+                line = arduino.readline().decode('utf-8').strip()
+                print(line)
+                
+                # Extract the pressure value using regex
+                match = re.search(r'Pressure from A0: (\d+\.\d+) MPa', line)
+                if match:
+                    pressure_value = float(match.group(1))
+                    #print(pressure_value)
+
+                    if pressure_value < 0.0:
+                        pressure_value = 0.0
+
+                    if pressure_value > 2:
+                        pressure_value = 2
+                    
+                    # Set the pressure value
+                    self.constraints[0].value = [pressure_value]
+                    #print("Pressure value: " + str(self.constraints[0].value.value[0]))
+
+        except KeyboardInterrupt:
+            # Close the serial connection when you terminate the script
+            arduino.close()
+            print("Serial connection closed.")
+
+
+
+
+
+
+
+""" def createScene(root):
     root.dt = 0.01
     root.addObject('DefaultVisualManagerLoop')
     root.addObject('DefaultAnimationLoop')
@@ -157,3 +205,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+ """
