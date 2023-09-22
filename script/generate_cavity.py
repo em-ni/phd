@@ -29,9 +29,9 @@ def save_gmsh_model(filename):
 if __name__ == "__main__":
     x = 0.2
     y = 0
-    z = 2
+    z = 0.1
     radius = 0.15
-    height = 6
+    height = 5
 
     # Set mesh_size to a desired value. Smaller values will produce a finer mesh.
     mesh_size = 0.1

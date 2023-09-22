@@ -34,10 +34,10 @@ def save_gmsh_model(filename):
 
 if __name__ == "__main__":
     outer_radius = 0.4
-    height = 10
-    cavity_height = 6
+    height = 7
+    cavity_height = 5
     cavity_radius = 0.15
-    cavity_position = 2
+    cavity_position = 0.1
     cavity_offset = 0.2
 
     # Set mesh_size to a desired value. Smaller values will produce a finer mesh.

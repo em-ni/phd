@@ -74,8 +74,8 @@ def createScene(rootNode):
     catheter.addObject('MechanicalObject', name='tetras', template='Vec3', showIndices=False, showIndicesScale=4e-5)
     catheter.addObject('UniformMass', totalMass=0.04)
     catheter.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusCatheters)
-    catheter.addObject('BoxROI', name='boxROI', box=[80, 15, -10, 42, 35, 10], doUpdate=False, drawBoxes=True)
-    catheter.addObject('BoxROI', name='boxROISubTopo', box=[-80, 22.5, 0, 40, 28, 8], strict=False, drawBoxes=True)
+    catheter.addObject('BoxROI', name='boxROI', box=[20, 15, -10, -18, 35, 10], doUpdate=False, drawBoxes=True)
+    catheter.addObject('BoxROI', name='boxROISubTopo', box=[-118, 22.5, 0, -18, 28, 8], strict=False, drawBoxes=True)
     catheter.addObject('RestShapeSpringsForceField', points='@boxROI.indices', stiffness=1e12, angularStiffness=1e12)
     catheter.addObject('LinearSolverConstraintCorrection')
 
