@@ -22,14 +22,24 @@ class MyApp(ShowBase):
         ShowBase.__init__(self)
 
         # Define path of the .vtp file
-        self.path = "data/mesh/vascularmodel/0023_H_AO_MFS/sim/path.vtp"
+        self.path = "data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/path.vtp"
 
         # Check the view mode
         self.view_mode = args.view
         if self.view_mode == 'fp':
 
             # Load the negative model to visualize the internal part
-            self.model = "data/mesh/vascularmodel/0023_H_AO_MFS/sim/0023_negative.obj"
+            """
+            To create the negative solid using FreeCAD:
+            - oper the part menu
+            - create a sphere that can contain the model
+            - import the .obj file of the model
+            - create shape from mesh for the imported model
+            - make solid from the created shape
+            - usel boolean difference between the sphere and the solid
+            - export the boolean cut as .obj
+            """
+            self.model = "data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/0063_negative.obj"
 
             print("First Person View Mode Selected")
             # Load the phantom model
@@ -61,7 +71,7 @@ class MyApp(ShowBase):
             print("Third Person View Mode Selected")
 
             # Load the standard model to visualize the external part
-            self.model = "data/mesh/vascularmodel/0023_H_AO_MFS/sim/0023.obj"
+            self.model = "data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/0063.obj"
 
             # Load the phantom model
             self.scene = self.loader.loadModel(self.model)
@@ -143,6 +153,7 @@ class MyApp(ShowBase):
         # Compute line length   
         self.line_length = self.curvilinear_abscissa(self.end_point)
         print("Line length: ", self.line_length)
+
     
     ## LINE UTILS
     def curvilinear_abscissa(self, point):

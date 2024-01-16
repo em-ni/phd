@@ -1,6 +1,7 @@
 import pyvista as pv
 import numpy as np
 from scipy.interpolate import CubicSpline
+from scipy.interpolate import interp1d
 
 def smooth_vectors(vectors, window_size=10, passes=1):
     """ Apply a simple smoothing filter to vectors multiple times. """
@@ -20,8 +21,49 @@ def smooth_vectors(vectors, window_size=10, passes=1):
 
     return smoothed_vectors
 
+def preprocess_points(points, epsilon=1e-6):
+    """
+    Preprocess the points by removing duplicates or points that are too close to each other.
+    :param points: np.array of points
+    :param epsilon: Minimum distance between points
+    :return: np.array of preprocessed points
+    """
+    unique_points = [points[0]]
+    for point in points[1:]:
+        if np.linalg.norm(point - unique_points[-1]) > epsilon:
+            unique_points.append(point)
+    return np.array(unique_points)
+
+def interpolate_line(points, num_points=None):
+    """
+    Robustly interpolate a line through 3D points.
+    :param points: np.array of 3D points
+    :param num_points: Number of points in the interpolated line
+    :return: np.array of interpolated points
+    """
+    try:
+        points = preprocess_points(np.array(points))
+        if num_points is None:
+            num_points = len(points) * 2  # Default to double the input points
+
+        # Compute the cumulative distance along the line
+        distance = np.cumsum(np.r_[0, np.linalg.norm(np.diff(points, axis=0), axis=1)])
+        distance_normalized = distance / distance[-1]
+
+        # Interpolate for each dimension
+        interpolated_points = np.zeros((num_points, 3))
+        for i in range(3):
+            interpolator = interp1d(distance_normalized, points[:, i], kind='cubic')
+            interpolated_points[:, i] = interpolator(np.linspace(0, 1, num_points))
+
+        return interpolated_points
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
 
 
+"""
 def interpolate_line(points, num_points=None):
     points = np.array(points)
     # Use the number of original points if num_points is not specified
@@ -45,7 +87,7 @@ def interpolate_line(points, num_points=None):
                                      spline_z(interpolated_distance))).T
 
     return interpolated_points
-
+"""
 
 def compute_tangent_vectors(interpolated_points):
     # Compute tangent vectors using finite differences
@@ -116,7 +158,8 @@ def compute_binormal_vectors(tangents, normals):
 
 def draw_FS_frames(num_points=10, draw_tangent=True, draw_normal=True, draw_binormal=True):
     # Load the .vtp file
-    line_model = pv.read("data/mesh/vascularmodel/0023_H_AO_MFS/sim/path.vtp")
+    #line_model = pv.read("data/mesh/vascularmodel/0023_H_AO_MFS/sim/path.vtp")
+    line_model = pv.read("data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/path.vtp")
 
     # Interpolate the line for smoothing
     interpolated_points = interpolate_line(line_model.points)
