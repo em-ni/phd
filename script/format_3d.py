@@ -16,7 +16,31 @@ the mesh topology, node positions, and element connectivity.
 
 In both cases, when using Sofa, you would typically load these files into the framework using appropriate components or plugins 
 provided by Sofa. These components can interpret the data in the files and create the corresponding simulation objects with the 
-desired geometry and mesh. """ 
+desired geometry and mesh. 
+
+.vtk files: The VTK (Visualization Toolkit) file format is another commonly used format for representing 3D geometry and associated data. 
+It is widely used in scientific visualization and can store various types of data, including geometry, scalar and vector fields, and metadata. 
+VTK files can be used to represent surfaces, volumes, and unstructured grids. They are often used for visualization purposes, 
+as they can be easily read and processed by various visualization software and libraries.
+
+.vtp files: The VTP (VTK PolyData) file format is a specific type of VTK file that is used to represent polygonal data. 
+It stores information about vertices, polygons, and associated data such as scalar and vector fields. 
+VTP files are commonly used to represent surfaces and can be used for visualization, analysis, and simulation purposes.
+
+.vtu files: Part of the VTK (Visualization Toolkit) series, the .vtu file format specifically handles unstructured grid data. 
+Unlike regular, structured grids, unstructured grids comprise points and cells in irregular patterns, allowing for complex geometries and 
+adaptive meshing in simulations. These files store both the spatial points and the variously shaped cells (like tetrahedra or hexahedra) 
+connecting them. .vtu files can include scalar or vector data at each grid point or cell, which is crucial for visualizing and analyzing 
+results from fields like finite element analysis (FEA) and computational fluid dynamics (CFD). They are widely used for their flexibility 
+and compatibility with diverse scientific visualization and simulation software.
+
+.mdl files: The .mdl file format is not specific to any particular software or library, so its exact specifications may 
+vary depending on the context. In general, .mdl files are used to store models or definitions of objects or systems. 
+They can contain information about geometry, materials, textures, animations, and other properties. 
+The specific structure and content of .mdl files depend on the software or framework they are used with.
+
+
+""" 
 
 
 import argparse
@@ -25,6 +49,7 @@ import trimesh
 import vtk
 import pyvista as pv
 import meshio
+import os
 
 def convert_stl_to_msh(stl_file_path, msh_file_path):
     # Start gmsh
@@ -46,22 +71,42 @@ def convert_stl_to_msh(stl_file_path, msh_file_path):
     # Finalize gmsh
     gmsh.finalize()
 
-# Use function
-#convert_stl_to_msh('skull.stl', 'skull.msh')
+def convert_vtp_to_stl(vtp_path, stl_path):
+    # Read VTP using vtk
+    reader = vtk.vtkXMLPolyDataReader()
+    reader.SetFileName(vtp_path)
+    reader.Update()
+
+    # Write to STL
+    writer = vtk.vtkSTLWriter()
+    writer.SetFileName(stl_path)
+    writer.SetInputData(reader.GetOutput())
+    writer.Write()
+
+
+def convert_vtp_to_obj(vtp_path, obj_path):
+    temp_stl_path = "temp.stl"
+    convert_vtp_to_stl(vtp_path, temp_stl_path)
+
+    if os.path.exists(temp_stl_path) and os.path.getsize(temp_stl_path) > 0:
+        convert_stl_to_obj(temp_stl_path, obj_path)
+        os.remove(temp_stl_path) # Uncomment this line to delete the temp file after conversion
+    else:
+        print("Error: STL file was not created properly.")
 
 def convert_stl_to_obj(stl_path, obj_path):
-    # Load the STL file
-    mesh = trimesh.load(stl_path)
+    try:
+        # Load the STL file
+        mesh = trimesh.load(stl_path)
+        # Save as OBJ
+        mesh.export(obj_path)
+    except Exception as e:
+        print(f"Error occurred while converting STL to OBJ: {e}")
 
-    # Save as OBJ
-    mesh.export(obj_path)
 
-# Example usage:
-#convert_stl_to_obj("skull.stl", "skull.obj")
-#convert_stl_to_obj("data/mesh/1dof_catheter.STL", "data/mesh/1dof_catheter.obj")
 
 # Better using gmsh software (open terminal type "gmsh")
-def stl_to_vtk(stl_filename, vtk_filename):
+def convert_stl_to_vtk(stl_filename, vtk_filename):
 
     ## Using vtk
     # Read STL
@@ -86,12 +131,8 @@ def stl_to_vtk(stl_filename, vtk_filename):
     #mesh = meshio.read(stl_filename)
 
     # Write VTK
-    #meshio.write(vtk_filename, mesh)
-    
+    #meshio.write(vtk_filename, mesh)    
 
-# Example usage:
-# stl_to_vtk("input.stl", "output.vtk")
-#stl_to_vtk("data/mesh/1dof_catheter.stl", "data/mesh/1dof_catheter.vtk") 
 
 def main():
     # Define the command line arguments using argparse
@@ -112,7 +153,9 @@ def main():
     elif input_extension == "stl" and output_extension == "obj":
         convert_stl_to_obj(args.input, args.output)
     elif input_extension == "stl" and output_extension == "vtk":
-        stl_to_vtk(args.input, args.output)
+        convert_stl_to_vtk(args.input, args.output)
+    elif input_extension == "vtp" and output_extension == "obj":
+        convert_vtp_to_obj(args.input, args.output)
     else:
         print(f"Conversion from {input_extension} to {output_extension} is not supported.")
 
