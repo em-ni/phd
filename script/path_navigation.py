@@ -2,6 +2,7 @@ import argparse
 from direct.showbase.ShowBase import ShowBase
 from panda3d.core import *
 from direct.task import Task
+from direct.gui.DirectGui import DirectLabel
 import pyvista as pv
 from set_FS_frame import interpolate_line, compute_tangent_vectors, compute_normal_vectors, compute_binormal_vectors, compute_MRF
 import numpy as np
@@ -26,6 +27,22 @@ class MyApp(ShowBase):
 
         # Check the view mode
         self.view_mode = args.view
+
+        # Set background color
+        self.setBackgroundColor(0, 0.168627, 0.211765, 1.)
+
+        # Load arrow key icons with transparency
+        self.up_arrow = DirectLabel(image='data/icons/up_white.png', pos=(1.7, 0, -0.70), scale=0.05, relief=None)
+        self.down_arrow = DirectLabel(image='data/icons/down_white.png', pos=(1.7, 0, -0.85), scale=0.05, relief=None)
+
+        # Enable transparency for these icons
+        self.up_arrow.setTransparency(TransparencyAttrib.MDual)
+        self.down_arrow.setTransparency(TransparencyAttrib.MDual)
+
+        # Set antialiasing
+        self.render.setAntialias(AntialiasAttrib.MAuto)
+
+        # Load the model
         if self.view_mode == 'fp':
 
             # Load the negative model to visualize the internal part
@@ -45,7 +62,7 @@ class MyApp(ShowBase):
             # Load the phantom model
             self.scene = self.loader.loadModel(self.model)
             self.scene.reparentTo(self.render)
-            self.scene.setTransparency(TransparencyAttrib.MAlpha)
+            self.scene.setTransparency(TransparencyAttrib.MDual)
             self.scene.setColorScale(1, 1, 1, 1)  # Set transparency level
             self.scene.setTwoSided(True)
 
@@ -53,8 +70,8 @@ class MyApp(ShowBase):
             myMaterial = Material()
             myMaterial.setShininess(80)  # Higher shininess for more specular highlight
             myMaterial.setSpecular((0.9, 0.9, 0.9, 1))  # Brighter specular highlights
-            myMaterial.setAmbient((0.3, 0.3, 0.3, 1))  # Slightly brighter ambient color
-            myMaterial.setDiffuse((0.7, 0.7, 0.7, 1))  # Neutral diffuse color, adjust as needed
+            myMaterial.setAmbient((0.3, 0.3, 0.3, 1))   # Slightly brighter ambient color
+            myMaterial.setDiffuse((0.7, 0.2, 0.2, 1))   # Reddish diffuse color, adjust as needed
             self.scene.setMaterial(myMaterial, 1)
 
             # Add directional light (consider also using ambient light)
@@ -63,6 +80,13 @@ class MyApp(ShowBase):
             directionalLightNP = self.render.attachNewNode(directionalLight)
             directionalLightNP.setHpr(45, -45, 0)  # Adjust the light direction as needed
             self.render.setLight(directionalLightNP)
+
+            # Add ambient light
+            ambientLight = AmbientLight('ambientLight')
+            ambientLight.setColor((0.2, 0.2, 0.2, 1))
+            ambientLightNP = self.render.attachNewNode(ambientLight)
+            self.render.setLight(ambientLightNP)
+            
 
             # Store the directional light node as an instance variable for later updates
             self.directionalLightNP = directionalLightNP
@@ -77,9 +101,15 @@ class MyApp(ShowBase):
             self.scene = self.loader.loadModel(self.model)
             self.scene.reparentTo(self.render)
 
+            # Initialize timer for blinking
+            self.blink_timer = 0
+            self.blink_interval = 1  # in seconds
+            self.green_point_visible = True  # Initial visibility status
+
             # Set transparency level (0.5 for 50% transparency) to see the green point mmoving inside
-            self.scene.setTransparency(TransparencyAttrib.MAlpha)
-            self.scene.setColorScale(1, 1, 1, 0.5)        
+            self.scene.setTransparency(TransparencyAttrib.MDual)
+            self.scene.setColorScale(1, 1, 1, 0.5)
+
         
         # Load basic environment
         #self.scene = self.loader.loadModel("models/environment")
@@ -103,6 +133,9 @@ class MyApp(ShowBase):
         # Setup
         self.setup_line(points)
         self.draw_elements(points)
+
+        # Initially draw the path up to the first point
+        self.draw_path(self.interpolated_points, 0)
 
 
     ## SETUP METHODS
@@ -230,11 +263,30 @@ class MyApp(ShowBase):
         new_position = self.green_point + direction * step_size
         self.green_point = new_position
 
+        # Find the index of the closest point to the green point
+        distances = np.linalg.norm(self.interpolated_points - self.green_point, axis=1)
+        closest_index = np.argmin(distances)
+
+        # Redraw the path up to the green point
+        self.draw_path(self.interpolated_points, closest_index)
+
         # Update the visual representation
         self.draw_green_point()
 
+
     def update_key_map(self, controlName, controlState):
         self.keyMap[controlName] = controlState
+
+        if controlName == "green_point_forward":
+            if controlState:
+                self.highlight_arrow('up')
+            else:
+                self.unhighlight_arrow('up')
+        elif controlName == "green_point_backward":
+            if controlState:
+                self.highlight_arrow('down')
+            else:
+                self.unhighlight_arrow('down')
 
     def update_scene(self, task):
         dt = globalClock.getDt()
@@ -246,6 +298,17 @@ class MyApp(ShowBase):
         # Update the camera position and orientation
         if self.view_mode == 'fp':
             self.update_camera_to_green_point()
+
+        # Blinking logic
+        self.blink_timer += dt
+        if self.blink_timer >= self.blink_interval:
+            self.blink_timer = 0  # Reset timer
+            self.green_point_visible = not self.green_point_visible  # Toggle visibility
+            if self.green_point_node:
+                self.green_point_node.setTransparency(TransparencyAttrib.MDual)  # Enable transparency
+                self.green_point_node.setAlphaScale(1 if self.green_point_visible else 0.5)  # Set visibility
+
+        return Task.cont
 
         return Task.cont
 
@@ -341,7 +404,7 @@ class MyApp(ShowBase):
 
         # Create the green point visual
         green_point_visual = self.loader.loadModel("models/smiley")  # Ensure this is a valid model path
-        green_point_visual.setScale(0.1)  # Scale to appropriate size
+        green_point_visual.setScale(0.05)  # Scale to appropriate size
         green_point_visual.setColor(0, 1, 0, 1)  # Set color to green
         green_point_visual.setPos(LVector3f(*self.green_point))
 
@@ -350,17 +413,27 @@ class MyApp(ShowBase):
         green_point_visual.reparentTo(green_point_node)
         self.green_point_node = green_point_node
 
-    def draw_path(self, points):
+    def draw_path(self, points, up_to_index):
+        # Ensure the up_to_index is within bounds
+        if up_to_index >= len(points):
+            up_to_index = len(points) - 1
+
         # Create the line
         line = LineSegs()
-        line.setThickness(200.0)
-        line.setColor(1, 0, 0, 1)
+        line.setThickness(2.0)  # Set a reasonable thickness
+        line.setColor(1, 0, 0, 1)  # Red color
 
-        # Move to the first point
-        line.moveTo(points[0])
-        # Draw to the rest of the points
-        for point in points[1:]:
-            line.drawTo(point)
+        # Start drawing the line from the first point
+        first_point = LVector3f(points[0][0], points[0][1], points[0][2])
+        line.moveTo(first_point)
+
+        # Draw to the rest of the points up to the specified index
+        for i in range(1, up_to_index + 1):
+            next_point = LVector3f(points[i][0], points[i][1], points[i][2])
+            # Check for large jumps in the points and skip if necessary
+            if (next_point - first_point).length() < 1.0:  # Adjust this threshold as needed
+                line.drawTo(next_point)
+                first_point = next_point
 
         # Add the line to the scene
         line_node = line.create()
@@ -378,6 +451,19 @@ class MyApp(ShowBase):
         line.drawTo(end_point)
         line_node = line.create()
         self.render.attachNewNode(line_node)
+
+    def highlight_arrow(self, arrow):
+        rgb_color = (8/255, 232/255, 222/255, 1)
+        if arrow == 'up':
+            self.up_arrow['image_color'] = rgb_color
+        elif arrow == 'down':
+            self.down_arrow['image_color'] = rgb_color
+
+    def unhighlight_arrow(self, arrow):
+        if arrow == 'up':
+            self.up_arrow['image_color'] = (1, 1, 1, 1)  # Change back to normal color
+        elif arrow == 'down':
+            self.down_arrow['image_color'] = (1, 1, 1, 1)
 
 
 if __name__ == "__main__":
