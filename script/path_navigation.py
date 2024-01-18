@@ -42,6 +42,11 @@ class MyApp(ShowBase):
         # Set antialiasing
         self.render.setAntialias(AntialiasAttrib.MAuto)
 
+        # Initialize timer for blinking
+        self.blink_timer = 0
+        self.blink_interval = 1  # in seconds
+        self.green_point_visible = True  # Initial visibility status
+
         # Load the model
         if self.view_mode == 'fp':
 
@@ -100,11 +105,6 @@ class MyApp(ShowBase):
             # Load the phantom model
             self.scene = self.loader.loadModel(self.model)
             self.scene.reparentTo(self.render)
-
-            # Initialize timer for blinking
-            self.blink_timer = 0
-            self.blink_interval = 1  # in seconds
-            self.green_point_visible = True  # Initial visibility status
 
             # Set transparency level (0.5 for 50% transparency) to see the green point mmoving inside
             self.scene.setTransparency(TransparencyAttrib.MDual)
