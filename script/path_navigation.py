@@ -47,6 +47,29 @@ class MyApp(ShowBase):
         self.blink_interval = 1  # in seconds
         self.green_point_visible = True  # Initial visibility status
 
+        # Load basic environment
+        #self.scene = self.loader.loadModel("models/environment")
+        #self.scene.reparentTo(self.render)
+
+        # Set up key controls
+        self.setup_key_controls()
+
+        # Task for updating the scene
+        self.taskMgr.add(self.update_scene, "updateScene")
+
+        # Get centerline points from the .vtp    
+        points = self.get_vtp_line_points()
+
+        # print number of points
+        print("Number of points: ", len(points))
+        
+        # Temporarily draw the horizontal line
+        #points = [(0, 0, 3), (1, 0, 3), (2, 0, 3), (3, 0, 3), (4, 0, 3), (5, 0, 3), (6, 0, 3), (7, 0, 3), (8, 0, 3), (9, 0, 3), (10, 0, 3)]
+
+        # Setup
+        self.setup_line(points)
+        self.draw_elements(points)
+
         # Load the model
         if self.view_mode == 'fp':
 
@@ -96,6 +119,9 @@ class MyApp(ShowBase):
             # Store the directional light node as an instance variable for later updates
             self.directionalLightNP = directionalLightNP
 
+            # Adjust clipping planes
+            self.camLens.setNearFar(0.1, 100)  
+
         elif self.view_mode == 'tp':
             print("Third Person View Mode Selected")
 
@@ -110,38 +136,14 @@ class MyApp(ShowBase):
             self.scene.setTransparency(TransparencyAttrib.MDual)
             self.scene.setColorScale(1, 1, 1, 0.5)
 
-        
-        # Load basic environment
-        #self.scene = self.loader.loadModel("models/environment")
-        #self.scene.reparentTo(self.render)
-
-        # Set up key controls
-        self.setup_key_controls()
-
-        # Task for updating the scene
-        self.taskMgr.add(self.update_scene, "updateScene")
-
-        # Get centerline points from the .vtp    
-        points = self.get_vtp_line_points()
-
-        # print number of points
-        print("Number of points: ", len(points))
-        
-        # Temporarily draw the horizontal line
-        #points = [(0, 0, 3), (1, 0, 3), (2, 0, 3), (3, 0, 3), (4, 0, 3), (5, 0, 3), (6, 0, 3), (7, 0, 3), (8, 0, 3), (9, 0, 3), (10, 0, 3)]
-
-        # Setup
-        self.setup_line(points)
-        self.draw_elements(points)
-
-        # Initially draw the path up to the first point
-        self.draw_path(self.interpolated_points, 0)
+            # Initially draw the path up to the first point
+            self.draw_path(self.interpolated_points, 0)
 
 
     ## SETUP METHODS
     def draw_elements(self, points):
-        # Draw the line
-        #self.draw_path(points)
+        # Draw the planned trajectory
+        #self.draw_trajectory()
 
         # Draw some frames
         #self.draw_FS_frames(points, num_points=10, draw_tangent=True, draw_normal=True, draw_binormal=True)
@@ -230,6 +232,10 @@ class MyApp(ShowBase):
             cameraHpr = self.camera.getHpr()
             self.directionalLightNP.setHpr(cameraHpr)
 
+        # Adjust lighting to follow the camera
+        self.directionalLightNP.setPos(self.camera.getX(), self.camera.getY(), self.camera.getZ())
+
+
     def update_green_point_position(self, dt, forward=True):
         # Define the speed of movement along the line
         movement_speed = 1  # Adjust as needed
@@ -267,8 +273,9 @@ class MyApp(ShowBase):
         distances = np.linalg.norm(self.interpolated_points - self.green_point, axis=1)
         closest_index = np.argmin(distances)
 
-        # Redraw the path up to the green point
-        self.draw_path(self.interpolated_points, closest_index)
+        if self.view_mode == 'tp':
+            # Redraw the path up to the green point
+            self.draw_path(self.interpolated_points, closest_index)
 
         # Update the visual representation
         self.draw_green_point()
