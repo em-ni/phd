@@ -69,6 +69,7 @@ class MyApp(ShowBase):
         # Setup
         self.setup_line(points)
         self.draw_elements(points)
+        self.points = points
 
         # Load the model
         if self.view_mode == 'fp':
@@ -142,9 +143,6 @@ class MyApp(ShowBase):
 
     ## SETUP METHODS
     def draw_elements(self, points):
-        # Draw the planned trajectory
-        #self.draw_trajectory()
-
         # Draw some frames
         #self.draw_FS_frames(points, num_points=10, draw_tangent=True, draw_normal=True, draw_binormal=True)
 
@@ -238,7 +236,7 @@ class MyApp(ShowBase):
 
     def update_green_point_position(self, dt, forward=True):
         # Define the speed of movement along the line
-        movement_speed = 1  # Adjust as needed
+        movement_speed = 0.5  # Adjust as needed
 
         # Calculate distances from self.green_point to each point in self.interpolated_points
         distances = np.linalg.norm(self.interpolated_points - self.green_point, axis=1)
@@ -306,6 +304,9 @@ class MyApp(ShowBase):
         if self.view_mode == 'fp':
             self.update_camera_to_green_point()
 
+            # Update the trajectory
+            self.update_trajectory()        
+
         # Blinking logic
         self.blink_timer += dt
         if self.blink_timer >= self.blink_interval:
@@ -316,8 +317,10 @@ class MyApp(ShowBase):
                 self.green_point_node.setAlphaScale(1 if self.green_point_visible else 0.5)  # Set visibility
 
         return Task.cont
-
-        return Task.cont
+    
+    def update_trajectory(self):
+        # Draw the trajectory from the current green point position
+        self.draw_trajectory()
 
 
     ## DRAW METHODS
@@ -427,7 +430,7 @@ class MyApp(ShowBase):
 
         # Create the line
         line = LineSegs()
-        line.setThickness(2.0)  # Set a reasonable thickness
+        line.setThickness(5.0)  # Set a reasonable thickness
         line.setColor(1, 0, 0, 1)  # Red color
 
         # Start drawing the line from the first point
@@ -445,6 +448,36 @@ class MyApp(ShowBase):
         # Add the line to the scene
         line_node = line.create()
         self.render.attachNewNode(line_node)
+
+    def draw_trajectory(self):
+        # Check if the trajectory line node already exists and remove it
+        if hasattr(self, 'trajectory_line_node') and self.trajectory_line_node:
+            self.trajectory_line_node.removeNode()
+        
+        # Smooth a lot the line
+        points = self.points
+        points = interpolate_line(points, num_points=50)        
+            
+        # Create the line
+        line = LineSegs()
+        line.setThickness(5.0)
+        line.setColor(8/255, 232/255, 222/255, 1)  # Same color as the arrow button
+
+        # Start drawing the line from the green point
+        green_point = self.green_point
+        first_point = LVector3f(green_point[0], green_point[1], green_point[2])
+        line.moveTo(first_point)
+
+        # Draw to the rest of the points   
+        for i in range(1, len(points)):
+            next_point = LVector3f(points[i][0], points[i][1], points[i][2])
+            if (next_point - first_point).length() < 1.0:
+                line.drawTo(next_point)
+                first_point = next_point                
+
+        # Create the line node and attach it to the scene
+        line_node = line.create()
+        self.trajectory_line_node = self.render.attachNewNode(line_node)
 
     def draw_vector(self, start_point, direction, color):
         # Convert NumPy array to LVecBase3f
