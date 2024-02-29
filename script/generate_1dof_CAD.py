@@ -14,8 +14,11 @@ def create_cylinder_with_cavity(outer_radius, height, cavity_height, cavity_radi
     # Create the cavity
     cv = gmsh.model.occ.addCylinder(cavity_offset, 0, cavity_position,  0, 0, cavity_height,  cavity_radius)
     
+    cavity_volume = []
+    cavity_volume.append((3, cv))
+
     # Subtract the cavity from the outer cylinder
-    gmsh.model.occ.cut([(3, ov)], [(3, cv)])    
+    gmsh.model.occ.cut([(3, ov)], cavity_volume)    
 
     # Set the mesh size for all points in the model
     gmsh.option.setNumber("Mesh.CharacteristicLengthMin", mesh_size)
@@ -43,6 +46,13 @@ def create_cavity(x, y, z, radius, height, mesh_size):
     
     # Synchronize the model
     gmsh.model.occ.synchronize()
+    gmsh.model.mesh.generate(3)
+    filename = "data/mesh/1dof/cavity.stl"
+    gmsh.write(filename)
+    print(f"Cavity saved as {filename}")
+
+    # Remove the model
+    gmsh.model.remove()
 
 
 
@@ -85,7 +95,6 @@ if __name__ == "__main__":
     save_gmsh_model("data/mesh/1dof/cylinder_with_cavity.stl")
     save_gmsh_model("data/mesh/1dof/cylinder_with_cavity.step")
     save_gmsh_model("data/mesh/1dof/cylinder_with_cavity.vtk")
-    save_gmsh_model("data/mesh/1dof/cavity.stl")
 
     gmsh.finalize()
 
