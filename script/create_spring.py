@@ -17,6 +17,8 @@ gmsh.initialize()
 # Set the number of threads Gmsh should use for computations
 num_threads = 10  # Replace with the number of threads you want to use
 gmsh.option.setNumber("General.NumThreads", num_threads)
+gmsh.option.setNumber("Mesh.Algorithm3D", 1) # Delaunay-based tetrahedral mesh
+
 
 gmsh.model.add("spring")
 

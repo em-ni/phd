@@ -1,18 +1,27 @@
 # runSofa -l /home/emanuele/Desktop/github/sim/sofa/build/v22.12/lib/libSofaPython3.so ./main_1dof.py 
 
 import Sofa
-from pressureController import PressureController
+from utils.pressureController import PressureController
 import math
+from utils.functions import add_cube, add_floor
 
 real_time = False
 
+# Catheter parameters
 youngModulusCatheters = 500
 youngModulusStiffLayerCatheters = 1500
-
 translationCatheter = [-120, 25, 0]
 anglesCathter = [0, 90, 0]
 
+# Spring parameters
+youngModulusSpring = 500
+youngModulusStiffLayerSpring = 1500
+translationSpring = [-120, 25, 0]
+anglesSpring = [0, 90, 0]
+
 def createScene(rootNode):
+
+    ## SETUP
     rootNode.addObject('VisualStyle', displayFlags='showVisualModels hideBehaviorModels hideCollisionModels hideBoundingCollisionModels hideForceFields showInteractionForceFields hideWireframe')
     rootNode.addObject('RequiredPlugin', pluginName='SoftRobots SofaPython3')
     rootNode.gravity.value = [-9810, 0, 0]
@@ -30,42 +39,12 @@ def createScene(rootNode):
     # Background 
     rootNode.addObject('BackgroundSetting', color=[0, 0.168627, 0.211765, 1.])
     rootNode.addObject('OglSceneFrame', style='Arrows', alignment='TopRight')
+    
+    ## OBJECTS
+    #add_floor(rootNode, [-130, 0, 0], [0, 0, 270])
+    #add_cube(rootNode, [-100, 25, 40, 0, 0, 0, 1])
 
-    # Add floor
-    planeNode = rootNode.addChild('Plane')
-    planeNode.addObject('MeshOBJLoader', name='plane_loader', filename='data/mesh/floorFlat.obj', triangulate=True, rotation=[0, 0, 270], scale=10, translation=[-130, 0, 0])
-    planeNode.addObject('MeshTopology', src='@plane_loader')
-    planeNode.addObject('MechanicalObject', src='@plane_loader')
-    planeNode.addObject('TriangleCollisionModel', simulated=False, moving=False)
-    planeNode.addObject('LineCollisionModel', simulated=False, moving=False)
-    planeNode.addObject('PointCollisionModel', simulated=False, moving=False)
-    planeNode.addObject('OglModel', name='Visual_plane', src='@plane_loader', color=[1, 0, 0, 1])
-
-    # Add cube    
-    cube = rootNode.addChild('cube')
-    cube.addObject('EulerImplicitSolver', name='odesolver')
-    cube.addObject('SparseLDLSolver', name='linearSolver')
-    cube.addObject('MechanicalObject', template='Rigid3', position=[-100, 25, 40, 0, 0, 0, 1])
-    cube.addObject('UniformMass', totalMass=0.001)
-    cube.addObject('UncoupledConstraintCorrection')
-
-    # Cube collision
-    cubeScale = 5
-    cubeCollis = cube.addChild('cubeCollis')
-    cubeCollis.addObject('MeshOBJLoader', name='cube_loader', filename='data/mesh/smCube27.obj', triangulate=True, scale=cubeScale)
-    cubeCollis.addObject('MeshTopology', src='@cube_loader')
-    cubeCollis.addObject('MechanicalObject')
-    cubeCollis.addObject('TriangleCollisionModel')
-    cubeCollis.addObject('LineCollisionModel')
-    cubeCollis.addObject('PointCollisionModel')
-    cubeCollis.addObject('RigidMapping')
-
-    # Cube visualization
-    cubeVisu = cube.addChild('cubeVisu')
-    cubeVisu.addObject('MeshOBJLoader', name='cube_loader', filename='data/mesh/smCube27.obj')
-    cubeVisu.addObject('OglModel', name='Visual', src='@cube_loader', color=[0.0, 0.1, 0.5], scale=cubeScale)
-    cubeVisu.addObject('RigidMapping')
-
+    ## CATHETER
     # Catheter Model
     catheter = rootNode.addChild('catheter')
     catheter.addObject('EulerImplicitSolver', name='odesolver', rayleighStiffness=0.1, rayleighMass=0.1)
@@ -93,16 +72,6 @@ def createScene(rootNode):
     cavity.addObject('SurfacePressureConstraint', name='SurfacePressureConstraint', template='Vec3', value=0.0001, triangles='@topo.triangles', valueType='pressure')
     cavity.addObject('BarycentricMapping', name='mapping', mapForces=False, mapMasses=False)
 
-
-    """ # Constraint
-    cavity = catheter.addChild('cavity')
-    translateFinger = [0, 25, -30]
-    cavity.addObject('MeshSTLLoader', name='loader', filename='data/mesh/finger/pneunetCavityCut.stl', translation=translateFinger, rotation=[90, 0, 0])
-    cavity.addObject('MeshTopology', src='@loader', name='topo')
-    cavity.addObject('MechanicalObject', name='cavity')
-    cavity.addObject('SurfacePressureConstraint', name='SurfacePressureConstraint', template='Vec3', value=0.0001, triangles='@topo.triangles', valueType='pressure')
-    cavity.addObject('BarycentricMapping', name='mapping', mapForces=False, mapMasses=False) """
-
     # Collision	
     collisionCatheter = catheter.addChild('collisionCatheter')
     collisionCatheter.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/cylinder_with_cavity.stl', scale=20, translation=translationCatheter, rotation=anglesCathter)
@@ -118,6 +87,44 @@ def createScene(rootNode):
     modelVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/cylinder_with_cavity.stl', scale = 20, translation=translationCatheter, rotation=anglesCathter)
     modelVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6])
     modelVisu.addObject('BarycentricMapping')
+
+    ## SPRING
+    # Spring model
+    spring = rootNode.addChild('spring')
+    spring.addObject('EulerImplicitSolver', name='odesolver', rayleighStiffness=0.1, rayleighMass=0.1)
+    spring.addObject('SparseLDLSolver', name='preconditioner')
+    spring.addObject('MeshVTKLoader', name='loader', filename='data/mesh/1dof/spring.vtk', scale=10, translation=translationSpring, rotation=anglesSpring)
+    spring.addObject('MeshTopology', src='@loader', name='container')
+    spring.addObject('MechanicalObject', name='tetras', template='Vec3', showIndices=False, showIndicesScale=4e-5)
+    spring.addObject('UniformMass', totalMass=0.04)
+    spring.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusSpring)
+    spring.addObject('BoxROI', name='boxROI', box=[20, 15, -10, -18, 35, 10], doUpdate=False, drawBoxes=True)
+    spring.addObject('BoxROI', name='boxROISubTopo', box=[-118, 22.5, 0, -18, 28, 8], strict=False, drawBoxes=True)
+    spring.addObject('RestShapeSpringsForceField', points='@boxROI.indices', stiffness=1e12, angularStiffness=1e12)
+    spring.addObject('LinearSolverConstraintCorrection')
+
+    # Sub topology
+    #modelSubTopoSpring = spring.addChild('modelSubTopo')
+    #modelSubTopoSpring.addObject('TetrahedronSetTopologyContainer', position='@loader.position', tetrahedra='@boxROISubTopo.tetrahedraInROI', name='container')
+    #modelSubTopoSpring.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerSpring - youngModulusSpring)
+
+    # Collision
+    #collisionSpring = spring.addChild('collisionSpring')
+    #collisionSpring.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/spring.stl', scale=10, translation=translationSpring, rotation=anglesSpring)
+    #collisionSpring.addObject('MeshTopology', src='@loader', name='topo')
+    #collisionSpring.addObject('MechanicalObject', name='collisMech')
+    #collisionSpring.addObject('TriangleCollisionModel', selfCollision=False)
+    #collisionSpring.addObject('LineCollisionModel', selfCollision=False)
+    #collisionSpring.addObject('PointCollisionModel', selfCollision=False)
+    #collisionSpring.addObject('BarycentricMapping')
+
+    # Visualization
+    springVisu = spring.addChild('visu')
+    springVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/spring.stl', scale=10, translation=translationSpring, rotation=anglesSpring)
+    springVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6])
+    #springVisu.addObject('BarycentricMapping') # it slows down the loading by a lot, understand if it is necessary
+
+    
     
     rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="catheter", real_time=real_time) )
     print("\nadded PressureController\n")
