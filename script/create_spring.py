@@ -27,7 +27,7 @@ gmsh.model.add("spring")
 nturns = 20                  # spring_height / spring_pitch
 npts = 100                    # number of points to define the spline
 r = 1                        # spring_internal_radius
-h = 10                        # total height of the spring
+h = 12                        # total height of the spring
 disk_radius = 0.1            # radius of the disk to be extruded
 
 p = []
@@ -62,7 +62,7 @@ gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 20)
 
 # We can constraint the min and max element sizes to stay within reasonable
 # values (see `t10.py' for more details):
-gmsh.option.setNumber("Mesh.MeshSizeMin", 0.001)
+gmsh.option.setNumber("Mesh.MeshSizeMin", 0.01)
 gmsh.option.setNumber("Mesh.MeshSizeMax", 0.3)
 
 gmsh.model.mesh.generate(3)
