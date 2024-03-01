@@ -2,8 +2,9 @@
 
 import Sofa
 from utils.pressureController import PressureController
+from utils.contactListener import ContactListener
 import math
-from utils.functions import add_cube, add_floor, add_spring, add_catheter
+from utils.functions import add_cube, add_floor, add_spring, add_catheter, add_wall
 
 real_time = False
 
@@ -23,7 +24,8 @@ def createScene(rootNode):
 
     ## SETUP
     rootNode.addObject('VisualStyle', displayFlags='showVisualModels hideBehaviorModels hideCollisionModels hideBoundingCollisionModels hideForceFields showInteractionForceFields hideWireframe')
-    rootNode.addObject('RequiredPlugin', pluginName='SoftRobots SofaPython3')
+    plugin_names = 'SoftRobots SofaPython3 Sofa.Component.AnimationLoop Sofa.Component.Collision.Detection.Algorithm Sofa.Component.Collision.Detection.Intersection Sofa.Component.Collision.Geometry Sofa.Component.Collision.Response.Contact Sofa.Component.Constraint.Lagrangian.Correction Sofa.Component.Constraint.Lagrangian.Solver Sofa.Component.Engine.Select Sofa.Component.IO.Mesh Sofa.Component.LinearSolver.Direct Sofa.Component.Mapping.Linear Sofa.Component.Mass Sofa.Component.ODESolver.Backward Sofa.Component.Setting Sofa.Component.SolidMechanics.FEM.Elastic Sofa.Component.SolidMechanics.Spring Sofa.Component.StateContainer Sofa.Component.Topology.Container.Constant Sofa.Component.Topology.Container.Dynamic Sofa.Component.Visual Sofa.GL.Component.Rendering3D Sofa.GUI.Component'
+    rootNode.addObject('RequiredPlugin', pluginName=plugin_names)
     rootNode.gravity.value = [-9810, 0, 0]
     rootNode.addObject('AttachBodyButtonSetting', stiffness=10)
     rootNode.addObject('FreeMotionAnimationLoop')
@@ -39,10 +41,16 @@ def createScene(rootNode):
     # Background 
     rootNode.addObject('BackgroundSetting', color=[0, 0.168627, 0.211765, 1.])
     rootNode.addObject('OglSceneFrame', style='Arrows', alignment='TopRight')
+    print("\nDEBUG: setup done\n")
     
     # Objects
     #add_floor(rootNode, [-130, 0, 0], [0, 0, 270])
+    #add_floor(rootNode, [-130, 0, 30], [90, 0, 180])
     #add_cube(rootNode, [-100, 25, 40, 0, 0, 0, 1])
+    add_wall(rootNode, [150, 190, 40], [180, 90, 0])
+
+    # Get contact force between wall and catheter
+    rootNode.addObject( ContactListener(name="wallContactListener", node=rootNode, object_name="wall", collision_name="wallCollis") )
 
     ## Catheter
     add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCatheters, youngModulusStiffLayerCatheters)
@@ -52,4 +60,4 @@ def createScene(rootNode):
 
     # Pressure controller    
     rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="catheter", real_time=real_time) )
-    print("\nadded PressureController\n")
+    print("\nDEBUG: added PressureController\n")

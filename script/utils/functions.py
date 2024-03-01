@@ -1,4 +1,5 @@
 def add_cube(rootNode, position):
+        # Cube model
         cube = rootNode.addChild('cube')
         cube.addObject('EulerImplicitSolver', name='odesolver')
         cube.addObject('SparseLDLSolver', name='linearSolver')
@@ -7,6 +8,7 @@ def add_cube(rootNode, position):
         cube.addObject('UncoupledConstraintCorrection')
 
         cubeScale = 5
+        # Collision
         cubeCollis = cube.addChild('cubeCollis')
         cubeCollis.addObject('MeshOBJLoader', name='cube_loader', filename='data/mesh/smCube27.obj', triangulate=True, scale=cubeScale)
         cubeCollis.addObject('MeshTopology', src='@cube_loader')
@@ -16,13 +18,52 @@ def add_cube(rootNode, position):
         cubeCollis.addObject('PointCollisionModel')
         cubeCollis.addObject('RigidMapping')
 
+        # Visualization
         cubeVisu = cube.addChild('cubeVisu')
         cubeVisu.addObject('MeshOBJLoader', name='cube_loader', filename='data/mesh/smCube27.obj')
         cubeVisu.addObject('OglModel', name='Visual', src='@cube_loader', color=[0.0, 0.1, 0.5], scale=cubeScale)
         cubeVisu.addObject('RigidMapping')
 
+        # Constraint 
+        #cube.addObject('FixedConstraint', indices='0')
+
+        print("\nDEBUG: added cube\n")
+
+
+def add_wall(rootNode, translation, rotation    ):
+        # Wall model
+        wall = rootNode.addChild('wall')
+        wall.addObject('EulerImplicitSolver', name='odesolver')
+        wall.addObject('SparseLDLSolver', name='linearSolver')
+        wall.addObject('MechanicalObject', template='Rigid3', translation=translation, rotation=rotation)
+        wall.addObject('UniformMass', totalMass=100)
+        wall.addObject('UncoupledConstraintCorrection')
+
+        wallScale = 5
+        # Collision
+        wallCollis = wall.addChild('wallCollis')
+        wallCollis.addObject('MeshOBJLoader', name='wall_loader', filename='data/mesh/wall.obj', triangulate=True, scale=wallScale)
+        wallCollis.addObject('MeshTopology', src='@wall_loader')
+        wallCollis.addObject('MechanicalObject')
+        wallCollis.addObject('TriangleCollisionModel')
+        wallCollis.addObject('LineCollisionModel')
+        wallCollis.addObject('PointCollisionModel')
+        wallCollis.addObject('RigidMapping')
+
+        # Visualization
+        wallVisu = wall.addChild('wallVisu')
+        wallVisu.addObject('MeshOBJLoader', name='wall_loader', filename='data/mesh/wall.obj')
+        wallVisu.addObject('OglModel', name='Visual', src='@wall_loader', color=[0.0, 0.1, 0.5], scale=wallScale)
+        wallVisu.addObject('RigidMapping')
+
+        # Constraint 
+        wall.addObject('FixedConstraint', indices='0')
+
+        print("\nDEBUG: added wall\n")
+
 
 def add_floor(rootNode, translation, rotation):
+        # Floor model
         planeNode = rootNode.addChild('Plane')
         planeNode.addObject('MeshOBJLoader', name='plane_loader', filename='data/mesh/floorFlat.obj', triangulate=True, rotation=rotation, scale=10, translation=translation)
         planeNode.addObject('MeshTopology', src='@plane_loader')
@@ -31,6 +72,8 @@ def add_floor(rootNode, translation, rotation):
         planeNode.addObject('LineCollisionModel', simulated=False, moving=False)
         planeNode.addObject('PointCollisionModel', simulated=False, moving=False)
         planeNode.addObject('OglModel', name='Visual_plane', src='@plane_loader', color=[1, 0, 0, 1])
+
+        print("\nDEBUG: added floor\n")
 
 
 def add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, youngModulusStiffLayerSpring):
@@ -67,6 +110,8 @@ def add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, yo
         springVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/spring.stl', scale=10, translation=translationSpring, rotation=anglesSpring)
         springVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6])
         #springVisu.addObject('BarycentricMapping') # it slows down the loading by a lot, understand if it is necessary
+
+        print("\nDEBUG: added spring\n")
 
 
 def add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCatheters, youngModulusStiffLayerCatheters):
@@ -112,3 +157,5 @@ def add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCathe
         modelVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/cylinder_with_cavity.stl', scale = 20, translation=translationCatheter, rotation=anglesCathter)
         modelVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6])
         modelVisu.addObject('BarycentricMapping')
+
+        print("\nDEBUG: added catheter\n")

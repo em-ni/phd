@@ -62,8 +62,8 @@ gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 20)
 
 # We can constraint the min and max element sizes to stay within reasonable
 # values (see `t10.py' for more details):
-gmsh.option.setNumber("Mesh.MeshSizeMin", 0.01)
-gmsh.option.setNumber("Mesh.MeshSizeMax", 0.3)
+gmsh.option.setNumber("Mesh.MeshSizeMin", 0.1) # 0.001
+gmsh.option.setNumber("Mesh.MeshSizeMax", 0.1)
 
 gmsh.model.mesh.generate(3)
 gmsh.write("data/mesh/1dof/spring.step")
