@@ -8,6 +8,12 @@ Also remember to not build ROS in conda environment
    conda create --name sim python=3.10
    conda activate sim
 ~~~
+or better
+# Export environment
+conda env export > environment.yml
+
+# Import environment
+conda env create -f environment.yml
 
 ## Directories
 mkdir(s) as follows (Instructions are taken from [here](https://www.sofa-framework.org/community/doc/getting-started/build/linux/))
@@ -25,7 +31,7 @@ sofa/
 ## Configure and Build
 ~~~
 cd sofa
-cmake -S "./src/sofa/src" -B "./build/v22.12" -DSOFA_FETCH_SOFAPYTHON3=ON -DPLUGIN_SOFAPYTHON3=ON -DSOFA_EXTERNAL_DIRECTORIES=${HOME}/Desktop/github/sim/sofa/ext_plugin_repo -DPLUGIN_STLIB=ON -DPLUGIN_BEAMADAPTER=ON -DPLUGIN_COSSERAT=ON -DPLUGIN_COLLISIONOBBCAPSULE=ON -DPLUGIN_MODELORDERREDUCTION=ON -DPLUGIN_SOFTROBOTS=ON 
+cmake -S "./src/sofa/src" -B "./build/v22.12" -DSOFA_FETCH_SOFAPYTHON3=ON -DPLUGIN_SOFAPYTHON3=ON -DSOFA_EXTERNAL_DIRECTORIES=${HOME}/Desktop/github/sim/sofa/ext_plugin_repo -DPLUGIN_STLIB=ON -DPLUGIN_BEAMADAPTER=ON -DPLUGIN_COSSERAT=ON -DPLUGIN_COLLISIONOBBCAPSULE=ON -DPLUGIN_MODELORDERREDUCTION=ON -DPLUGIN_SOFTROBOTS=ON -DPLUGIN_SOFACUDA=ON -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++
 ~~~
 Be sure conda env is activated and build 
 ~~~
@@ -96,10 +102,3 @@ conda install -c conda-forge gcc
 # Setup environment
 1. If first time copy ./sofa.sh in ${HOME}/bin 
 2. source sofa.sh
-
-
-# Script
-Requirements:
-~~~
-pip install gmsh trimesh vtk
-~~~
