@@ -23,16 +23,17 @@ anglesSpring = [0, 90, 0]
 def createScene(rootNode):
 
     ## SETUP
-    rootNode.addObject('VisualStyle', displayFlags='showVisualModels hideBehaviorModels hideCollisionModels hideBoundingCollisionModels hideForceFields showInteractionForceFields hideWireframe')
-    plugin_names = 'SoftRobots SofaPython3 Sofa.Component.AnimationLoop Sofa.Component.Collision.Detection.Algorithm Sofa.Component.Collision.Detection.Intersection Sofa.Component.Collision.Geometry Sofa.Component.Collision.Response.Contact Sofa.Component.Constraint.Lagrangian.Correction Sofa.Component.Constraint.Lagrangian.Solver Sofa.Component.Engine.Select Sofa.Component.IO.Mesh Sofa.Component.LinearSolver.Direct Sofa.Component.Mapping.Linear Sofa.Component.Mass Sofa.Component.ODESolver.Backward Sofa.Component.Setting Sofa.Component.SolidMechanics.FEM.Elastic Sofa.Component.SolidMechanics.Spring Sofa.Component.StateContainer Sofa.Component.Topology.Container.Constant Sofa.Component.Topology.Container.Dynamic Sofa.Component.Visual Sofa.GL.Component.Rendering3D Sofa.GUI.Component'
+    rootNode.addObject('VisualStyle', displayFlags='showVisualModels hideBehaviorModels hideCollisionModels hideBoundingCollisionModels showForceFields showInteractionForceFields hideWireframe')
+    plugin_names = 'SoftRobots SofaPython3 Sofa.Component.MechanicalLoad Sofa.Component.Mapping.NonLinear Sofa.Component.Constraint.Projective Sofa.Component.AnimationLoop Sofa.Component.Collision.Detection.Algorithm Sofa.Component.Collision.Detection.Intersection Sofa.Component.Collision.Geometry Sofa.Component.Collision.Response.Contact Sofa.Component.Constraint.Lagrangian.Correction Sofa.Component.Constraint.Lagrangian.Solver Sofa.Component.Engine.Select Sofa.Component.IO.Mesh Sofa.Component.LinearSolver.Direct Sofa.Component.Mapping.Linear Sofa.Component.Mass Sofa.Component.ODESolver.Backward Sofa.Component.Setting Sofa.Component.SolidMechanics.FEM.Elastic Sofa.Component.SolidMechanics.Spring Sofa.Component.StateContainer Sofa.Component.Topology.Container.Constant Sofa.Component.Topology.Container.Dynamic Sofa.Component.Visual Sofa.GL.Component.Rendering3D Sofa.GUI.Component'
     rootNode.addObject('RequiredPlugin', pluginName=plugin_names)
     rootNode.gravity.value = [-9810, 0, 0]
     rootNode.addObject('AttachBodyButtonSetting', stiffness=10)
     rootNode.addObject('FreeMotionAnimationLoop')
-    rootNode.addObject('GenericConstraintSolver', tolerance=1e-12, maxIterations=10000)
-
+    rootNode.addObject('GenericConstraintSolver', tolerance=1e-12, maxIterations=10000, computeConstraintForces=True)
+    #rootNode.addObject('EulerImplicitSolver', name='odesolver', firstOrder=False, rayleighMass=0.1, rayleighStiffness=0.1)
+    
     # Add scene objects
-    rootNode.addObject('DefaultPipeline')
+    rootNode.addObject('DefaultPipeline', depth=15, verbose=0, draw=0)
     rootNode.addObject('BruteForceBroadPhase')
     rootNode.addObject('BVHNarrowPhase')
     rootNode.addObject('DefaultContactManager', response='FrictionContactConstraint', responseParams='mu=0.6')
@@ -47,10 +48,10 @@ def createScene(rootNode):
     #add_floor(rootNode, [-130, 0, 0], [0, 0, 270])
     #add_floor(rootNode, [-130, 0, 30], [90, 0, 180])
     #add_cube(rootNode, [-100, 25, 40, 0, 0, 0, 1])
-    add_wall(rootNode, [150, 190, 40], [180, 90, 0])
-
+    add_wall(rootNode, [150, 190, 30], [180, 90, 0])
+    
     # Get contact force between wall and catheter
-    rootNode.addObject( ContactListener(name="wallContactListener", node=rootNode, object_name="wall", collision_name="wallCollis") )
+    rootNode.addObject( ContactListener(name="wallContactListener", node=rootNode, object_name="wall", collision_name="wallCollis", debug=True) )
 
     ## Catheter
     add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCatheters, youngModulusStiffLayerCatheters)
@@ -59,5 +60,5 @@ def createScene(rootNode):
     #add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, youngModulusStiffLayerSpring)
 
     # Pressure controller    
-    rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="catheter", real_time=real_time) )
+    rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="catheter", real_time=real_time, debug=False) )
     print("\nDEBUG: added PressureController\n")

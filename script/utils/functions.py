@@ -53,7 +53,7 @@ def add_wall(rootNode, translation, rotation    ):
         # Visualization
         wallVisu = wall.addChild('wallVisu')
         wallVisu.addObject('MeshOBJLoader', name='wall_loader', filename='data/mesh/wall.obj')
-        wallVisu.addObject('OglModel', name='Visual', src='@wall_loader', color=[0.0, 0.1, 0.5], scale=wallScale)
+        wallVisu.addObject('OglModel', name='Visual', src='@wall_loader', color=[0.0, 0.1, 0.5, 0.5], scale=wallScale)
         wallVisu.addObject('RigidMapping')
 
         # Constraint 
@@ -115,11 +115,14 @@ def add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, yo
 
 
 def add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCatheters, youngModulusStiffLayerCatheters):
+        
+        cathScale = 20
+        
         # Catheter Model
         catheter = rootNode.addChild('catheter')
         catheter.addObject('EulerImplicitSolver', name='odesolver', rayleighStiffness=0.1, rayleighMass=0.1)
         catheter.addObject('SparseLDLSolver', name='preconditioner')
-        catheter.addObject('MeshVTKLoader', name='loader', filename='data/mesh/1dof/cylinder_with_cavity.vtk', scale=20, translation=translationCatheter, rotation=anglesCathter)
+        catheter.addObject('MeshVTKLoader', name='loader', filename='data/mesh/1dof/cylinder_with_cavity.vtk', scale=cathScale, translation=translationCatheter, rotation=anglesCathter)
         catheter.addObject('MeshTopology', src='@loader', name='container')
         catheter.addObject('MechanicalObject', name='tetras', template='Vec3', showIndices=False, showIndicesScale=4e-5)
         catheter.addObject('UniformMass', totalMass=0.04)
@@ -136,7 +139,7 @@ def add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCathe
 
         # Constraint
         cavity = catheter.addChild('cavity')
-        cavity.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/cavity.stl', scale=20, translation=translationCatheter, rotation=anglesCathter)
+        cavity.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/cavity.stl', scale=cathScale, translation=translationCatheter, rotation=anglesCathter)
         cavity.addObject('MeshTopology', src='@loader', name='topo')
         cavity.addObject('MechanicalObject', name='cavity')
         cavity.addObject('SurfacePressureConstraint', name='SurfacePressureConstraint', template='Vec3', value=0.0001, triangles='@topo.triangles', valueType='pressure')
@@ -144,7 +147,7 @@ def add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCathe
 
         # Collision	
         collisionCatheter = catheter.addChild('collisionCatheter')
-        collisionCatheter.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/cylinder_with_cavity.stl', scale=20, translation=translationCatheter, rotation=anglesCathter)
+        collisionCatheter.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/cylinder_with_cavity.stl', scale=cathScale, translation=translationCatheter, rotation=anglesCathter)
         collisionCatheter.addObject('MeshTopology', src='@loader', name='topo')
         collisionCatheter.addObject('MechanicalObject', name='collisMech')
         collisionCatheter.addObject('TriangleCollisionModel', selfCollision=False)
@@ -154,7 +157,7 @@ def add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCathe
 
         # Visualization	
         modelVisu = catheter.addChild('visu')
-        modelVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/cylinder_with_cavity.stl', scale = 20, translation=translationCatheter, rotation=anglesCathter)
+        modelVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/cylinder_with_cavity.stl', scale=cathScale, translation=translationCatheter, rotation=anglesCathter)
         modelVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6])
         modelVisu.addObject('BarycentricMapping')
 

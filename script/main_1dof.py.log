@@ -40,3 +40,6 @@
 
 /wall/wallCollis/MechanicalObject.showColor = 1 1 1 1
 /wall/wallCollis/TriangleCollisionModel-PointCollisionModel.time = 6.28
+
+--- NEW SESSION: 05/03/2024 14:34:19 ---
+/wall/wallCollis/MechanicalObject.showColor = 1 1 1 1
