@@ -6,7 +6,7 @@ gmsh.initialize()
 gmsh.model.add("wall")
 
 # Create a wall
-gmsh.model.occ.addBox(0, 0, 0, 2, 75, 75)
+gmsh.model.occ.addBox(0, 0, 0, 1, 75, 75)
 
 gmsh.model.occ.synchronize()
 

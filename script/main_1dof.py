@@ -26,12 +26,13 @@ def createScene(rootNode):
     rootNode.addObject('VisualStyle', displayFlags='showVisualModels hideBehaviorModels hideCollisionModels hideBoundingCollisionModels showForceFields showInteractionForceFields hideWireframe')
     plugin_names = 'SoftRobots SofaPython3 Sofa.Component.MechanicalLoad Sofa.Component.Mapping.NonLinear Sofa.Component.Constraint.Projective Sofa.Component.AnimationLoop Sofa.Component.Collision.Detection.Algorithm Sofa.Component.Collision.Detection.Intersection Sofa.Component.Collision.Geometry Sofa.Component.Collision.Response.Contact Sofa.Component.Constraint.Lagrangian.Correction Sofa.Component.Constraint.Lagrangian.Solver Sofa.Component.Engine.Select Sofa.Component.IO.Mesh Sofa.Component.LinearSolver.Direct Sofa.Component.Mapping.Linear Sofa.Component.Mass Sofa.Component.ODESolver.Backward Sofa.Component.Setting Sofa.Component.SolidMechanics.FEM.Elastic Sofa.Component.SolidMechanics.Spring Sofa.Component.StateContainer Sofa.Component.Topology.Container.Constant Sofa.Component.Topology.Container.Dynamic Sofa.Component.Visual Sofa.GL.Component.Rendering3D Sofa.GUI.Component'
     rootNode.addObject('RequiredPlugin', pluginName=plugin_names)
-    rootNode.gravity.value = [-9810, 0, 0]
+    #rootNode.gravity.value = [-9810, 0, 0]
+    rootNode.gravity.value = [0, 0, 0]
     rootNode.addObject('AttachBodyButtonSetting', stiffness=10)
     rootNode.addObject('FreeMotionAnimationLoop')
     rootNode.addObject('GenericConstraintSolver', tolerance=1e-12, maxIterations=10000, computeConstraintForces=True)
     #rootNode.addObject('EulerImplicitSolver', name='odesolver', firstOrder=False, rayleighMass=0.1, rayleighStiffness=0.1)
-    
+       
     # Add scene objects
     rootNode.addObject('DefaultPipeline', depth=15, verbose=0, draw=0)
     rootNode.addObject('BruteForceBroadPhase')
@@ -56,7 +57,7 @@ def createScene(rootNode):
     ## Catheter
     add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCatheters, youngModulusStiffLayerCatheters)
 
-    # Spring
+    # Spring (it slows down the sim too much)
     #add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, youngModulusStiffLayerSpring)
 
     # Pressure controller    

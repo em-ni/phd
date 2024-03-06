@@ -30,7 +30,7 @@ def add_cube(rootNode, position):
         print("\nDEBUG: added cube\n")
 
 
-def add_wall(rootNode, translation, rotation    ):
+def add_wall(rootNode, translation, rotation):
         # Wall model
         wall = rootNode.addChild('wall')
         wall.addObject('EulerImplicitSolver', name='odesolver')
@@ -103,13 +103,14 @@ def add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, yo
         collisionSpring.addObject('TriangleCollisionModel', selfCollision=False)
         collisionSpring.addObject('LineCollisionModel', selfCollision=False)
         collisionSpring.addObject('PointCollisionModel', selfCollision=False)
-        #collisionSpring.addObject('BarycentricMapping')
+        collisionSpring.addObject('BarycentricMapping')
 
         # Visualization
         springVisu = spring.addChild('visu')
         springVisu.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/spring.stl', scale=10, translation=translationSpring, rotation=anglesSpring)
         springVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6])
-        #springVisu.addObject('BarycentricMapping') # it slows down the loading by a lot, understand if it is necessary
+        springVisu.addObject('BarycentricMapping') # it slows down the loading by a lot, understand if it is necessary. It's necessary to avoid: [WARNING] [SparseLDLSolver(preconditioner)] Invalid Linear System to solve. Please insure that there is enough constraints (not rank deficient).
+
 
         print("\nDEBUG: added spring\n")
 
@@ -128,14 +129,15 @@ def add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCathe
         catheter.addObject('UniformMass', totalMass=0.04)
         catheter.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusCatheters)
         catheter.addObject('BoxROI', name='boxROI', box=[20, 15, -10, -18, 35, 10], doUpdate=False, drawBoxes=False)
-        catheter.addObject('BoxROI', name='boxROISubTopo', box=[-118, 22.5, 0, -18, 28, 8], strict=False, drawBoxes=False)
+        #catheter.addObject('BoxROI', name='boxROI', box=[5, -0.4, -0.4, 7, 0.4, 0.4], doUpdate=False, drawBoxes=True)
+        #catheter.addObject('BoxROI', name='boxROISubTopo', box=[-118, 22.5, 0, -18, 28, 8], strict=False, drawBoxes=False)
         catheter.addObject('RestShapeSpringsForceField', points='@boxROI.indices', stiffness=1e12, angularStiffness=1e12)
         catheter.addObject('LinearSolverConstraintCorrection')
 
         # Sub topology
-        modelSubTopo = catheter.addChild('modelSubTopo')
-        modelSubTopo.addObject('TetrahedronSetTopologyContainer', position='@loader.position', tetrahedra='@boxROISubTopo.tetrahedraInROI', name='container')
-        modelSubTopo.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerCatheters - youngModulusCatheters)
+        #modelSubTopo = catheter.addChild('modelSubTopo')
+        #modelSubTopo.addObject('TetrahedronSetTopologyContainer', position='@loader.position', tetrahedra='@boxROISubTopo.tetrahedraInROI', name='container')
+        #modelSubTopo.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerCatheters - youngModulusCatheters)
 
         # Constraint
         cavity = catheter.addChild('cavity')
