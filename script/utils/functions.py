@@ -44,7 +44,7 @@ def add_wall(rootNode, translation, rotation):
         wallCollis = wall.addChild('wallCollis')
         wallCollis.addObject('MeshOBJLoader', name='wall_loader', filename='data/mesh/wall.obj', triangulate=True, scale=wallScale)
         wallCollis.addObject('MeshTopology', src='@wall_loader')
-        wallCollis.addObject('MechanicalObject')
+        wallCollis.addObject('MechanicalObject', template='Vec3f')
         wallCollis.addObject('TriangleCollisionModel')
         wallCollis.addObject('LineCollisionModel')
         wallCollis.addObject('PointCollisionModel')

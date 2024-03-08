@@ -50,3 +50,12 @@ int main() {
 
     return 0;
 }
+
+// Compile with:
+// nvcc -o vector_add vector_add.cu
+
+// Specify g++ as the host compiler with:
+// nvcc -ccbin g++ -o vector_add vector_add.cu
+
+// Run with:
+// ./vector_add

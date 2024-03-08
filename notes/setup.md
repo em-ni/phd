@@ -31,7 +31,7 @@ sofa/
 ## Configure and Build
 ~~~
 cd sofa
-cmake -S "./src/sofa/src" -B "./build/v22.12" -DSOFA_FETCH_SOFAPYTHON3=ON -DPLUGIN_SOFAPYTHON3=ON -DSOFA_EXTERNAL_DIRECTORIES=${HOME}/Desktop/github/sim/sofa/ext_plugin_repo -DPLUGIN_STLIB=ON -DPLUGIN_BEAMADAPTER=ON -DPLUGIN_COSSERAT=ON -DPLUGIN_COLLISIONOBBCAPSULE=ON -DPLUGIN_MODELORDERREDUCTION=ON -DPLUGIN_SOFTROBOTS=ON -DPLUGIN_SOFACUDA=ON -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++
+cmake -S "./src/sofa/src" -B "./build/v22.12" -DSOFA_FETCH_SOFAPYTHON3=ON -DPLUGIN_SOFAPYTHON3=ON -DSOFA_EXTERNAL_DIRECTORIES=${HOME}/Desktop/github/sim/sofa/ext_plugin_repo -DPLUGIN_STLIB=ON -DPLUGIN_BEAMADAPTER=ON -DPLUGIN_COSSERAT=ON -DPLUGIN_COLLISIONOBBCAPSULE=ON -DPLUGIN_MODELORDERREDUCTION=ON -DPLUGIN_SOFTROBOTS=ON
 ~~~
 Be sure conda env is activated and build 
 ~~~
@@ -83,6 +83,12 @@ so if you want to rebuild after this command, use
 conda remove gcc
 ~~~
 or conda uninstall gcc and the build again. Once built, you can install gcc again.
+
+
+Building with SofaCUDA plugin requieres g++-10
+~~~
+cmake -S "./src/sofa/src" -B "./build/v22.12" -DSOFA_FETCH_SOFAPYTHON3=ON -DPLUGIN_SOFAPYTHON3=ON -DSOFA_EXTERNAL_DIRECTORIES=${HOME}/Desktop/github/sim/sofa/ext_plugin_repo -DPLUGIN_STLIB=ON -DPLUGIN_BEAMADAPTER=ON -DPLUGIN_COSSERAT=ON -DPLUGIN_COLLISIONOBBCAPSULE=ON -DPLUGIN_MODELORDERREDUCTION=ON -DPLUGIN_SOFTROBOTS=ON -DPLUGIN_SOFACUDA=ON -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-10 -DSOFACUDA_DOUBLE=ON -DSOFACUDA_PRECISE=ON -DSOFACUDA_DOUBLE_PRECISE=ON -DSOFACUDA_CUBLAS=ON -DSOFACUDA_CUDPP=ON -DSOFACUDA_THRUST=ON -DSOFACUDA_VERBOSE_PTXAS=ON -DPLUGIN_SOFADISTANCEGRID=ON -DPLUGIN_MULTITHREADING=ON -DCUDA_SPARSE_LIBRARY=/usr/local/cuda-12.0/targets/x86_64-linux/lib/libcusparse.so -DCMAKE_LIBRARY_PATH="/home/emanuele/anaconda3/envs/sofa/x86_64-conda-linux-gnu/sysroot/lib64;/home/emanuele/anaconda3/envs/sofa/x86_64-conda-linux-gnu/sysroot/usr/lib64"  -DCMAKE_EXE_LINKER_FLAGS="-lpthread" -DCMAKE_CXX_COMPILER=/usr/bin/g++-10
+~~~
 
 # Sofa Gym
 follow [here](https://github.com/SofaDefrost/SofaGym/tree/e5cc4048fd1fbd0b93fd6e98b3a3d4854d094cfd)
