@@ -6,7 +6,7 @@ from utils.contactListener import ContactListener
 import math
 from utils.functions import add_cube, add_floor, add_spring, add_catheter, add_wall
 
-real_time = False
+real_time = True
 
 # Catheter parameters
 youngModulusCatheters = 500
@@ -61,5 +61,5 @@ def createScene(rootNode):
     #add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, youngModulusStiffLayerSpring)
 
     # Pressure controller    
-    rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="catheter", real_time=real_time, debug=False) )
+    rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="catheter", real_time=real_time, communication='UDP', debug=False) )
     print("\nDEBUG: added PressureController\n")
