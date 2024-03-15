@@ -5,7 +5,7 @@
 [submodule "src"]
 	path = sofa/src
 	url = https://github.com/sofa-framework/sofa.git
-	branch = v22.12
+	branch = v23.12
 
 [submodule "SofaGym"]
 	path = sofa/SofaGym
@@ -20,12 +20,12 @@
 [submodule "SoftRobots"]
 	path = sofa/ext_plugin_repo/SoftRobots
 	url = https://github.com/SofaDefrost/SoftRobots.git
-	branch = v22.12
+	branch = v23.12
 
 [submodule "ModelOrderReduction"]
 	path = sofa/ext_plugin_repo/ModelOrderReduction
 	url = https://github.com/SofaDefrost/ModelOrderReduction.git
-	branch = v22.12
+	branch = v23.12
 
 [submodule "SofaPython3"]
 	path = sofa/ext_plugin_repo/SofaPython3
@@ -35,4 +35,4 @@
 [submodule "STLIB"]
 	path = sofa/ext_plugin_repo/STLIB
 	url = https://github.com/SofaDefrost/STLIB.git
-	branch = v22.12
+	branch = v23.12
