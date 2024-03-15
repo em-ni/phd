@@ -1,5 +1,6 @@
 # Ignore build files
 sofa/build/v22.12/*
+sofa/build/v23.12/*
 
 # Ignore cloned plugins
 sofa/ext_plugin_repo/BeamAdapter
