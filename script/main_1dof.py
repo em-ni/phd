@@ -3,10 +3,10 @@
 import Sofa
 from utils.pressureController import PressureController
 from utils.contactListener import ContactListener
-import math
 from utils.functions import add_cube, add_floor, add_spring, add_catheter, add_wall
 
-real_time = True
+real_time = False
+gpu = True
 
 # Catheter parameters
 youngModulusCatheters = 500
@@ -24,7 +24,9 @@ def createScene(rootNode):
 
     ## SETUP
     rootNode.addObject('VisualStyle', displayFlags='showVisualModels hideBehaviorModels hideCollisionModels hideBoundingCollisionModels showForceFields showInteractionForceFields hideWireframe')
-    plugin_names = 'SoftRobots SofaPython3 SofaCUDA Sofa.Component.MechanicalLoad Sofa.Component.Mapping.NonLinear Sofa.Component.Constraint.Projective Sofa.Component.AnimationLoop Sofa.Component.Collision.Detection.Algorithm Sofa.Component.Collision.Detection.Intersection Sofa.Component.Collision.Geometry Sofa.Component.Collision.Response.Contact Sofa.Component.Constraint.Lagrangian.Correction Sofa.Component.Constraint.Lagrangian.Solver Sofa.Component.Engine.Select Sofa.Component.IO.Mesh Sofa.Component.LinearSolver.Direct Sofa.Component.Mapping.Linear Sofa.Component.Mass Sofa.Component.ODESolver.Backward Sofa.Component.Setting Sofa.Component.SolidMechanics.FEM.Elastic Sofa.Component.SolidMechanics.Spring Sofa.Component.StateContainer Sofa.Component.Topology.Container.Constant Sofa.Component.Topology.Container.Dynamic Sofa.Component.Visual Sofa.GL.Component.Rendering3D Sofa.GUI.Component'
+    plugin_names = 'SoftRobots SofaPython3 MultiThreading Sofa.Component.MechanicalLoad Sofa.Component.Mapping.NonLinear Sofa.Component.Constraint.Projective Sofa.Component.AnimationLoop Sofa.Component.Collision.Detection.Algorithm Sofa.Component.Collision.Detection.Intersection Sofa.Component.Collision.Geometry Sofa.Component.Collision.Response.Contact Sofa.Component.Constraint.Lagrangian.Correction Sofa.Component.Constraint.Lagrangian.Solver Sofa.Component.Engine.Select Sofa.Component.IO.Mesh Sofa.Component.LinearSolver.Direct Sofa.Component.Mapping.Linear Sofa.Component.Mass Sofa.Component.ODESolver.Backward Sofa.Component.Setting Sofa.Component.SolidMechanics.FEM.Elastic Sofa.Component.SolidMechanics.Spring Sofa.Component.StateContainer Sofa.Component.Topology.Container.Constant Sofa.Component.Topology.Container.Dynamic Sofa.Component.Visual Sofa.GL.Component.Rendering3D Sofa.GUI.Component'
+    if gpu: plugin_names = plugin_names + ' SofaCUDA'
+    
     rootNode.addObject('RequiredPlugin', pluginName=plugin_names)
     #rootNode.gravity.value = [-9810, 0, 0]
     rootNode.gravity.value = [0, 0, 0]
@@ -35,15 +37,22 @@ def createScene(rootNode):
        
     # Add scene objects
     rootNode.addObject('DefaultPipeline', depth=15, verbose=0, draw=0)
-    rootNode.addObject('BruteForceBroadPhase')
-    rootNode.addObject('BVHNarrowPhase')
+    
+    if gpu : 
+        rootNode.addObject('ParallelBruteForceBroadPhase')
+        rootNode.addObject('ParallelBVHNarrowPhase')
+    else : 
+        rootNode.addObject('BruteForceBroadPhase')
+        rootNode.addObject('BVHNarrowPhase')
+    
+    
     rootNode.addObject('DefaultContactManager', response='FrictionContactConstraint', responseParams='mu=0.6')
     rootNode.addObject('LocalMinDistance', name='Proximity', alarmDistance=5, contactDistance=1, angleCone=0.0)
 
     # Background 
     rootNode.addObject('BackgroundSetting', color=[0, 0.168627, 0.211765, 1.])
     rootNode.addObject('OglSceneFrame', style='Arrows', alignment='TopRight')
-    print("\nDEBUG: setup done\n")
+    print("\nSetup done\n")
     
     # Objects
     #add_floor(rootNode, [-130, 0, 0], [0, 0, 270])
@@ -52,14 +61,15 @@ def createScene(rootNode):
     add_wall(rootNode, [150, 190, 30], [180, 90, 0])
     
     # Get contact force between wall and catheter
-    rootNode.addObject( ContactListener(name="wallContactListener", node=rootNode, object_name="wall", collision_name="wallCollis", debug=True) )
+    rootNode.addObject( ContactListener(name="wallContactListener", node=rootNode, object_name="wall", collision_name="wallCollis", debug=False, plot=True) )
 
     ## Catheter
-    add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCatheters, youngModulusStiffLayerCatheters)
+    add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCatheters, youngModulusStiffLayerCatheters, gpu)
 
     # Spring (it slows down the sim too much)
-    #add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, youngModulusStiffLayerSpring)
+    #add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, youngModulusStiffLayerSpring, gpu)
 
     # Pressure controller    
-    rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="catheter", real_time=real_time, communication='UDP', debug=False) )
-    print("\nDEBUG: added PressureController\n")
+    rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="catheter", real_time=real_time, communication='UDP', debug=False, plot=False) )
+    #print("\nDEBUG: added PressureController\n")
+

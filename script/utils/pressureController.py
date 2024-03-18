@@ -4,7 +4,10 @@ import Sofa
 import Sofa.Core
 from Sofa.constants import *
 import threading
-
+import socket
+import struct
+import json
+import time
 
 def moveRestPos(rest_pos, dx, dy, dz):
     out = []
@@ -22,6 +25,7 @@ class PressureController(Sofa.Core.Controller):
         self.real_time = kw['real_time']
         self.communication = kw['communication']
         self.debug = kw['debug']
+        self.plot = kw['plot']
         self.constraints = []
         self.dofs = []
         
@@ -36,6 +40,10 @@ class PressureController(Sofa.Core.Controller):
                 thread = threading.Thread(target=self.readArduino)
                 thread.start()
 
+        if self.plot:
+            thread = threading.Thread(target=self.sendData)
+            thread.start()
+                
         
     # Default BaseObject functions********************************
     def init(self):
@@ -177,11 +185,8 @@ class PressureController(Sofa.Core.Controller):
             # Close the serial connection when you terminate the script
             arduino.close()
             if self.debug : print("Serial connection closed.")
-            
-            
+              
     def readUDP(self):
-        import socket
-        import struct
         
         # Configurationn
         UDP_IP = "192.168.130.148"
@@ -200,14 +205,14 @@ class PressureController(Sofa.Core.Controller):
                     try:
                         # Attempt to decode as a single precision float
                         value_float = struct.unpack('f', data)
-                        print(f"Received float: {value_float[0]} from {addr}")
+                        if self.debug : print(f"Received float: {value_float[0]} from {addr}")
                     except:
                         pass
 
                     try:
                         # Attempt to decode as a 32-bit integer
                         value_int = struct.unpack('i', data)
-                        print(f"Received int: {value_int[0]} from {addr}")
+                        if self.debug : print(f"Received int: {value_int[0]} from {addr}")
                     except:
                         pass
 
@@ -227,13 +232,30 @@ class PressureController(Sofa.Core.Controller):
                     try:
                         # Decode as UTF-8 string, replace errors to avoid exceptions
                         value_str = data.decode('utf-8', errors='replace')
-                        print(f"Received string: {value_str} from {addr}")
+                        if self.debug : print(f"Received string: {value_str} from {addr}")
                     except:
-                        print(f"Received unhandled data type: {data} from {addr}")
+                        if self.debug : print(f"Received unhandled data type: {data} from {addr}")
 
         except KeyboardInterrupt:
             print("Stopping receiver.")
             sock.close()
+            
+    def sendData(self):
+        print("Sending data")
+        host = '127.0.0.1'  # The server's hostname or IP address
+        port = 65432        # The port used by the server
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((host, port))
+            try:
+                while True:  # Continuously send data
+                    pressure = self.constraints[0].value.value[0]
+                    data = {"p": pressure}  
+                    s.sendall(json.dumps(data).encode('utf-8'))
+                    if self.debug: print(f"Sent data: {data}")
+                    time.sleep(0.1)  
+            except Exception as e:
+                print(f"Error sending data: {e}")
             
             
             

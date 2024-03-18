@@ -4,6 +4,12 @@ import Sofa
 import Sofa.Core
 from Sofa.constants import *
 import numpy as np
+import re
+from collections import defaultdict
+import socket
+import json
+import time
+import threading
 
 class ContactListener(Sofa.Core.Controller):
     def __init__(self, *a, **kw): # arga, kwargs
@@ -12,9 +18,17 @@ class ContactListener(Sofa.Core.Controller):
         self.object_name = kw['object_name']
         self.collision_name = kw['collision_name']
         self.debug = kw['debug']
+        self.plot = kw['plot']
+        self.fx = 0
+        self.fy = 0
+        self.fz = 0
         
         # Add a drawNode to visualize the forces applied by the constraints.
         self.add_drawNode()
+        
+        if self.plot:
+            thread = threading.Thread(target=self.sendData)
+            thread.start()
         
     def add_drawNode(self):
         drawNode = self.root_node.addChild('drawNode')
@@ -27,11 +41,17 @@ class ContactListener(Sofa.Core.Controller):
         # Retrieve the constraint value from the MechanicalObject of the collision model.
         # This contains information about the constraints applied during the simulation step.
         constraint = self.root_node.getChild(self.object_name).getChild(self.collision_name).MechanicalObject.constraint.value
+        # Parse constraint data (needed to pass from v22.12 to v23.12)
+        constraint = parse_constraint_data(constraint)
+        if self.debug : print(f"ContactListener: Constraint: {constraint}")
+        if self.debug : print(f"ContactListener: type(constraint): {type(constraint)}, len(constraint): {len(constraint)}")
         # Get the simulation time step value for force computation.
         dt = self.root_node.dt.value
 
         # Convert the constraint string into a numpy array for easier manipulation.
         constraintMatrixInline = np.fromstring(constraint, sep=' ')
+        if self.debug : print(f"ContactListener: constraintMatrixInline: {constraintMatrixInline}")
+
 
         # Initialize variables to store point IDs and constraint directions.
         pointId = []
@@ -52,13 +72,16 @@ class ContactListener(Sofa.Core.Controller):
 
         # Loop through the constraint matrix to extract constraint information.
         while index < len(constraintMatrixInline):
+            if self.debug : print(f"ContactListener: index: {index}")
             nbConstraint   = int(constraintMatrixInline[index+1])
             currConstraintID = int(constraintMatrixInline[index])
+            if self.debug : print(f"ContactListener: nbConstraint: {nbConstraint}, currConstraintID: {currConstraintID}")
             for pts in range(nbConstraint):
                 currIDX = index+2+pts*4
                 pointId = np.append(pointId, constraintMatrixInline[currIDX])
                 constraintId.append(currConstraintID)
                 constraintDirections.append([constraintMatrixInline[currIDX+1],constraintMatrixInline[currIDX+2],constraintMatrixInline[currIDX+3]])
+                if self.debug : print(f"ContactListener: pointId: {pointId}, constraintId: {constraintId}, constraintDirections: {constraintDirections}")
             index = index + 2 + nbConstraint*4
 
         # Debugging print to check the extracted constraint directions.
@@ -91,6 +114,10 @@ class ContactListener(Sofa.Core.Controller):
             contactforce_y += forces[i][1]
             contactforce_z += forces[i][2]
             
+        # Assign force values
+        self.fx = contactforce_x
+        self.fy = contactforce_y
+        self.fz = contactforce_z
       
         if self.debug : print('\nContactListener: nbDof: ', nbDofs)
 
@@ -104,6 +131,48 @@ class ContactListener(Sofa.Core.Controller):
             self.root_node.drawNode.drawPositions.position.value = self.root_node.getChild(self.object_name).getChild(self.collision_name).MechanicalObject.position.value
 
         if self.debug : print('\nContactListener: contactforce: ', contactforce_x, contactforce_y, contactforce_z)
+        
+    
+    def sendData(self):
+        print("Sending data")
+        host = '127.0.0.1'  # The server's hostname or IP address
+        port = 65432        # The port used by the server
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((host, port))
+            try:
+                while True:  # Continuously send data
+                    data = {"fx": self.fx, "fy": self.fy, "fz": self.fz}  
+                    s.sendall(json.dumps(data).encode('utf-8'))
+                    if self.debug: print(f"Sent data: {data}")
+                    time.sleep(0.1)  
+            except Exception as e:
+                print(f"Error sending data: {e}")
+
+
+        
+def parse_constraint_data(constraint_str):
+    # Regular expression to extract constraint data
+    pattern = re.compile(r"Constraint ID : (\d+) +dof ID : (\d+) +value : ([\-\d\.e]+) ([\-\d\.e]+) ([\-\d\.e]+)")
+    matches = pattern.findall(constraint_str)
+
+    # Group data by Constraint ID
+    constraints = defaultdict(list)
+    for match in matches:
+        constraint_id, dof_id, *values = match
+        constraints[int(constraint_id)].append((int(dof_id), [float(val) for val in values]))
+
+    # Sort and format the data
+    formatted_constraints = []
+    for constraint_id, dofs in sorted(constraints.items()):
+        dofs.sort(key=lambda x: x[0])  # Sort by dof ID, if necessary
+        formatted_constraint = f"{constraint_id} {len(dofs)}"
+        for dof_id, values in dofs:
+            formatted_constraint += f" {dof_id} {' '.join(map(str, values))}"
+        formatted_constraints.append(formatted_constraint)
+
+    return "\n".join(formatted_constraints)
+
 
 
 

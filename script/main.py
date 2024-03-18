@@ -22,8 +22,8 @@ def createScene(rootNode):
 
     # Add scene objects
     rootNode.addObject('DefaultPipeline')
-    rootNode.addObject('BruteForceBroadPhase')
-    rootNode.addObject('BVHNarrowPhase')
+    rootNode.addObject('ParallelBruteForceBroadPhase')
+    rootNode.addObject('ParallelBVHNarrowPhase')
     rootNode.addObject('DefaultContactManager', response='FrictionContactConstraint', responseParams='mu=0.6')
     rootNode.addObject('LocalMinDistance', name='Proximity', alarmDistance=5, contactDistance=1, angleCone=0.0)
 
@@ -76,7 +76,7 @@ def createScene(rootNode):
     catheter.addObject('MeshTopology', src='@loader', name='container')
     catheter.addObject('MechanicalObject', name='tetras', template='Vec3', showIndices=False, showIndicesScale=4e-5)
     catheter.addObject('UniformMass', totalMass=0.04)
-    catheter.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusCatheters)
+    catheter.addObject('ParallelTetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusCatheters)
     catheter.addObject('BoxROI', name='boxROI', box=[20, 15, -10, -18, 35, 10], doUpdate=False, drawBoxes=True)
     catheter.addObject('BoxROI', name='boxROISubTopo', box=[-118, 22.5, 0, -18, 28, 8], strict=False, drawBoxes=True)
     catheter.addObject('RestShapeSpringsForceField', points='@boxROI.indices', stiffness=1e12, angularStiffness=1e12)
@@ -85,7 +85,7 @@ def createScene(rootNode):
     # Sub topology
     modelSubTopo = catheter.addChild('modelSubTopo')
     modelSubTopo.addObject('TetrahedronSetTopologyContainer', position='@loader.position', tetrahedra='@boxROISubTopo.tetrahedraInROI', name='container')
-    modelSubTopo.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerCatheters - youngModulusCatheters)
+    modelSubTopo.addObject('ParallelTetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerCatheters - youngModulusCatheters)
 
     # Constraint
     cavity_0 = catheter.addChild('cavity_0')

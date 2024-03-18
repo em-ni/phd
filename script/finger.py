@@ -20,8 +20,8 @@ def createScene(rootNode):
 
     # Add scene objects
     rootNode.addObject('DefaultPipeline')
-    rootNode.addObject('BruteForceBroadPhase')
-    rootNode.addObject('BVHNarrowPhase')
+    rootNode.addObject('ParallelBruteForceBroadPhase')
+    rootNode.addObject('ParallelBVHNarrowPhase')
     rootNode.addObject('DefaultContactManager', response='FrictionContactConstraint', responseParams='mu=0.6')
     rootNode.addObject('LocalMinDistance', name='Proximity', alarmDistance=5, contactDistance=1, angleCone=0.0)
 
@@ -72,7 +72,7 @@ def createScene(rootNode):
     finger.addObject('MeshTopology', src='@loader', name='container')
     finger.addObject('MechanicalObject', name='tetras', template='Vec3', showIndices=False, showIndicesScale=4e-5)
     finger.addObject('UniformMass', totalMass=0.04)
-    finger.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusFingers)
+    finger.addObject('ParallelTetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusFingers)
     finger.addObject('BoxROI', name='boxROI', box=[-10, 0, -20, 0, 30, 20], drawBoxes=True)
     finger.addObject('BoxROI', name='boxROISubTopo', box=[-100, 22.5, -8, -19, 28, 8], strict=False, drawBoxes=True)
     finger.addObject('RestShapeSpringsForceField', points='@boxROI.indices', stiffness=1e12, angularStiffness=1e12)
@@ -81,7 +81,7 @@ def createScene(rootNode):
     # Sub topology	
     modelSubTopo = finger.addChild('modelSubTopo')
     modelSubTopo.addObject('TetrahedronSetTopologyContainer', position='@loader.position', tetrahedra='@boxROISubTopo.tetrahedraInROI', name='container')
-    modelSubTopo.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerFingers - youngModulusFingers)
+    modelSubTopo.addObject('ParallelTetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerFingers - youngModulusFingers)
 
     # Constraint
     cavity = finger.addChild('cavity')

@@ -56,8 +56,8 @@ def createScene(rootNode):
         rootNode.addObject('DefaultPipeline')
         rootNode.addObject('FreeMotionAnimationLoop')
         rootNode.addObject('GenericConstraintSolver', tolerance="1e-6", maxIterations="1000")
-        rootNode.addObject('BruteForceBroadPhase')
-        rootNode.addObject('BVHNarrowPhase')
+        rootNode.addObject('ParallelBruteForceBroadPhase')
+        rootNode.addObject('ParallelBVHNarrowPhase')
         rootNode.addObject('RuleBasedContactManager', responseParams="mu="+str(0.0), name='Response', response='FrictionContactConstraint')
         rootNode.addObject('LocalMinDistance', alarmDistance=10, contactDistance=5, angleCone=0.01)
 

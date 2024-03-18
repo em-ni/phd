@@ -27,7 +27,21 @@ def add_cube(rootNode, position):
         # Constraint 
         #cube.addObject('FixedConstraint', indices='0')
 
-        print("\nDEBUG: added cube\n")
+        #print("\nDEBUG: added cube\n")
+
+
+def add_floor(rootNode, translation, rotation):
+        # Floor model
+        planeNode = rootNode.addChild('Plane')
+        planeNode.addObject('MeshOBJLoader', name='plane_loader', filename='data/mesh/floorFlat.obj', triangulate=True, rotation=rotation, scale=10, translation=translation)
+        planeNode.addObject('MeshTopology', src='@plane_loader')
+        planeNode.addObject('MechanicalObject', src='@plane_loader')
+        planeNode.addObject('TriangleCollisionModel', simulated=False, moving=False)
+        planeNode.addObject('LineCollisionModel', simulated=False, moving=False)
+        planeNode.addObject('PointCollisionModel', simulated=False, moving=False)
+        planeNode.addObject('OglModel', name='Visual_plane', src='@plane_loader', color=[1, 0, 0, 1])
+
+        #print("\nDEBUG: added floor\n")
 
 
 def add_wall(rootNode, translation, rotation):
@@ -35,7 +49,7 @@ def add_wall(rootNode, translation, rotation):
         wall = rootNode.addChild('wall')
         wall.addObject('EulerImplicitSolver', name='odesolver')
         wall.addObject('SparseLDLSolver', name='linearSolver')
-        wall.addObject('MechanicalObject', template='Rigid3', translation=translation, rotation=rotation)
+        wall.addObject('MechanicalObject', template='Rigid3d', translation=translation, rotation=rotation)
         wall.addObject('UniformMass', totalMass=100)
         wall.addObject('UncoupledConstraintCorrection')
 
@@ -44,7 +58,9 @@ def add_wall(rootNode, translation, rotation):
         wallCollis = wall.addChild('wallCollis')
         wallCollis.addObject('MeshOBJLoader', name='wall_loader', filename='data/mesh/wall.obj', triangulate=True, scale=wallScale)
         wallCollis.addObject('MeshTopology', src='@wall_loader')
-        wallCollis.addObject('MechanicalObject', template='Vec3f')
+        wallCollis.addObject('MechanicalObject')
+        #CudaRigid2d, CudaRigid2f, CudaRigid3d, CudaRigid3f, CudaVec1d, CudaVec1f, CudaVec2d, CudaVec2f, CudaVec3d, CudaVec3d1, CudaVec3f, CudaVec3f1, CudaVec6d, CudaVec6f, 
+        # Rigid2d, Rigid3d, Vec1d, Vec2d, Vec3d, Vec6d
         wallCollis.addObject('TriangleCollisionModel')
         wallCollis.addObject('LineCollisionModel')
         wallCollis.addObject('PointCollisionModel')
@@ -59,24 +75,12 @@ def add_wall(rootNode, translation, rotation):
         # Constraint 
         wall.addObject('FixedConstraint', indices='0')
 
-        print("\nDEBUG: added wall\n")
+        #print("\nDEBUG: added wall\n")
 
 
-def add_floor(rootNode, translation, rotation):
-        # Floor model
-        planeNode = rootNode.addChild('Plane')
-        planeNode.addObject('MeshOBJLoader', name='plane_loader', filename='data/mesh/floorFlat.obj', triangulate=True, rotation=rotation, scale=10, translation=translation)
-        planeNode.addObject('MeshTopology', src='@plane_loader')
-        planeNode.addObject('MechanicalObject', src='@plane_loader')
-        planeNode.addObject('TriangleCollisionModel', simulated=False, moving=False)
-        planeNode.addObject('LineCollisionModel', simulated=False, moving=False)
-        planeNode.addObject('PointCollisionModel', simulated=False, moving=False)
-        planeNode.addObject('OglModel', name='Visual_plane', src='@plane_loader', color=[1, 0, 0, 1])
-
-        print("\nDEBUG: added floor\n")
 
 
-def add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, youngModulusStiffLayerSpring):
+def add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, youngModulusStiffLayerSpring, gpu):
         # Spring model
         spring = rootNode.addChild('spring')
         spring.addObject('EulerImplicitSolver', name='odesolver', rayleighStiffness=0.1, rayleighMass=0.1)
@@ -85,7 +89,11 @@ def add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, yo
         spring.addObject('MeshTopology', src='@loader', name='container')
         spring.addObject('MechanicalObject', name='tetras', template='Vec3', showIndices=False, showIndicesScale=4e-5)
         spring.addObject('UniformMass', totalMass=0.04)
-        spring.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusSpring)
+        if gpu:                
+                spring.addObject('ParallelTetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusSpring)
+        else:
+                spring.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusSpring)
+        
         spring.addObject('BoxROI', name='boxROI', box=[20, 15, -10, -18, 35, 10], doUpdate=False, drawBoxes=True)
         spring.addObject('RestShapeSpringsForceField', points='@boxROI.indices', stiffness=1e12, angularStiffness=1e12)
         spring.addObject('LinearSolverConstraintCorrection')
@@ -93,8 +101,11 @@ def add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, yo
         # Sub topology
         modelSubTopoSpring = spring.addChild('modelSubTopo')
         modelSubTopoSpring.addObject('TetrahedronSetTopologyContainer', position='@loader.position', tetrahedra='@boxROI.tetrahedraInROI', name='container')
-        modelSubTopoSpring.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerSpring - youngModulusSpring)
-
+        if gpu:
+                modelSubTopoSpring.addObject('ParallelTetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerSpring - youngModulusSpring)
+        else:
+                modelSubTopoSpring.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerSpring - youngModulusSpring)
+                
         # Collision
         collisionSpring = spring.addChild('collisionSpring')
         collisionSpring.addObject('MeshSTLLoader', name='loader', filename='data/mesh/1dof/spring.stl', scale=10, translation=translationSpring, rotation=anglesSpring)
@@ -112,10 +123,10 @@ def add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, yo
         springVisu.addObject('BarycentricMapping') # it slows down the loading by a lot, understand if it is necessary. It's necessary to avoid: [WARNING] [SparseLDLSolver(preconditioner)] Invalid Linear System to solve. Please insure that there is enough constraints (not rank deficient).
 
 
-        print("\nDEBUG: added spring\n")
+        #print("\nDEBUG: added spring\n")
 
 
-def add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCatheters, youngModulusStiffLayerCatheters):
+def add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCatheters, youngModulusStiffLayerCatheters, gpu):
         
         cathScale = 20
         
@@ -127,7 +138,10 @@ def add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCathe
         catheter.addObject('MeshTopology', src='@loader', name='container')
         catheter.addObject('MechanicalObject', name='tetras', template='Vec3', showIndices=False, showIndicesScale=4e-5)
         catheter.addObject('UniformMass', totalMass=0.04)
-        catheter.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusCatheters)
+        if gpu:
+                catheter.addObject('ParallelTetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusCatheters)
+        else:
+                catheter.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusCatheters)
         catheter.addObject('BoxROI', name='boxROI', box=[20, 15, -10, -18, 35, 10], doUpdate=False, drawBoxes=False)
         #catheter.addObject('BoxROI', name='boxROI', box=[5, -0.4, -0.4, 7, 0.4, 0.4], doUpdate=False, drawBoxes=True)
         #catheter.addObject('BoxROI', name='boxROISubTopo', box=[-118, 22.5, 0, -18, 28, 8], strict=False, drawBoxes=False)
@@ -137,7 +151,7 @@ def add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCathe
         # Sub topology
         #modelSubTopo = catheter.addChild('modelSubTopo')
         #modelSubTopo.addObject('TetrahedronSetTopologyContainer', position='@loader.position', tetrahedra='@boxROISubTopo.tetrahedraInROI', name='container')
-        #modelSubTopo.addObject('TetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerCatheters - youngModulusCatheters)
+        #modelSubTopo.addObject('ParallelTetrahedronFEMForceField', template='Vec3', name='FEM', method='large', poissonRatio=0.3, youngModulus=youngModulusStiffLayerCatheters - youngModulusCatheters)
 
         # Constraint
         cavity = catheter.addChild('cavity')
@@ -163,4 +177,4 @@ def add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCathe
         modelVisu.addObject('OglModel', src='@loader', color=[0.7, 0.7, 0.7, 0.6])
         modelVisu.addObject('BarycentricMapping')
 
-        print("\nDEBUG: added catheter\n")
+        #print("\nDEBUG: added catheter\n")

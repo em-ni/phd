@@ -19,8 +19,8 @@ def MainHeader(parent):
                        displayFlags='showVisualModels showBehaviorModels hideCollisionModels hideBoundingCollisionModels hideForceFields hideInteractionForceFields showWireframe')
 
 
-    rootNode.addObject('BruteForceBroadPhase')
-    rootNode.addObject('BVHNarrowPhase')
+    rootNode.addObject('ParallelBruteForceBroadPhase')
+    rootNode.addObject('ParallelBVHNarrowPhase')
     rootNode.addObject('CollisionPipeline', depth=5, draw=0, verbose=1)
     rootNode.addObject('LocalMinDistance', name='Proximity', alarmDistance=0.01, contactDistance=0.0, angleCone=0.0)
     rootNode.addObject('DefaultContactManager', name='defaultContactManager1', response='PenalityContactForceField')
