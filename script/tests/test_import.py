@@ -18,4 +18,7 @@ import Sofa.CosseratPlugin
 print("Sofa.CosseratPlugin imported from: ", Sofa.CosseratPlugin.__file__)
 
 import softrobots
-print("softrobots imported from: ",softrobots.__file__)
+print("softrobots imported from: ", softrobots.__file__)
+
+import matplotlib
+print("matplotlib imported from: ", matplotlib.__file__)
