@@ -3,10 +3,12 @@
 import Sofa
 from utils.pressureController import PressureController
 from utils.contactListener import ContactListener
-from utils.functions import add_cube, add_floor, add_spring, add_catheter, add_wall
+from utils.functions import add_cube, add_floor, add_spring, add_catheter, add_wall, add_organ
 
 real_time = False
 gpu = True
+#object = "wall"
+object = "organ"
 
 # Catheter parameters
 youngModulusCatheters = 500
@@ -52,17 +54,19 @@ def createScene(rootNode):
     # Background 
     rootNode.addObject('BackgroundSetting', color=[0, 0.168627, 0.211765, 1.])
     rootNode.addObject('OglSceneFrame', style='Arrows', alignment='TopRight')
-    print("\nSetup done\n")
     
     # Objects
     #add_floor(rootNode, [-130, 0, 0], [0, 0, 270])
     #add_floor(rootNode, [-130, 0, 30], [90, 0, 180])
     #add_cube(rootNode, [-100, 25, 40, 0, 0, 0, 1])
-    add_wall(rootNode, [150, 190, 30], [180, 90, 0])
     
-    # Get contact force between wall and catheter
-    rootNode.addObject( ContactListener(name="wallContactListener", node=rootNode, object_name="wall", collision_name="wallCollis", debug=False, plot=True) )
-
+    if object == "wall":        
+        add_wall(rootNode, [150, 190, 30], [180, 90, 0])
+        rootNode.addObject( ContactListener(name="wallContactListener", node=rootNode, object_name="wall", collision_name="wallCollis", debug=True, plot=False) )
+    elif object == "organ":    
+        add_organ(rootNode, 'data/mesh/vascularmodel/0167_0001_sim/print.obj', [0, -275, -520], [0, 270, 0], gpu)
+        rootNode.addObject( ContactListener(name="organContactListener", node=rootNode, object_name="organ", collision_name="organCollis", debug=False, plot=True) )
+      
     ## Catheter
     add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCatheters, youngModulusStiffLayerCatheters, gpu)
 
@@ -71,5 +75,5 @@ def createScene(rootNode):
 
     # Pressure controller    
     rootNode.addObject( PressureController(name="PressureController", node=rootNode, device_name="catheter", real_time=real_time, communication='UDP', debug=False, plot=False) )
-    #print("\nDEBUG: added PressureController\n")
+    print("\nScene loaded\n")
 

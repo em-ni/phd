@@ -78,7 +78,39 @@ def add_wall(rootNode, translation, rotation):
         #print("\nDEBUG: added wall\n")
 
 
+def add_organ(rootNode, path, translation, rotation, gpu):
+        # Organ model
+        organ = rootNode.addChild('organ')
+        organ.addObject('EulerImplicitSolver', name='odesolver')
+        organ.addObject('SparseLDLSolver', name='linearSolver')
+        organ.addObject('MechanicalObject', template='Rigid3d', translation=translation, rotation=rotation)
+        organ.addObject('UniformMass', totalMass=100)
+        organ.addObject('UncoupledConstraintCorrection')
 
+        organScale = 100
+        # Collision
+        organCollis = organ.addChild('organCollis')
+        organCollis.addObject('MeshOBJLoader', name='organ_loader', filename=path, triangulate=True, scale=organScale)
+        organCollis.addObject('MeshTopology', src='@organ_loader')
+        organCollis.addObject('MechanicalObject')
+        #CudaRigid2d, CudaRigid2f, CudaRigid3d, CudaRigid3f, CudaVec1d, CudaVec1f, CudaVec2d, CudaVec2f, CudaVec3d, CudaVec3d1, CudaVec3f, CudaVec3f1, CudaVec6d, CudaVec6f, 
+        # Rigid2d, Rigid3d, Vec1d, Vec2d, Vec3d, Vec6d
+        organCollis.addObject('TriangleCollisionModel')
+        organCollis.addObject('LineCollisionModel')
+        organCollis.addObject('PointCollisionModel')
+        organCollis.addObject('RigidMapping')
+
+        # Visualization
+        organVisu = organ.addChild('organVisu')
+        organVisu.addObject('MeshOBJLoader', name='organ_loader', filename=path)
+        organVisu.addObject('OglModel', name='Visual', src='@organ_loader', color=[1.0, 0.0, 0.0, 1], scale=organScale)
+        organVisu.addObject('RigidMapping')
+
+        # Constraint 
+        organ.addObject('FixedConstraint', indices='0')
+
+        #print("\nDEBUG: added organ\n")
+        
 
 def add_spring(rootNode, translationSpring, anglesSpring, youngModulusSpring, youngModulusStiffLayerSpring, gpu):
         # Spring model

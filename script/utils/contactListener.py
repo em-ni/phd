@@ -120,15 +120,15 @@ class ContactListener(Sofa.Core.Controller):
         self.fz = contactforce_z
       
         if self.debug : print('\nContactListener: nbDof: ', nbDofs)
-
+        # TODO something's wrong: [ERROR]   [ConstantForceField(drawForceFF)] Size mismatch: indices > system size
         # Visualize the computed forces in the simulation.
         if len(constraintMatrixInline) > 0:
             if self.debug : print(f"ContactListener: indices: {list(range(0,nbDofs,1))}")
             if self.debug : print(f"ContactListener: forces: {forces}")
             if self.debug : print(f"ContactListener: position: {self.root_node.getChild(self.object_name).getChild(self.collision_name).MechanicalObject.position.value}")
-            self.root_node.drawNode.drawForceFF.indices.value = list(range(0,nbDofs,1)) 
-            self.root_node.drawNode.drawForceFF.forces.value = forces
-            self.root_node.drawNode.drawPositions.position.value = self.root_node.getChild(self.object_name).getChild(self.collision_name).MechanicalObject.position.value
+            #self.root_node.drawNode.drawForceFF.indices.value = list(range(0,nbDofs,1)) 
+            #self.root_node.drawNode.drawForceFF.forces.value = forces
+            #self.root_node.drawNode.drawPositions.position.value = self.root_node.getChild(self.object_name).getChild(self.collision_name).MechanicalObject.position.value
 
         if self.debug : print('\nContactListener: contactforce: ', contactforce_x, contactforce_y, contactforce_z)
         

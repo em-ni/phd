@@ -60,7 +60,7 @@ def listenForData():
                 if not data:
                     break
                 received_data = json.loads(data.decode('utf-8'))
-                #print('Received', received_value['p'])
+                print('Received', received_data)
                 
                 current_time = time.time()
                 times.append(current_time)
