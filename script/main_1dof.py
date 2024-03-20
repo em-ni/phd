@@ -8,7 +8,8 @@ from utils.functions import add_cube, add_floor, add_spring, add_catheter, add_w
 real_time = False
 gpu = True
 #object = "wall"
-object = "organ"
+#object = "organ"
+object = None
 
 # Catheter parameters
 youngModulusCatheters = 500
@@ -62,11 +63,13 @@ def createScene(rootNode):
     
     if object == "wall":        
         add_wall(rootNode, [150, 190, 30], [180, 90, 0])
-        rootNode.addObject( ContactListener(name="wallContactListener", node=rootNode, object_name="wall", collision_name="wallCollis", debug=True, plot=False) )
+        rootNode.addObject( ContactListener(name="wallContactListener", node=rootNode, object_name="wall", collision_name="wallCollis", debug=True, plot=True) )
     elif object == "organ":    
         add_organ(rootNode, 'data/mesh/vascularmodel/0167_0001_sim/print.obj', [0, -275, -520], [0, 270, 0], gpu)
         rootNode.addObject( ContactListener(name="organContactListener", node=rootNode, object_name="organ", collision_name="organCollis", debug=False, plot=True) )
-      
+    elif object == None:
+        pass
+    
     ## Catheter
     add_catheter(rootNode, translationCatheter, anglesCathter, youngModulusCatheters, youngModulusStiffLayerCatheters, gpu)
 

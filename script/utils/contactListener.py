@@ -134,20 +134,30 @@ class ContactListener(Sofa.Core.Controller):
         
     
     def sendData(self):
-        print("Sending data")
+        print("Trying to connect")
         host = '127.0.0.1'  # The server's hostname or IP address
         port = 65432        # The port used by the server
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((host, port))
+        while True:  # Outer loop for reconnection attempts
             try:
-                while True:  # Continuously send data
-                    data = {"fx": self.fx, "fy": self.fy, "fz": self.fz}  
-                    s.sendall(json.dumps(data).encode('utf-8'))
-                    if self.debug: print(f"Sent data: {data}")
-                    time.sleep(0.1)  
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.connect((host, port))
+                    print("Connection established")
+                    try:
+                        while True:  # Inner loop for continuously sending data
+                            #data = {"fx": self.fx, "fy": self.fy, "fz": self.fz}
+                            data = {"fz": self.fz}
+                            s.sendall(json.dumps(data).encode('utf-8'))
+                            if self.debug: print(f"Sent data: {data}")
+                            time.sleep(0.1)
+                    except Exception as e:
+                        print(f"Error during data transmission: {e}")
+                        print("Attempting to reconnect...")
+                        time.sleep(1)  # Wait a bit before trying to reconnect
             except Exception as e:
-                print(f"Error sending data: {e}")
+                print(f"Connection failed: {e}")
+                print("Retrying to connect...")
+                time.sleep(1) 
 
 
         

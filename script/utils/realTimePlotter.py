@@ -13,65 +13,80 @@ times = deque(maxlen=100)
 lines = {}  # Keep track of line objects for each data series
 colors = ['r', 'g', 'b', 'y']  # Predefined colors for the lines
 
+# Global lock for thread safety
+data_lock = threading.Lock()
+start_time = None  # Initialize start time
+
 def init():
     ax.set_xlim(0, 10)
     ax.set_ylim(-1, 1)
-    # Initialize an empty list to store line objects for blitting
-    line_objs = []
-    for color, key in zip(colors, dataDict.keys()):
-        # Ensure each data series has a corresponding line object
-        if key not in lines:
-            lines[key], = ax.plot([], [], color=color, label=key, animated=True)
-        line_objs.append(lines[key])
-    ax.legend()
-    return line_objs  # Return the list of line objects
+    return []
+
+def adjust_y_axis():
+    y_values = []
+    for deque in dataDict.values():
+        y_values.extend(list(deque))
+    
+    if not y_values:
+        return
+
+    ymin, ymax = min(y_values), max(y_values)
+    if ymin == ymax:
+        ymin -= 1
+        ymax += 1
+    buffer = (ymax - ymin) * 0.1
+    ax.set_ylim(ymin - buffer, ymax + buffer)
 
 def update(frame):
-    # Initialize an empty list to store updated line objects for blitting
-    line_objs = []
-    if times:
-        ax.set_xlim(times[0], times[-1] + 1)
-        all_values = [item for sublist in dataDict.values() for item in sublist]
-        if all_values:
-            global_min = min(all_values)
-            global_max = max(all_values)
-            buffer = (global_max - global_min) * 0.1 if all_values else 1
-            ax.set_ylim(global_min - buffer, global_max + buffer)
+    global start_time
+    with data_lock:
+        if not times or start_time is None:
+            return []
+
+        # Convert the current time to seconds relative to the start time
+        time_since_start = [t - start_time for t in times]
+        current_time_relative = time_since_start[-1]
         
-        for key in dataDict:
-            if key in lines:
-                lines[key].set_data(list(times), list(dataDict[key]))
-                line_objs.append(lines[key])
+        ax.set_xlim(current_time_relative - 10, current_time_relative)
+        adjust_y_axis()
 
-    return line_objs
+        for key, color in zip(dataDict.keys(), colors):
+            if key not in lines:
+                lines[key], = ax.plot([], [], color=color, label=key)
+            line = lines[key]
+            # Update line data with time relative to start
+            line.set_data(time_since_start, list(dataDict[key]))
 
-
+        ax.legend()
+        return list(lines.values())
 
 def listenForData():
+    global start_time
     host, port = '127.0.0.1', 65432
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((host, port))
         s.listen()
-        conn, addr = s.accept()            
+        conn, addr = s.accept()
         with conn:
-            print('Connected by', addr)
+            print(f'Connected by {addr}')
             while True:
                 data = conn.recv(1024)
                 if not data:
                     break
                 received_data = json.loads(data.decode('utf-8'))
-                print('Received', received_data)
-                
+
                 current_time = time.time()
-                times.append(current_time)
-                for key, value in received_data.items():
-                    if key not in dataDict:
-                        dataDict[key] = deque(maxlen=100)
-                    dataDict[key].append(value)
+                with data_lock:
+                    if start_time is None:
+                        start_time = current_time  # Set the start time at the first data arrival
+                    times.append(current_time)
+                    for key, value in received_data.items():
+                        if key not in dataDict:
+                            dataDict[key] = deque(maxlen=100)
+                        dataDict[key].append(value)
 
 def animate():
-    # Fix the warning by explicitly specifying frames
-    ani = FuncAnimation(fig, update, init_func=init, frames=range(100), blit=True, interval=1000, repeat=False)
+    ani = FuncAnimation(fig, update, init_func=init, frames=None, blit=False, interval=1000, repeat=False)
     plt.show()
 
 if __name__ == '__main__':
