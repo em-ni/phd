@@ -1,7 +1,7 @@
 clear all
 close all
 clc
-
+addpath(genpath('./functions'));
 % Length
 L = 8*1e-3; % [m]
 
@@ -226,6 +226,17 @@ ylabel('Force [N]')
 legend
 title('Fy epsilon vs pressure')
 
+% Calculate squared differences
+squared_diffs = (force_pred - force_data').^2;
+
+% Calculate mean of squared differences
+mse = mean(squared_diffs);
+
+% Calculate root mean square error
+rmse = sqrt(mse);
+
+% Display the RMSE
+disp(['The RMSE between predicted and actual force data is: ', num2str(rmse), ' N']);
 
 
 
