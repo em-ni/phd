@@ -7,6 +7,7 @@ import torch
 import numpy as np
 from utils import cells_to_bboxes, non_max_suppression
 import config
+from config import *
 from YOLOv3 import YOLOv3
 
 def preprocess_frame(frame):
@@ -101,8 +102,8 @@ if __name__ == "__main__":
     colors = np.random.randint(0, 255, size=(len(class_labels), 3), dtype=int).tolist()
 
     # Test with webcam or image
-    web = True
-    if web == True:
+    webcam = WEBCAM
+    if webcam == True:
         # Test with webcam
         cap = cv2.VideoCapture(0)
         while True:
@@ -137,8 +138,12 @@ if __name__ == "__main__":
         # Test with a single image
         img = cv2.imread("test_images/people.jpg")
         cv2.imshow("before prediction", img)
+        # Start timer to count inference time
+        start = cv2.getTickCount()
         input_tensor = preprocess_frame(img)
         y = model(input_tensor)
+        end = cv2.getTickCount()
+        print("Inference time: ", (end - start) / cv2.getTickFrequency())
         boxes = get_boxes(y, scaled_anchors)
         image_bb = draw_bb(img, boxes, class_labels, colors)
         cv2.imshow("opencv bb image", image_bb)
