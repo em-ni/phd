@@ -1,9 +1,9 @@
-camera/data_collection/data/*
-camera/object_detection/vision/*
-camera/object_detection/ignore/*
-camera/object_detection/PASCAL_VOC/*
-camera/object_detection/checkpoint.pth.tar
-camera/object_detection/test_images/*
+camera/data_collection_YOLOv3/data/*
+camera/object_detection_YOLOv3/vision/*
+camera/object_detection_YOLOv3/ignore/*
+camera/object_detection_YOLOv3/PASCAL_VOC/*
+camera/object_detection_YOLOv3/checkpoint.pth.tar
+camera/object_detection_YOLOv3/test_images/*
 1dof_micro_catheter/L_10cm_OD_1.5mm/characterization_and_scale_force/data/*
 1dof_micro_catheter/L_10cm_OD_2.5mm/characterization_and_spring_force/data/*
 1dof_micro_catheter/L_15cm_OD_0.8mm/characterization/data/*
