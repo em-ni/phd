@@ -1,5 +1,6 @@
 # Test GPU with pytorch
 import torch
+print("CUDA version: ", torch.version.cuda)
 
 # Check if GPU is available
 if torch.cuda.is_available():
