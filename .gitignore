@@ -9,6 +9,7 @@ camera/object_detection_YOLOv3/test_images/*
 1dof_micro_catheter/L_15cm_OD_0.8mm/characterization/data/*
 1dof_micro_catheter/L_40cm_OD_0.8mm/characterization/data/*
 1dof_micro_catheter/L_40cm_OD_2mm/characterization/data/*
+camera/*.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
