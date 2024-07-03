@@ -1,4 +1,4 @@
-camera/data_collection_YOLOv3/data/*
+camera/data_collection/data/*
 camera/object_detection_YOLOv3/vision/*
 camera/object_detection_YOLOv3/ignore/*
 camera/object_detection_YOLOv3/PASCAL_VOC/*
