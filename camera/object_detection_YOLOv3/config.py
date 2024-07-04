@@ -7,6 +7,7 @@ from albumentations.pytorch import ToTensorV2
 
 # realtime.py variables
 WEBCAM = False
+IMG_PATH = "C:\\Users\\z5440219\\OneDrive - UNSW\\Desktop\\github\\surgical-copilot\\camera\\data\\fun\\standing.jpg" # used only when WEBCAM is False
 
 DATASET = 'PASCAL_VOC'
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"

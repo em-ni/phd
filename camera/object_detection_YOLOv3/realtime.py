@@ -136,7 +136,7 @@ if __name__ == "__main__":
         cv2.destroyAllWindows()
     else:
         # Test with a single image
-        img = cv2.imread("test_images/people.jpg")
+        img = cv2.imread(IMG_PATH)
         cv2.imshow("before prediction", img)
         # Start timer to count inference time
         start = cv2.getTickCount()
