@@ -1,12 +1,12 @@
 task: detect
 mode: train
-model: yolov10x.yaml
-data: coco8.yaml
-epochs: 100
+model: yolov10n.pt
+data: data/formatted_bronchoscopy/bronchoscopy.yaml
+epochs: 10
 time: null
 patience: 100
 batch: 16
-imgsz: 640
+imgsz: 480
 save: true
 save_period: -1
 cache: false
