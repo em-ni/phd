@@ -1,23 +1,4 @@
 """
-From gpt:
-YOLO Model	        GPU Memory Required for Training	GPU Memory Required for Inference
-YOLOv1	            ~4 GB	                            ~1 GB
-YOLOv2	            ~4 GB	                            ~1 GB
-YOLOv3	            6-8 GB	                            1-2 GB
-YOLOv4	            8-12 GB	                            2-4 GB
-YOLOv4-tiny	        4-6 GB	                            ~1 GB
-YOLOv5 Small	    6-8 GB	                            ~2 GB
-YOLOv5 Medium	    8-12 GB	                            2-4 GB
-YOLOv5 Large	    12-16 GB	                        4-6 GB
-YOLOv5 X-Large	    16+ GB	                            6-8 GB
-YOLOv6	            12-24 GB (depending on version)	    4-8 GB (depending on version)
-YOLOv7	            12-24 GB (depending on version) 	4-8 GB (depending on version)
-YOLOv8	            12-24 GB (depending on version)	    4-8 GB (depending on version)
-YOLOv9	            16-32 GB (depending on version)	    6-10 GB (depending on version)
-YOLOv10	            16-32 GB (depending on version)	    6-10 GB (depending on version)
-"""
-
-"""
 From ultralytics website:
 Model	        Params (M)	FLOPs (G)	APval (%)	Latency (ms)	Latency (Forward) (ms)
 YOLOv6-3.0-N	4.7     	11.4	    37.0	    2.69	        1.76
@@ -41,6 +22,27 @@ YOLOv10-L	    24.4	    120.3   	53.4    	7.28        	7.21
 YOLOv8-X	    68.2	    257.8   	53.9    	16.86	        12.83
 RT-DETR-R101	76.0	    259.0   	54.3    	13.71	        13.58
 YOLOv10-X	    29.5	    160.4   	54.4    	10.70	        10.60
+"""
+"""
+From YOLOv3 notes:
+The number of parameters in the model is ~62M (confirmed here: https://resources.wolframcloud.com/NeuralNetRepository/resources/YOLO-V3-Trained-on-Open-Images-Data).
+Estimates of memory requirements:
+1. Forward Memory = 62M x Batch Size x 4 bytes = 248 MB x Batch Size = 8 GB for batch size of 32
+2. Backward Memory = 0.5 x Forward Memory = 4 GB for batch size of 32
+3. Total Memory = Forward Memory + Backward Memory = 12 GB for batch size of 32
+4. Inference Memory = 62M x 4 bytes = 248 MB (for a single image)
+5. Measured Memory during training = 11 GB for batch size of 32 (done a good estimate!)
+
+Then we can estimate the memory requirements for the other models:
+YOLOv10-N:
+- Train: 2.3M x Batch Size x 4 bytes + 0.5 x 2.3M x Batch Size x 4 bytes = 13.8 MB x Batch Size ~ 0.45 GB for batch size of 32
+  Measure during training ~ 6.5 GB for batch size of 32 (wrong estimate)
+- Inference: 2.3M x 4 bytes = 9.2 MB (for a single image)
+
+YOLOv10-X:
+- Train: 29.5M x Batch Size x 4 bytes + 0.5 x 29.5M x Batch Size x 4 bytes = 177 MB x Batch Size ~ 5.7 GB for batch size of 32
+  Measure during training ~ 16 GB for batch size of 32 (wrong estimate)
+- Inference: 29.5M x 4 bytes = 118 MB (for a single image)
 """
 
 import cv2

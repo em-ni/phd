@@ -1,13 +1,25 @@
+"""
+MODEL       BATCH       TRAINABLE (on local GPU)  FILE REF (runs/detect)
+yolov10n    32          V                         train7
+yolov10x    32          X                         train8
+yolov10x    16          ?
+yolov10l    32          ?
+yolov10l    16          ?
+yolov10m    32          ?
+yolov10m    16          ?
+
+"""
+
 import os
 import re
 from ultralytics import YOLO
 
 def train_model():
     # Load YOLOv3 model from scratch
-    model = YOLO("yolov10n.pt") 
+    model = YOLO("yolov10x.pt") 
 
     # Train the model using the specified dataset configuration
-    model.train(data="data/formatted_bronchoscopy/bronchoscopy.yaml", epochs=50, imgsz=480, batch=32)
+    model.train(data="data/formatted_bronchoscopy/bronchoscopy.yaml", epochs=50, imgsz=480, batch=16)
 
 def val_model():
     # Path to the training directories
