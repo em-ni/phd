@@ -5,7 +5,7 @@ from pathlib import Path
 import shutil
 import cv2
 
-def get_bounding_box(polygon_points):
+def get_bounding_box(polygon_points, image_width, image_height):
     # Initialize min and max coordinates with the first point values
     min_x = max_x = polygon_points[0]['x']
     min_y = max_y = polygon_points[0]['y']
@@ -18,7 +18,9 @@ def get_bounding_box(polygon_points):
         max_y = max(max_y, point['y'])
     
     # The bounding box is given by the top-left and bottom-right corners
-    bounding_box = (min_x, min_y, max_x - min_x, max_y - min_y)
+    bounding_box = [min_x, min_y, max_x - min_x, max_y - min_y]
+    # Normalize the bounding box coordinates
+    bounding_box = [bounding_box[0] / image_width, bounding_box[1] / image_height, bounding_box[2] / image_width, bounding_box[3] / image_height]
     return bounding_box
 
 def draw_bbox(image, bbox):
@@ -117,9 +119,12 @@ def process_subset(source_dir, dest_dir, labels_mapping_path, subset_size=None):
             polygon_points = annotation['data']
             img_path = images_train_dir / f"{file_name}.png" if (images_train_dir / f"{file_name}.png").exists() else images_val_dir / f"{file_name}.png"
             image = cv2.imread(str(img_path))
+            # Get image dimensions
+            image_height, image_width, _ = image.shape
             print(f"Processing annotation for {file_name}")
+            print(f"Image dimensions: {image_width}x{image_height}")
             print(f"Labels: {label_id}")
-            print(f"Polygon: {polygon_points}")
+            # print(f"Polygon: {polygon_points}")
             file_content = ""
             label = labels_mapping.get(label_id, None)
             if label is None:
@@ -132,7 +137,7 @@ def process_subset(source_dir, dest_dir, labels_mapping_path, subset_size=None):
             print(f"YOLO ID: {yolo_id}")
             
             # Get bounding boxes
-            bbox = get_bounding_box(polygon_points)
+            bbox = get_bounding_box(polygon_points, image_width, image_height)
             file_content += f"{yolo_id} {bbox[0]} {bbox[1]} {bbox[2]} {bbox[3]}\n"
 
             # Visualize bounding box
