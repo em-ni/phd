@@ -3,24 +3,66 @@ import json
 import os
 from pathlib import Path
 import shutil
+import cv2
 
-def convert_polygon_to_bbox(polygon):
-    xs = [p['x'] for p in polygon]
-    ys = [p['y'] for p in polygon]
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
-    return (min_x, min_y, max_x - min_x, max_y - min_y)
+def get_bounding_box(polygon_points):
+    # Initialize min and max coordinates with the first point values
+    min_x = max_x = polygon_points[0]['x']
+    min_y = max_y = polygon_points[0]['y']
+    
+    # Loop through all points to find the min and max of x and y coordinates
+    for point in polygon_points:
+        min_x = min(min_x, point['x'])
+        max_x = max(max_x, point['x'])
+        min_y = min(min_y, point['y'])
+        max_y = max(max_y, point['y'])
+    
+    # The bounding box is given by the top-left and bottom-right corners
+    bounding_box = (min_x, min_y, max_x - min_x, max_y - min_y)
+    return bounding_box
+
+def draw_bbox(image, bbox):
+    x, y, w, h = bbox
+    # Convert to integers
+    x, y, w, h = map(int, [x, y, w, h])
+    # Check dimensions
+    if x + w > image.shape[1] or y + h > image.shape[0]:
+        print(f"Bounding box {bbox} is out of image bounds.")
+        return
+    # Draw the rectangle
+    cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+
+def draw_circle(image, point):
+    x, y = point['x'], point['y']
+    # Convert to integers
+    x, y = int(x), int(y)
+    # Check if the point is within the image boundaries
+    if x < 0 or y < 0 or x >= image.shape[1] or y >= image.shape[0]:
+        print(f"Point ({x}, {y}) is out of image bounds.")
+        return
+    # Draw the circle
+    cv2.circle(image, (x, y), 2, (0, 0, 255), -1)
 
 def hash_to_int(hash_string, mod):
     return int(hashlib.sha256(hash_string.encode()).hexdigest(), 16) % mod
 
-def process_subset(source_dir, dest_dir, labels_mapping, subset_size=None):
+def load_labels_mapping(labels_json_path):
+    with open(labels_json_path) as f:
+        labels = json.load(f)
+    return {label['id']: {'yolo_id': label.get('yolo_id', -1)} for label in labels}
+
+
+def process_subset(source_dir, dest_dir, labels_mapping_path, subset_size=None):
+    labels_mapping = load_labels_mapping(labels_mapping_path)
+    
     # Setup directories
     images_train_dir = Path(dest_dir) / 'images' / 'train'
     images_val_dir = Path(dest_dir) / 'images' / 'val'
     labels_train_dir = Path(dest_dir) / 'labels' / 'train'
     labels_val_dir = Path(dest_dir) / 'labels' / 'val'
-    directories = [images_train_dir, images_val_dir, labels_train_dir, labels_val_dir]
+    visualization_dir = Path(dest_dir) / 'visualization'
+    directories = [images_train_dir, images_val_dir, labels_train_dir, labels_val_dir, visualization_dir]
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)
 
@@ -30,6 +72,7 @@ def process_subset(source_dir, dest_dir, labels_mapping, subset_size=None):
     
     # Process each category directory
     for category in ['Lung_cancer/Lung_cancer', 'Non_lung_cancer/Non_lung_cancer']:
+
         imgs_path = Path(source_dir) / category / 'imgs'
         objects_file = Path(source_dir) / category / 'objects.json'
         annotation_file = Path(source_dir) / category / 'annotation.json'
@@ -39,11 +82,9 @@ def process_subset(source_dir, dest_dir, labels_mapping, subset_size=None):
         with open(annotation_file) as f:
             annotations = json.load(f)
 
-        annotation_dict = {anno['finding_id']: anno for anno in annotations}
-
         print(f"Processing {len(objects)} objects in {category}")
 
-        # Process subset of objects
+        # Process images
         for obj in objects if subset_size is None else objects[:subset_size]:
             for video in obj['videos']:
                 video_id = video['video_id']
@@ -69,45 +110,56 @@ def process_subset(source_dir, dest_dir, labels_mapping, subset_size=None):
                     shutil.copy(img_file_path, new_img_path)
                     print(f"Copied {img_file_path} to {new_img_path}")
 
-                    # Fetch and convert annotations
-                    if image_id in annotation_dict:
-                        annotation = annotation_dict[image_id]
-                        bbox = convert_polygon_to_bbox(annotation['data'])
-                        label_index = labels_mapping.get(annotation_dict[annotation['object_id']]['name'], -1)
-                        if label_index == -1:
-                            continue
-                        label_content = f"{label_index} {bbox[0]} {bbox[1]} {bbox[2]} {bbox[3]}\n"
-                        label_path = label_dir / f"{image_id}.txt"
-                        with open(label_path, 'w') as f:
-                            f.write(label_content)
-                        print(f"Created label for {image_id} at {label_path}")
+        # Process annotations and create YOLO labels
+        for annotation in annotations:
+            file_name = annotation['object_id']
+            label_id = annotation['label_ids'][0]
+            polygon_points = annotation['data']
+            img_path = images_train_dir / f"{file_name}.png" if (images_train_dir / f"{file_name}.png").exists() else images_val_dir / f"{file_name}.png"
+            image = cv2.imread(str(img_path))
+            print(f"Processing annotation for {file_name}")
+            print(f"Labels: {label_id}")
+            print(f"Polygon: {polygon_points}")
+            file_content = ""
+            label = labels_mapping.get(label_id, None)
+            if label is None:
+                print(f"Label ID {label_id} not found in labels mapping")
+                continue
+            yolo_id = label['yolo_id']
+            if yolo_id == -1:
+                print(f"YOLO ID not found for label ID {label_id}")
+                continue
+            print(f"YOLO ID: {yolo_id}")
+            
+            # Get bounding boxes
+            bbox = get_bounding_box(polygon_points)
+            file_content += f"{yolo_id} {bbox[0]} {bbox[1]} {bbox[2]} {bbox[3]}\n"
+
+            # Visualize bounding box
+            draw_bbox(image, bbox)
+
+            # Visualize the polygon
+            for point in polygon_points:
+                draw_circle(image, point)
+            visualization_path = visualization_dir / f"{file_name}.png"
+            cv2.imwrite(str(visualization_path), image)
+
+            if file_content:
+                if hash_to_int(file_name, 5) > 0:
+                    label_dir = labels_train_dir
+                else:
+                    label_dir = labels_val_dir
+                label_file_path = label_dir / f"{file_name}.txt"
+                with open(label_file_path, 'w') as f:
+                    f.write(file_content)
+                print(f"Created label file {label_file_path}")
 
     print(f"Total images in training set: {train_count}")
     print(f"Total images in validation set: {val_count}")
     print(f"Total images: {train_count + val_count}")
 
-
 if __name__ == "__main__":
     source_dir = Path(os.path.dirname(os.path.abspath(__file__))) / 'data' / 'bronchoscopy'
     dest_dir = Path(os.path.dirname(os.path.abspath(__file__))) / 'data' / 'formatted_bronchoscopy'
-    labels_mapping = {
-        'Vocal cords': 0,
-        'Main carina': 1,
-        'Mucosal infiltration': 2,
-        'Mucosal edema of carina': 3,
-        'Anthrocosis': 4,
-        'Tumor': 5,
-        'Vascular growth': 6,
-        'Right superior lobar bronchus': 7,
-        'Intermediate bronchus': 8,
-        'Right inferior lobar bronchus': 9,
-        'Right middle lobar bronchus': 10,
-        'Left inferior lobar bronchus': 11,
-        'Left superior lobar bronchus': 12,
-        'Right main bronchus': 13,
-        'Left main bronchus': 14,
-        'Stenosis': 15,
-        'Muscosal erythema': 16,
-        'Trachea': 17
-    }
-    process_subset(source_dir, dest_dir, labels_mapping, subset_size=None)
+    labels_mapping_path = Path(os.path.dirname(os.path.abspath(__file__))) / 'data' / 'formatted_bronchoscopy' / 'yolo_labels.json'
+    process_subset(source_dir, dest_dir, labels_mapping_path, subset_size=None)
