@@ -1,13 +1,11 @@
 """
-MODEL       BATCH       TRAINABLE (on local GPU)  FILE REF (runs/detect)
-yolov10n    32          V                         train7
-yolov10x    32          X                         train8
-yolov10x    16          ?
-yolov10l    32          ?
-yolov10l    16          ?
-yolov10m    32          ?
-yolov10m    16          ?
+MODEL       BATCH       TRAINABLE (on local GPU)  FILE REF (runs/detect)  TRAIN MEMORY (dedicated GPU - shared GPU - GPU memory)
+yolov10n    32          V                         train7 val4             ?
+yolov10l    32          V                                                 31/32 GB (Task Manager) 28.5 GB (Terminal)
+yolov10x    16          V                         train9 val6             24/32 GB
+yolov10x    32          X                         train8 val5             /
 
+Train for more epochs and check if that problem is solved. Start with yolov10n 
 """
 
 import os
@@ -16,10 +14,10 @@ from ultralytics import YOLO
 
 def train_model():
     # Load YOLOv3 model from scratch
-    model = YOLO("yolov10x.pt") 
+    model = YOLO("yolov10l.pt") 
 
     # Train the model using the specified dataset configuration
-    model.train(data="data/formatted_bronchoscopy/bronchoscopy.yaml", epochs=50, imgsz=480, batch=16)
+    model.train(data="data/formatted_bronchoscopy/bronchoscopy.yaml", epochs=50, imgsz=480, batch=32)
 
 def val_model():
     # Path to the training directories

@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 import shutil
 import cv2
+from ultralytics.data.utils import compress_one_image
+from ultralytics.utils.downloads import zip_directory
 
 def get_bounding_box(polygon_points, image_width, image_height):
     # Initialize min and max coordinates with the first point values
@@ -109,6 +111,8 @@ def process_subset(source_dir, dest_dir, labels_mapping_path, subset_size=None):
 
                     # Copy image to new location
                     new_img_path = img_dir / f"{image_id}.png"
+                    # Compress the image at its current location before moving it
+                    compress_one_image(img_file_path)
                     shutil.copy(img_file_path, new_img_path)
                     print(f"Copied {img_file_path} to {new_img_path}")
 
@@ -162,6 +166,10 @@ def process_subset(source_dir, dest_dir, labels_mapping_path, subset_size=None):
     print(f"Total images in training set: {train_count}")
     print(f"Total images in validation set: {val_count}")
     print(f"Total images: {train_count + val_count}")
+
+    # Zip the directories
+    zip_directory(dest_dir)
+    
 
 if __name__ == "__main__":
     source_dir = Path(os.path.dirname(os.path.abspath(__file__))) / 'data' / 'bronchoscopy'
