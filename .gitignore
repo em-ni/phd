@@ -14,6 +14,7 @@ camera/data/bronchoscopy
 camera/data/formatted_bronchoscopy/images/*
 camera/data/formatted_bronchoscopy/labels/*
 camera/data/formatted_bronchoscopy/visualization/*
+camera/data/formatted_bronchoscopy.zip
 camera/runs/*
 
 # Byte-compiled / optimized / DLL files
