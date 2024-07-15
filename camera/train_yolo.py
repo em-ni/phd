@@ -1,9 +1,17 @@
 """
+50 epochs
 MODEL       BATCH       TRAINABLE (on local GPU)  FILE REF (runs/detect)  TRAIN MEMORY (dedicated GPU - shared GPU - GPU memory)
-yolov10n    32          V                         train7 val4             ?
-yolov10l    32          V                                                 31/32 GB (Task Manager) 28.5 GB (Terminal)
-yolov10x    16          V                         train9 val6             24/32 GB
-yolov10x    32          X                         train8 val5             /
+yolov10n    32          V                         train7  val4            ?
+yolov10l    32          V                         train11 val7            31/32 GB (Task Manager) 28.5 GB (Terminal) <---- BEST I CAN DO WITH LOCAL PC
+yolov10x    16          V                         train9  val6            24/32 GB
+yolov10x    32          X                         train8  val5            /
+
+100 epochs
+MODEL       BATCH       TRAINABLE (on local GPU)  FILE REF (runs/detect)  TRAIN MEMORY (dedicated GPU - shared GPU - GPU memory)
+yolov10n    32          V                         train12 val8            6.5 GB (Terminal)
+yolov10l    32          V                         train13 val9            28.5 GB (Terminal) <---- BEST I CAN DO WITH LOCAL PC
+yolov10x    16          V                         
+yolov10x    32          X                         /                         /
 
 Train for more epochs and check if that problem is solved. Start with yolov10n 
 """
@@ -17,7 +25,7 @@ def train_model():
     model = YOLO("yolov10l.pt") 
 
     # Train the model using the specified dataset configuration
-    model.train(data="data/formatted_bronchoscopy/bronchoscopy.yaml", epochs=50, imgsz=480, batch=32)
+    model.train(data="data/formatted_bronchoscopy/bronchoscopy.yaml", epochs=100, imgsz=480, batch=32)
 
 def val_model():
     # Path to the training directories
