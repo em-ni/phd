@@ -1,4 +1,4 @@
-# Script to generate .obj and .msh files from an STL file. They are needed for the FEM simulation. 
+# Script to generate .obj and .msh files from an STL file. They are needed for the FEM simulation.
 """ 
 .obj files: The Wavefront OBJ (Object) file format is a widely used format for representing 3D geometry. 
 It stores information about vertices, normals, texture coordinates, and face connectivity. In the context of Sofa, 
@@ -40,7 +40,7 @@ They can contain information about geometry, materials, textures, animations, an
 The specific structure and content of .mdl files depend on the software or framework they are used with.
 
 
-""" 
+"""
 
 
 import argparse
@@ -51,10 +51,30 @@ import pyvista as pv
 import meshio
 import os
 
+
+def convert_vtk_to_vtp(vtk_path, vtp_path):
+    # Using vtkDataSetReader to read legacy VTK files
+    reader = vtk.vtkDataSetReader()
+    reader.SetFileName(vtk_path)
+    reader.ReadAllScalarsOn()  # Ensure that all scalar data is read
+    reader.Update()
+
+    # Extracting the surface if necessary
+    surface_filter = vtk.vtkDataSetSurfaceFilter()
+    surface_filter.SetInputConnection(reader.GetOutputPort())
+    surface_filter.Update()
+
+    # Writing the output as a VTP file
+    writer = vtk.vtkXMLPolyDataWriter()
+    writer.SetFileName(vtp_path)
+    writer.SetInputData(surface_filter.GetOutput())
+    writer.Write()
+
+
 def convert_stl_to_msh(stl_file_path, msh_file_path):
     # Start gmsh
     gmsh.initialize()
-    gmsh.model.add('model')
+    gmsh.model.add("model")
 
     # Merge the STL file
     gmsh.merge(stl_file_path)
@@ -70,6 +90,7 @@ def convert_stl_to_msh(stl_file_path, msh_file_path):
 
     # Finalize gmsh
     gmsh.finalize()
+
 
 def convert_vtp_to_stl(vtp_path, stl_path):
     # Read VTP using vtk
@@ -90,9 +111,12 @@ def convert_vtp_to_obj(vtp_path, obj_path):
 
     if os.path.exists(temp_stl_path) and os.path.getsize(temp_stl_path) > 0:
         convert_stl_to_obj(temp_stl_path, obj_path)
-        os.remove(temp_stl_path) # Uncomment this line to delete the temp file after conversion
+        os.remove(
+            temp_stl_path
+        )  # Uncomment this line to delete the temp file after conversion
     else:
         print("Error: STL file was not created properly.")
+
 
 def convert_stl_to_obj(stl_path, obj_path):
     try:
@@ -104,9 +128,24 @@ def convert_stl_to_obj(stl_path, obj_path):
         print(f"Error occurred while converting STL to OBJ: {e}")
 
 
-
 # Better using gmsh software (open terminal type "gmsh")
 def convert_stl_to_vtk(stl_filename, vtk_filename):
+
+    # Using FreeCad and gmsh
+    """
+    1) Using FreeCAD, import the STL file.
+    * Switch to the “Part” Workbench and go to the “Part” menu in the top.
+    * Select “Create shape from mesh”
+    * Select the newly created shape and in the same “Part” menu select “Convert to solid”
+    * Select this newest object in the tree and export it to a .step file.
+    2) Using Gmsh, import the .step-file
+    * In Gmsh, navigate to the Mesh menu on the left.
+    * Select 3D. It should produce a volumetric mesh. This result you can now export as a VTK
+    3) You might need to reduce the mesh size in step
+        1) if it is too complex.
+        In 2) you might need to tinker with the meshing parameters
+        e.g. Tools->Options->Mesh->General->Element Size Factor to arrive at the correct results.
+    """
 
     ## Using vtk
     # Read STL
@@ -121,31 +160,33 @@ def convert_stl_to_vtk(stl_filename, vtk_filename):
 
     ## Using pyvista
     # Read STL
-    #mesh = pv.read(stl_filename)
+    # mesh = pv.read(stl_filename)
 
     # Write VTK
-    #mesh.save(vtk_filename)
+    # mesh.save(vtk_filename)
 
     ## Using meshio
     # Read STL
-    #mesh = meshio.read(stl_filename)
+    # mesh = meshio.read(stl_filename)
 
     # Write VTK
-    #meshio.write(vtk_filename, mesh)    
+    # meshio.write(vtk_filename, mesh)
 
 
 def main():
     # Define the command line arguments using argparse
     parser = argparse.ArgumentParser(description="Convert 3D file formats.")
     parser.add_argument("-i", "--input", required=True, help="Path to the input file.")
-    parser.add_argument("-o", "--output", required=True, help="Path to the output file.")
-    
+    parser.add_argument(
+        "-o", "--output", required=True, help="Path to the output file."
+    )
+
     # Parse the arguments
     args = parser.parse_args()
 
     # Extract the file extensions to determine the conversion type
-    input_extension = args.input.split('.')[-1].lower()
-    output_extension = args.output.split('.')[-1].lower()
+    input_extension = args.input.split(".")[-1].lower()
+    output_extension = args.output.split(".")[-1].lower()
 
     # Depending on the extensions, call the appropriate conversion function
     if input_extension == "stl" and output_extension == "msh":
@@ -156,13 +197,16 @@ def main():
         convert_stl_to_vtk(args.input, args.output)
     elif input_extension == "vtp" and output_extension == "obj":
         convert_vtp_to_obj(args.input, args.output)
+    elif input_extension == "vtp" and output_extension == "stl":
+        convert_vtp_to_stl(args.input, args.output)
+    elif input_extension == "vtk" and output_extension == "vtp":
+        convert_vtk_to_vtp(args.input, args.output)
     else:
-        print(f"Conversion from {input_extension} to {output_extension} is not supported.")
+        print(
+            f"Conversion from {input_extension} to {output_extension} is not supported."
+        )
+
 
 # Uncomment the following line to run the program
 if __name__ == "__main__":
     main()
-
-
-
-

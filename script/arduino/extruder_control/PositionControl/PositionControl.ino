@@ -12,6 +12,7 @@ const int stepsPerRevolution = 20;  // change this to fit the number of steps pe
 Stepper myStepper(stepsPerRevolution, 8, 9, 10, 11);
 
 void setup() {
+  Serial.println("Hello World!");
   // set the speed at 60 rpm:
   myStepper.setSpeed(60);
   // initialize the serial port:
@@ -23,9 +24,14 @@ boolean test=false;
 int previous=0;
 int val=0;
 char buff= ' ';
+bool firstDone = false;
 
 void loop() {
   
+  if (firstDone == false){
+    Serial.println("Started loop");
+    firstDone = true;
+  }
   char rc;
   // step one revolution  in one direction:
   while (Serial.available() > 0 && newData==false) {
@@ -49,4 +55,3 @@ void loop() {
   }
   
 }
-

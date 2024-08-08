@@ -8,7 +8,7 @@
 
  The motor will rotate in a clockwise direction. The higher the potentiometer value,
  the faster the motor speed. Because setSpeed() sets the delay between steps,
- you may notice the motor is less responsive to changes in the sensor value at
+ you may notice the motor is less responsive to changes in the sensor vaflue at
  low speeds.
 
  Created 30 Nov. 2009
@@ -20,7 +20,6 @@
 #include <Stepper.h>
 
 const int stepsPerRevolution = 200;  // change this to fit the number of steps per revolution
-// for your motor
 
 
 // initialize the stepper library on pins 8 through 11:
@@ -31,6 +30,10 @@ int stepCount = 0;  // number of steps the motor has taken
 // character to read Serial
 char rc;
 
+// Print variables
+bool printForward = false;
+bool printBackward = false;
+bool printStopped = false;
 void setup() {
    Serial.begin(9600);
 }
@@ -53,14 +56,23 @@ void loop() {
   }
 
   // Print status
-  if(rc=='f'){
+  if(rc=='f' && printForward == false){
     Serial.println("Forward");
+    printForward = true;
+    printBackward = false;
+    printStopped = false;
   }
-  if(rc=='b'){
+  if(rc=='b' && printBackward == false){
     Serial.println("Backward");
+    printForward = false;
+    printBackward = true;
+    printStopped = false;
   }
-  if(rc=='s'){
+  if(rc=='s' && printStopped == false){
     Serial.println("Stopped");
+    printForward = false;
+    printBackward = false;
+    printStopped = true;
   }
   
   // Move motor with potentiometer
@@ -68,7 +80,7 @@ void loop() {
   // map it to a range from 0 to 100:
   int motorSpeed = map(sensorReading, 0, 1023, 0, 100);
   // set the motor speed:
-  if (motorSpeed > 0 && rc != 's') {
+  if (motorSpeed > 0) {
     myStepper.setSpeed(motorSpeed);
 
     if (rc == 'f'){
@@ -79,9 +91,12 @@ void loop() {
       // step 1/100 of a revolution:
       myStepper.step(-stepsPerRevolution / 100);
     }
+
+    if (rc == 's'){
+      // zero velocity:
+      myStepper.step(0);
+    }
   
   }
 
 }
-
-

@@ -5,28 +5,33 @@ from matplotlib.animation import FuncAnimation
 import time
 import threading
 from collections import deque
+import numpy as np  # Added for numerical operations
 
 # Initialize plotting variables
 fig, ax = plt.subplots()
 dataDict = {}  # Each key will have its own deque
 times = deque(maxlen=100)
 lines = {}  # Keep track of line objects for each data series
-colors = ['r', 'g', 'b', 'y']  # Predefined colors for the lines
+colors = ["r", "g", "b", "y"]  # Predefined colors for the lines
 
 # Global lock for thread safety
 data_lock = threading.Lock()
 start_time = None  # Initialize start time
 
+
 def init():
     ax.set_xlim(0, 10)
     ax.set_ylim(-1, 1)
+    ax.set_xlabel("Time [s]")  # Label for the x-axis
+    ax.set_ylabel("Force [mN]")  # La
     return []
+
 
 def adjust_y_axis():
     y_values = []
     for deque in dataDict.values():
         y_values.extend(list(deque))
-    
+
     if not y_values:
         return
 
@@ -37,6 +42,14 @@ def adjust_y_axis():
     buffer = (ymax - ymin) * 0.1
     ax.set_ylim(ymin - buffer, ymax + buffer)
 
+
+def smooth_data(data, window_size=5):
+    """Apply a simple moving average to smooth the data."""
+    if len(data) < window_size:
+        return data
+    return np.convolve(data, np.ones(window_size) / window_size, mode="valid")
+
+
 def update(frame):
     global start_time
     with data_lock:
@@ -46,49 +59,63 @@ def update(frame):
         # Convert the current time to seconds relative to the start time
         time_since_start = [t - start_time for t in times]
         current_time_relative = time_since_start[-1]
-        
+
         ax.set_xlim(current_time_relative - 10, current_time_relative)
         adjust_y_axis()
 
         for key, color in zip(dataDict.keys(), colors):
             if key not in lines:
-                lines[key], = ax.plot([], [], color=color, label=key)
+                (lines[key],) = ax.plot([], [], color=color, label=key)
             line = lines[key]
-            # Update line data with time relative to start
-            line.set_data(time_since_start, list(dataDict[key]))
+            # Update line data with time relative to start and smooth data
+            smoothed_data = smooth_data(list(dataDict[key]))
+            line.set_data(time_since_start[-len(smoothed_data) :], smoothed_data)
 
         ax.legend()
         return list(lines.values())
 
+
 def listenForData():
     global start_time
-    host, port = '127.0.0.1', 65432
+    host, port = "127.0.0.1", 65432
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((host, port))
         s.listen()
         conn, addr = s.accept()
         with conn:
-            print(f'Connected by {addr}')
+            print(f"Connected by {addr}")
             while True:
                 data = conn.recv(1024)
                 if not data:
                     break
-                received_data = json.loads(data.decode('utf-8'))
+                received_data = json.loads(data.decode("utf-8"))
 
                 current_time = time.time()
                 with data_lock:
                     if start_time is None:
-                        start_time = current_time  # Set the start time at the first data arrival
+                        start_time = (
+                            current_time  # Set the start time at the first data arrival
+                        )
                     times.append(current_time)
                     for key, value in received_data.items():
                         if key not in dataDict:
                             dataDict[key] = deque(maxlen=100)
                         dataDict[key].append(value)
 
+
 def animate():
-    ani = FuncAnimation(fig, update, init_func=init, frames=None, blit=False, interval=1000, repeat=False)
+    ani = FuncAnimation(
+        fig,
+        update,
+        init_func=init,
+        frames=None,
+        blit=False,
+        interval=1000,
+        repeat=False,
+    )
     plt.show()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     threading.Thread(target=listenForData, daemon=True).start()
     animate()

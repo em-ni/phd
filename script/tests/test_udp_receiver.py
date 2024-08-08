@@ -2,7 +2,7 @@ import socket
 import struct
 
 # Configuration
-UDP_IP = "192.168.130.148"
+UDP_IP = "192.168.101.148"
 UDP_PORT = 25000
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

@@ -1,4 +1,5 @@
-# sudo ufw disable
+# to diable firewall: sudo ufw disable
+# to get ip address: ip addr
 
 import socket
 
