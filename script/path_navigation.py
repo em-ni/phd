@@ -1,4 +1,5 @@
 import argparse
+import threading
 from direct.showbase.ShowBase import ShowBase
 from panda3d.core import *
 from direct.task import Task
@@ -12,6 +13,7 @@ from set_FS_frame import (
     compute_MRF,
 )
 import numpy as np
+import socket
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Path Navigation Tool")
@@ -21,6 +23,12 @@ parser.add_argument(
     default="fp",
     choices=["fp", "tp"],
     help="Set view mode: fp (first person) or tp (third person)",
+)
+parser.add_argument(
+    "-live",
+    type=bool,
+    default=False,
+    help="Set live mode: True (live) or False (offline)",
 )
 args = parser.parse_args()
 
@@ -35,10 +43,14 @@ class MyApp(ShowBase):
         ShowBase.__init__(self)
 
         # Define path of the .vtp file
-        self.path = "data/mesh/slam_test/path.vtp"
+        self.path = "data/mesh/easier_slam_test/path.vtp"
 
         # Check the view mode
         self.view_mode = args.view
+
+        # Check the live mode
+        self.live_mode = args.live
+        print(f"View mode: {self.view_mode}\n Live mode: {self.live_mode}")
 
         # Set background color
         self.setBackgroundColor(0, 0.168627, 0.211765, 1.0)
@@ -74,7 +86,8 @@ class MyApp(ShowBase):
         # self.scene.reparentTo(self.render)
 
         # Set up key controls
-        self.setup_key_controls()
+        if self.live_mode == False:
+            self.setup_key_controls()
 
         # Task for updating the scene
         self.taskMgr.add(self.update_scene, "updateScene")
@@ -110,9 +123,9 @@ class MyApp(ShowBase):
             # self.model = (
             #     "data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/0063_negative.obj"
             # )
-            self.model = "data/mesh/slam_test/slam_test_negative.obj"
+            self.model = "data/mesh/easier_slam_test/easier_slam_test_negative.obj"
 
-            print("First Person View Mode Selected")
+            print("initializing First Person View Mode...")
             # Load the phantom model
             self.scene = self.loader.loadModel(self.model)
             self.scene.reparentTo(self.render)
@@ -152,11 +165,11 @@ class MyApp(ShowBase):
             self.camLens.setNearFar(0.1, 100)
 
         elif self.view_mode == "tp":
-            print("Third Person View Mode Selected")
+            print("Initializinig Third Person View Mode...")
 
             # Load the standard model to visualize the external part
             # self.model = "data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/0063.obj"
-            self.model = "data/mesh/slam_test/slam_test.obj"
+            self.model = "data/mesh/easier_slam_test/easier_slam_test.obj"
 
             # Load the phantom model
             self.scene = self.loader.loadModel(self.model)
@@ -169,7 +182,36 @@ class MyApp(ShowBase):
             # Initially draw the path up to the first point
             self.draw_path(self.interpolated_points, 0)
 
+        print("Initialization done")
+
+        if self.live_mode == True:
+            # Init transformation matrix
+            self.Tcw = np.eye(4)
+
+            # Start the server in a thread
+            self.listen_thread = threading.Thread(target=self.start_server, daemon=True)
+            self.listen_thread.start()
+
     ## SETUP METHODS
+    def start_server(self, host="127.0.0.1", port=12345):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((host, port))
+            s.listen()
+            print(f"Server listening on {host}:{port}")
+
+            while True:
+                conn, addr = s.accept()
+                with conn:
+                    print(f"Connected by {addr}")
+                    while True:
+                        data = conn.recv(1024)
+                        if not data:
+                            break
+                        print(f"Received: {data.decode()}")
+                        # Parse the received data and update the transformation matrix
+                        self.Tcw = data.decode()
+                    print("Connection closed")
+
     def draw_elements(self, points):
         # Draw some frames
         # self.draw_FS_frames(points, num_points=10, draw_tangent=True, draw_normal=True, draw_binormal=True)
@@ -265,7 +307,7 @@ class MyApp(ShowBase):
 
     def update_green_point_position(self, dt, forward=True):
         # Define the speed of movement along the line
-        movement_speed = 0.5  # Adjust as needed
+        movement_speed = 5  # Adjust as needed
 
         # Calculate distances from self.green_point to each point in self.interpolated_points
         distances = np.linalg.norm(self.interpolated_points - self.green_point, axis=1)
@@ -330,10 +372,11 @@ class MyApp(ShowBase):
         dt = globalClock.getDt()
 
         # Update the green point position
-        if self.keyMap["green_point_forward"]:
-            self.update_green_point_position(dt, forward=True)
-        if self.keyMap["green_point_backward"]:
-            self.update_green_point_position(dt, forward=False)
+        if self.live_mode == False:
+            if self.keyMap["green_point_forward"]:
+                self.update_green_point_position(dt, forward=True)
+            if self.keyMap["green_point_backward"]:
+                self.update_green_point_position(dt, forward=False)
 
         # Update the camera position and orientation
         if self.view_mode == "fp":
@@ -461,7 +504,7 @@ class MyApp(ShowBase):
         green_point_visual = self.loader.loadModel(
             "models/smiley"
         )  # Ensure this is a valid model path
-        green_point_visual.setScale(0.05)  # Scale to appropriate size
+        green_point_visual.setScale(3)  # Scale to appropriate size
         green_point_visual.setColor(0, 1, 0, 1)  # Set color to green
         green_point_visual.setPos(LVector3f(*self.green_point))
 

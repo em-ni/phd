@@ -34,6 +34,9 @@ char rc;
 bool printForward = false;
 bool printBackward = false;
 bool printStopped = false;
+
+
+
 void setup() {
    Serial.begin(9600);
 }
@@ -76,9 +79,10 @@ void loop() {
   }
   
   // Move motor with potentiometer
-  int sensorReading = analogRead(A0);
-  // map it to a range from 0 to 100:
-  int motorSpeed = map(sensorReading, 0, 1023, 0, 100);
+//  int sensorReading = analogRead(A0);
+//  // map it to a range from 0 to 100:
+//  int motorSpeed = map(sensorReading, 0, 1023, 0, 100);
+  int motorSpeed = 80;
   // set the motor speed:
   if (motorSpeed > 0) {
     myStepper.setSpeed(motorSpeed);
@@ -88,7 +92,7 @@ void loop() {
       myStepper.step(stepsPerRevolution / 100);
     }
     if (rc == 'b'){
-      // step 1/100 of a revolution:
+        // step 1/100 of a revolution:
       myStepper.step(-stepsPerRevolution / 100);
     }
 

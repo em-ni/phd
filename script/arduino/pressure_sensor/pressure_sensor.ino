@@ -3,7 +3,10 @@ void setup() {
   Serial.begin(9600);
 }
 
-float adcToPressureMPa(int adcValue) {
+float adcToPressureMPa(int adcValue, int sensorNumber) {
+  bool printVoltage = false;
+  bool printPressure = true;
+  
   float referenceVoltage = 5.0; // Assuming 5V reference voltage
   float nullVoltage = 0.50;     // Sensor's null voltage
   float sensitivity = 0.016;   // Sensor's sensitivity in V/psi
@@ -15,32 +18,52 @@ float adcToPressureMPa(int adcValue) {
   // Subtract the null voltage
   float activeVoltage = voltage - nullVoltage;
 
-  Serial.print("Voltage: ");
-  Serial.println(activeVoltage);
+  if (printVoltage == true){
+    Serial.print("Voltage: ");
+    Serial.println(activeVoltage);
+  }
   
   // Convert active voltage to pressure in psi
   float pressurePsi = activeVoltage / sensitivity;
   
   // Convert pressure from psi to MPa
   float pressureMPa = pressurePsi * psiToMPa;
+
+  // Print the pressure value in MPa to the serial monitor
+  if (printPressure == true){
+    Serial.print("Pressure ");
+    Serial.print(sensorNumber);
+    Serial.print(" :");
+    Serial.print(pressureMPa, 3); // Print with 3 decimal places
+    Serial.println(" MPa");
+  }
   
   return pressureMPa;
 }
 
 void loop() {
-  // Read the value from the sensor connected to A0
-  int valueA0 = analogRead(A0);
-  int voltage = (valueA0 / 1023.0) * 5;
-  Serial.print("Raw: ");
-  Serial.print(valueA0);
-  Serial.print(" ");
-
-  float pressureA0 = adcToPressureMPa(valueA0);
+  bool printRaw = false;
   
-  // Print the pressure value in MPa to the serial monitor
-  //Serial.print("Pressure from A0: ");
-  //Serial.print(pressureA0, 3); // Print with 3 decimal places
-  //Serial.println(" MPa");
+  // Read the value from the sensor connected to A0
+  int valueA1 = analogRead(A1);
+  int valueA2 = analogRead(A2);
+  int valueA3 = analogRead(A3);
+  int valueA4 = analogRead(A4);
+
+  if (printRaw == true){
+    Serial.println("Raw: ");
+    Serial.println(valueA1);
+    Serial.println(valueA2);
+    Serial.println(valueA3);
+    Serial.println(valueA4);
+  }
+
+  float pressureA1 = adcToPressureMPa(valueA1, 1);
+  float pressureA2 = adcToPressureMPa(valueA2, 2);
+  float pressureA3 = adcToPressureMPa(valueA3, 3);
+  float pressureA4 = adcToPressureMPa(valueA4, 4);
+  
+
   Serial.println(" ");
   
   // Delay for a bit before reading again

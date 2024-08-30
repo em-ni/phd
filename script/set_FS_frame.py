@@ -159,7 +159,7 @@ def draw_FS_frames(
     # Load the .vtp file
     # line_model = pv.read("data/mesh/vascularmodel/0023_H_AO_MFS/sim/path.vtp")
     # line_model = pv.read("data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/path.vtp")
-    line_model = pv.read("data/mesh/slam_test/path.vtp")
+    line_model = pv.read("data/mesh/easier_slam_test/path.vtp")
     print(f"points: {line_model.points.shape}")
 
     # Interpolate the line for smoothing
