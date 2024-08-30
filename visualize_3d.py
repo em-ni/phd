@@ -1,5 +1,5 @@
 import argparse
-import pyvista as pv
+import pyvista as pv # type: ignore
 
 def main():
     # Define the command line arguments using argparse

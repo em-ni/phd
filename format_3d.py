@@ -44,11 +44,11 @@ The specific structure and content of .mdl files depend on the software or frame
 
 
 import argparse
-import gmsh
-import trimesh
-import vtk
-import pyvista as pv
-import meshio
+import gmsh # type: ignore
+import trimesh # type: ignore
+import vtk # type: ignore
+import pyvista as pv # type: ignore
+import meshio # type: ignore
 import os
 
 

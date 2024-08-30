@@ -1,10 +1,10 @@
 import argparse
 import threading
-from direct.showbase.ShowBase import ShowBase
-from panda3d.core import *
-from direct.task import Task
-from direct.gui.DirectGui import DirectLabel
-import pyvista as pv
+from direct.showbase.ShowBase import ShowBase # type: ignore
+from panda3d.core import * # type: ignore
+from direct.task import Task # type: ignore
+from direct.gui.DirectGui import DirectLabel # type: ignore
+import pyvista as pv # type: ignore
 from set_FS_frame import (
     interpolate_line,
     compute_tangent_vectors,
@@ -12,8 +12,13 @@ from set_FS_frame import (
     compute_binormal_vectors,
     compute_MRF,
 )
-import numpy as np
+import numpy as np # type: ignore
 import socket
+
+data_folder = "data/mesh/easier_slam_test/"
+path_name = "path.vtp"
+negative_model_name = "easier_slam_test_negative.obj"
+model_name = "easier_slam_test.obj"
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Path Navigation Tool")
@@ -33,9 +38,9 @@ parser.add_argument(
 args = parser.parse_args()
 
 # Configuration settings
-loadPrcFileData("", "win-size 800 600")
-loadPrcFileData("", "window-title Panda3D Full Camera Control")
-loadPrcFileData("", "load-file-type p3assimp")
+loadPrcFileData("", "win-size 800 600") # type: ignore
+loadPrcFileData("", "window-title Panda3D Full Camera Control") # type: ignore
+loadPrcFileData("", "load-file-type p3assimp") # type: ignore
 
 
 class MyApp(ShowBase):
@@ -43,7 +48,7 @@ class MyApp(ShowBase):
         ShowBase.__init__(self)
 
         # Define path of the .vtp file
-        self.path = "data/mesh/easier_slam_test/path.vtp"
+        self.path = data_folder + path_name
 
         # Check the view mode
         self.view_mode = args.view
@@ -70,11 +75,11 @@ class MyApp(ShowBase):
         )
 
         # Enable transparency for these icons
-        self.up_arrow.setTransparency(TransparencyAttrib.MDual)
-        self.down_arrow.setTransparency(TransparencyAttrib.MDual)
+        self.up_arrow.setTransparency(TransparencyAttrib.MDual) # type: ignore
+        self.down_arrow.setTransparency(TransparencyAttrib.MDual) # type: ignore
 
         # Set antialiasing
-        self.render.setAntialias(AntialiasAttrib.MAuto)
+        self.render.setAntialias(AntialiasAttrib.MAuto) # type: ignore
 
         # Initialize timer for blinking
         self.blink_timer = 0
@@ -123,18 +128,18 @@ class MyApp(ShowBase):
             # self.model = (
             #     "data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/0063_negative.obj"
             # )
-            self.model = "data/mesh/easier_slam_test/easier_slam_test_negative.obj"
+            self.model = data_folder + negative_model_name
 
             print("initializing First Person View Mode...")
             # Load the phantom model
             self.scene = self.loader.loadModel(self.model)
             self.scene.reparentTo(self.render)
-            self.scene.setTransparency(TransparencyAttrib.MDual)
+            self.scene.setTransparency(TransparencyAttrib.MDual) # type: ignore
             self.scene.setColorScale(1, 1, 1, 1)  # Set transparency level
             self.scene.setTwoSided(True)
 
             # Adjust material properties
-            myMaterial = Material()
+            myMaterial = Material() # type: ignore
             myMaterial.setShininess(80)  # Higher shininess for more specular highlight
             myMaterial.setSpecular((0.9, 0.9, 0.9, 1))  # Brighter specular highlights
             myMaterial.setAmbient((0.3, 0.3, 0.3, 1))  # Slightly brighter ambient color
@@ -144,7 +149,7 @@ class MyApp(ShowBase):
             self.scene.setMaterial(myMaterial, 1)
 
             # Add directional light (consider also using ambient light)
-            directionalLight = DirectionalLight("directionalLight")
+            directionalLight = DirectionalLight("directionalLight") # type: ignore
             directionalLight.setColor((1, 0.9, 0.8, 1))  # Warm light color
             directionalLightNP = self.render.attachNewNode(directionalLight)
             directionalLightNP.setHpr(
@@ -153,7 +158,7 @@ class MyApp(ShowBase):
             self.render.setLight(directionalLightNP)
 
             # Add ambient light
-            ambientLight = AmbientLight("ambientLight")
+            ambientLight = AmbientLight("ambientLight") # type: ignore
             ambientLight.setColor((0.2, 0.2, 0.2, 1))
             ambientLightNP = self.render.attachNewNode(ambientLight)
             self.render.setLight(ambientLightNP)
@@ -169,14 +174,14 @@ class MyApp(ShowBase):
 
             # Load the standard model to visualize the external part
             # self.model = "data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/0063.obj"
-            self.model = "data/mesh/easier_slam_test/easier_slam_test.obj"
+            self.model = data_folder + model_name
 
             # Load the phantom model
             self.scene = self.loader.loadModel(self.model)
             self.scene.reparentTo(self.render)
 
             # Set transparency level (0.5 for 50% transparency) to see the green point mmoving inside
-            self.scene.setTransparency(TransparencyAttrib.MDual)
+            self.scene.setTransparency(TransparencyAttrib.MDual) # type: ignore
             self.scene.setColorScale(1, 1, 1, 0.5)
 
             # Initially draw the path up to the first point
@@ -281,18 +286,18 @@ class MyApp(ShowBase):
         closest_index = np.argmin(distances)
 
         # Get the corresponding tangent, normal, and binormal vectors
-        tangent = LVector3f(*self.tangents[closest_index])
-        normal = LVector3f(*self.normals[closest_index])
-        binormal = LVector3f(*self.binormals[closest_index])
+        tangent = LVector3f(*self.tangents[closest_index]) # type: ignore
+        normal = LVector3f(*self.normals[closest_index]) # type: ignore
+        binormal = LVector3f(*self.binormals[closest_index]) # type: ignore
 
         # Set the camera position at the green point
-        self.camera.setPos(LVector3f(*self.green_point))
+        self.camera.setPos(LVector3f(*self.green_point)) # type: ignore
 
         # Calculate the focal point using the tangent vector
         focal_point = self.green_point + tangent
 
         # Set the camera to look at the focal point with the binormal as the up vector
-        self.camera.lookAt(LVector3f(*focal_point), normal)
+        self.camera.lookAt(LVector3f(*focal_point), normal) # type: ignore
 
         # Update the directional light's orientation to match the camera's orientation
         # if in first-person view mode
@@ -369,7 +374,7 @@ class MyApp(ShowBase):
                 self.unhighlight_arrow("down")
 
     def update_scene(self, task):
-        dt = globalClock.getDt()
+        dt = globalClock.getDt() # type: ignore
 
         # Update the green point position
         if self.live_mode == False:
@@ -392,7 +397,7 @@ class MyApp(ShowBase):
             self.green_point_visible = not self.green_point_visible  # Toggle visibility
             if self.green_point_node:
                 self.green_point_node.setTransparency(
-                    TransparencyAttrib.MDual
+                    TransparencyAttrib.MDual # type: ignore
                 )  # Enable transparency
                 self.green_point_node.setAlphaScale(
                     1 if self.green_point_visible else 0.5
@@ -429,19 +434,19 @@ class MyApp(ShowBase):
             self.draw_circle(circle_points)
 
     def draw_circle(self, points):
-        circle = LineSegs()
+        circle = LineSegs() # type: ignore
         circle.setThickness(5.0)  # Increased thickness
         circle.setColor(1, 1, 0, 1)  # Changed color to yellow for better visibility
 
         # Convert points to LVecBase3f and draw the circle
         for i, point in enumerate(points):
-            panda_point = LVector3f(point[0], point[1], point[2])
+            panda_point = LVector3f(point[0], point[1], point[2]) # type: ignore
             if i == 0:
                 circle.moveTo(panda_point)
             else:
                 circle.drawTo(panda_point)
         # Connect back to the first point
-        circle.drawTo(LVector3f(points[0][0], points[0][1], points[0][2]))
+        circle.drawTo(LVector3f(points[0][0], points[0][1], points[0][2])) # type: ignore
 
         # Add the circle to the scene
         circle_node = circle.create()
@@ -506,7 +511,7 @@ class MyApp(ShowBase):
         )  # Ensure this is a valid model path
         green_point_visual.setScale(3)  # Scale to appropriate size
         green_point_visual.setColor(0, 1, 0, 1)  # Set color to green
-        green_point_visual.setPos(LVector3f(*self.green_point))
+        green_point_visual.setPos(LVector3f(*self.green_point)) # type: ignore
 
         # Create a new node and parent the visual to it
         green_point_node = self.render.attachNewNode("GreenPointNode")
@@ -519,17 +524,17 @@ class MyApp(ShowBase):
             up_to_index = len(points) - 1
 
         # Create the line
-        line = LineSegs()
+        line = LineSegs() # type: ignore
         line.setThickness(5.0)  # Set a reasonable thickness
         line.setColor(1, 0, 0, 1)  # Red color
 
         # Start drawing the line from the first point
-        first_point = LVector3f(points[0][0], points[0][1], points[0][2])
+        first_point = LVector3f(points[0][0], points[0][1], points[0][2]) # type: ignore
         line.moveTo(first_point)
 
         # Draw to the rest of the points up to the specified index
         for i in range(1, up_to_index + 1):
-            next_point = LVector3f(points[i][0], points[i][1], points[i][2])
+            next_point = LVector3f(points[i][0], points[i][1], points[i][2]) # type: ignore
             # Check for large jumps in the points and skip if necessary
             if (
                 next_point - first_point
@@ -551,7 +556,7 @@ class MyApp(ShowBase):
         points = interpolate_line(points, num_points=50)
 
         # Create the line
-        line = LineSegs()
+        line = LineSegs() # type: ignore
         line.setThickness(5.0)
         line.setColor(
             8 / 255, 232 / 255, 222 / 255, 1
@@ -559,12 +564,12 @@ class MyApp(ShowBase):
 
         # Start drawing the line from the green point
         green_point = self.green_point
-        first_point = LVector3f(green_point[0], green_point[1], green_point[2])
+        first_point = LVector3f(green_point[0], green_point[1], green_point[2]) # type: ignore
         line.moveTo(first_point)
 
         # Draw to the rest of the points
         for i in range(1, len(points)):
-            next_point = LVector3f(points[i][0], points[i][1], points[i][2])
+            next_point = LVector3f(points[i][0], points[i][1], points[i][2]) # type: ignore
             if (next_point - first_point).length() < 1.0:
                 line.drawTo(next_point)
                 first_point = next_point
@@ -575,12 +580,12 @@ class MyApp(ShowBase):
 
     def draw_vector(self, start_point, direction, color):
         # Convert NumPy array to LVecBase3f
-        start_point = LVector3f(start_point[0], start_point[1], start_point[2])
+        start_point = LVector3f(start_point[0], start_point[1], start_point[2]) # type: ignore
         end_point = (
-            start_point + LVector3f(direction[0], direction[1], direction[2]) * 0.2
+            start_point + LVector3f(direction[0], direction[1], direction[2]) * 0.2 # type: ignore
         )
 
-        line = LineSegs()
+        line = LineSegs() # type: ignore
         line.setThickness(2.0)
         line.setColor(color)
         line.moveTo(start_point)
