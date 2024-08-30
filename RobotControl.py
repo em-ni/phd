@@ -118,7 +118,7 @@ class RobotControl:
         # After the server thread is started, the client can connect to the server
         # Use subprocess.Popen for asynchronous execution
         self.sensor_process = subprocess.Popen(
-            ["daq/cpp/build/read_sensors"],
+            ["sensors/daq/cpp/build/read_sensors"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
