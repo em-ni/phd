@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/read_sensors.dir/main.cpp.o CMakeFiles/read_sensors.dir/src/USB1408FS.cpp.o CMakeFiles/read_sensors.dir/src/pmd.c.o CMakeFiles/read_sensors.dir/src/usb-1408FS.c.o -o read_sensors   -L/usr/lib/gcc/x86_64-linux-gnu/10  -lusb-1.0 -lhidapi-libusb 
