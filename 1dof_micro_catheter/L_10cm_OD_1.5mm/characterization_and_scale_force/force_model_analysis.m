@@ -44,28 +44,61 @@ end
 close(h);
 
 % Plot force components for different curvatures - Fx
-figure
-hold on
+% Prepare data and color mapping
 colors = jet(length(curvature_range)); % Get a colormap to differentiate curvatures
-for j = 1:length(curvature_range)
-    plot(pressure, fx_data(:, j), 'Color', colors(j,:), 'LineWidth', 1.5, 'DisplayName', ['Fx, k=' num2str(floor(curvature_range(j)))]);
-end
-xlabel('Pressure [Pa]');
-ylabel('Force [N]');
-legend('Location', 'best');
-title('F$^b_x$ vs pressure for different curvatures', 'Interpreter', 'latex');
 
-% Plot force components for different curvatures - Fy
-figure
-hold on
-colors = jet(length(curvature_range)); % Get a colormap to differentiate curvatures
+%% Create a figure for subplots
+figure;
+
+pressure = pressure / 1e5; % Convert pressure to MPa for display
+fx_data = fx_data * 1e3;   % Convert Fx to milliNewtons for display
+fy_data = fy_data * 1e3;   % Convert Fy to milliNewtons for display
+
+% Subplot for Fx
+subplot(1,2,1); % Positioning this plot in the first half of the figure
+hold on;
 for j = 1:length(curvature_range)
-    plot(pressure, fy_data(:, j), 'Color', colors(j,:), 'LineWidth', 1.5, 'DisplayName', ['Fy, k=' num2str(floor(curvature_range(j)))]);
+    p = plot(pressure, fx_data(:, j), 'Color', colors(j,:), 'LineWidth', 1.5);
+    % Label only the first and last curvature values
+    if j == 1
+        midPoint = floor(length(pressure)/3*2); % Find the middle index of the pressure array
+        text(pressure(midPoint), fx_data(midPoint, j) + 0.5, ['k=' num2str(floor(curvature_range(j)))], ...
+            'FontSize', 30, 'Color', colors(j,:), 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center');
+    end
+    if j == length(curvature_range)
+        midPoint = floor(length(pressure)/3*2); % Find the middle index of the pressure array
+        text(pressure(midPoint) + 1, fx_data(midPoint, j) - 0.5, ['k=' num2str(floor(curvature_range(j)))], ...
+            'FontSize', 30, 'Color', colors(j,:), 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center');
+    end
 end
-xlabel('Pressure [Pa]');
-ylabel('Force [N]');
-legend('Location', 'best');
-title('F$^b_y$ vs pressure for different curvatures', 'Interpreter', 'latex');
+xlabel('Pressure [MPa]', 'FontSize', 40);
+ylabel('F$^b_x$ [mN]', 'Interpreter', 'latex', 'FontSize', 40);
+set(gca, 'FontSize', 40);
+hold off;
+
+% Subplot for Fy
+subplot(1,2,2); % Positioning this plot in the second half of the figure
+hold on;
+for j = 1:length(curvature_range)
+    p = plot(pressure, fy_data(:, j), 'Color', colors(j,:), 'LineWidth', 1.5);
+    % Label only the first and last curvature values
+    if j == 1
+        midPoint = floor(length(pressure)/3*2); % Find the middle index of the pressure array
+        text(pressure(midPoint), fy_data(midPoint, j) - 3, ['k=' num2str(floor(curvature_range(j)))], ...
+            'FontSize', 30, 'Color', colors(j,:), 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center');
+    end
+    if j == length(curvature_range)
+        midPoint = floor(length(pressure)/3*2); % Find the middle index of the pressure array
+        text(pressure(midPoint) + 0.75, fy_data(midPoint, j), ['k=' num2str(floor(curvature_range(j)))], ...
+            'FontSize', 30, 'Color', colors(j,:), 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center');
+    end
+end
+xlabel('Pressure [MPa]', 'FontSize', 40);
+ylabel('F$^b_y$ [mN]', 'Interpreter', 'latex', 'FontSize', 40);
+set(gca, 'FontSize', 40);
+hold off;
+
+
 
 % % Plot f vertical for different curvatures (in case it is in the ee reference frame)
 % figure
@@ -91,73 +124,73 @@ title('F$^b_y$ vs pressure for different curvatures', 'Interpreter', 'latex');
 % legend('Location', 'best');
 % title('F$^{ee}_x$ vs pressure for different curvatures', 'Interpreter', 'latex');
 
-% Plot absolute force for different curvatures
-figure
-hold on
-for j = 1:length(curvature_range)
-    plot(pressure, force_pred_abs_data(:, j), 'Color', colors(j,:), 'LineWidth', 1.5, 'DisplayName', ['|F|, k=' num2str(floor(curvature_range(j)))]);
-end
-xlabel('Pressure [Pa]');
-ylabel('Force [N]');
-legend('Location', 'best');
-title('$$|F|$$ vs pressure for different curvatures', 'Interpreter', 'latex');
+% % Plot absolute force for different curvatures
+% figure
+% hold on
+% for j = 1:length(curvature_range)
+%     plot(pressure, force_pred_abs_data(:, j), 'Color', colors(j,:), 'LineWidth', 1.5, 'DisplayName', ['|F|, k=' num2str(floor(curvature_range(j)))]);
+% end
+% xlabel('Pressure [Pa]');
+% ylabel('Force [N]');
+% legend('Location', 'best');
+% title('$$|F|$$ vs pressure for different curvatures', 'Interpreter', 'latex');
 
 
-%% Perform thje force model analysis for epsilon force model
-L0 = 8e-3;
-pressure = linspace(1e4, 7e5, 10); % Span pressure from 0 to 1 MPa
-L_range = linspace(L0, 10e-3, 10); % Range of length values
-
-% Preallocate storage for force data
-f_data = zeros(length(pressure), length(L_range));
-f_y_epsilon = zeros(length(pressure), length(L_range));
-
-% Take a curavture value 
-k = 0.4*pi/L0;
-
-% Initialize loading bar
-h = waitbar(0, 'Calculating forces...');
-% Loop over length values
-for j = 1:length(L_range)
-    L = L_range(j);
-    % Loop over pressure values
-    for i = 1:length(pressure)
-        f = force_model_epsilon(L, L0, pressure(i));
-        f_data(i, j) = f; % Store F for this length and pressure
-        f_y_epsilon(i, j) = f * sin(k*L);
-
-        % Update loading bar
-        progress = ((j-1) * length(pressure) + i) / (length(L_range) * length(pressure));
-        waitbar(progress, h);
-    end
-end
-
-% Close loading bar
-close(h);
-
-% Plot force components for different lengths
-figure
-hold on
-colors = jet(length(L_range)); % Get a colormap to differentiate lengths
-for j = 1:length(L_range)
-    plot(pressure, f_data(:, j), 'Color', colors(j,:), 'LineWidth', 1.5, 'DisplayName', ['F, L=' num2str(L_range(j)*1e3) 'mm']);
-end
-xlabel('Pressure [Pa]');
-ylabel('Force [N]');
-legend('Location', 'best');
-title('F (elongation) vs pressure for different lengths', 'Interpreter', 'latex');
-
-% Plot f_y for different lengths
-figure
-hold on
-colors = jet(length(L_range)); % Get a colormap to differentiate lengths
-for j = 1:length(L_range)
-    plot(pressure, f_y_epsilon(:, j), 'Color', colors(j,:), 'LineWidth', 1.5, 'DisplayName', ['F_y, L=' num2str(L_range(j)*1e3) 'mm']);
-end
-xlabel('Pressure [Pa]');
-ylabel('Force [N]');
-legend('Location', 'best');
-title('F$^{b}_y$ (elongation) vs pressure for different lengths', 'Interpreter', 'latex');
+% %% Perform thje force model analysis for epsilon force model
+% L0 = 8e-3;
+% pressure = linspace(1e4, 7e5, 10); % Span pressure from 0 to 1 MPa
+% L_range = linspace(L0, 10e-3, 10); % Range of length values
+% 
+% % Preallocate storage for force data
+% f_data = zeros(length(pressure), length(L_range));
+% f_y_epsilon = zeros(length(pressure), length(L_range));
+% 
+% % Take a curavture value 
+% k = 0.4*pi/L0;
+% 
+% % Initialize loading bar
+% h = waitbar(0, 'Calculating forces...');
+% % Loop over length values
+% for j = 1:length(L_range)
+%     L = L_range(j);
+%     % Loop over pressure values
+%     for i = 1:length(pressure)
+%         f = force_model_epsilon(L, L0, pressure(i));
+%         f_data(i, j) = f; % Store F for this length and pressure
+%         f_y_epsilon(i, j) = f * sin(k*L);
+% 
+%         % Update loading bar
+%         progress = ((j-1) * length(pressure) + i) / (length(L_range) * length(pressure));
+%         waitbar(progress, h);
+%     end
+% end
+% 
+% % Close loading bar
+% close(h);
+% 
+% % Plot force components for different lengths
+% figure
+% hold on
+% colors = jet(length(L_range)); % Get a colormap to differentiate lengths
+% for j = 1:length(L_range)
+%     plot(pressure, f_data(:, j), 'Color', colors(j,:), 'LineWidth', 1.5, 'DisplayName', ['F, L=' num2str(L_range(j)*1e3) 'mm']);
+% end
+% xlabel('Pressure [Pa]');
+% ylabel('Force [N]');
+% legend('Location', 'best');
+% title('F (elongation) vs pressure for different lengths', 'Interpreter', 'latex');
+% 
+% % Plot f_y for different lengths
+% figure
+% hold on
+% colors = jet(length(L_range)); % Get a colormap to differentiate lengths
+% for j = 1:length(L_range)
+%     plot(pressure, f_y_epsilon(:, j), 'Color', colors(j,:), 'LineWidth', 1.5, 'DisplayName', ['F_y, L=' num2str(L_range(j)*1e3) 'mm']);
+% end
+% xlabel('Pressure [Pa]');
+% ylabel('Force [N]');
+% legend('Location', 'best');
+% title('F$^{b}_y$ (elongation) vs pressure for different lengths', 'Interpreter', 'latex');
 
 
 

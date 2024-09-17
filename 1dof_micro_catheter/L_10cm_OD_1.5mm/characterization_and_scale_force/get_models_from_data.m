@@ -48,18 +48,24 @@ k_intercept = mdl.Coefficients.Estimate(1);
 
 % Plot linear model and original data points
 figure;
-plot(mdl);
+plot(mdl, LineWidth=5)
 hold on;
-scatter(pressure, curvature, 'filled');
+scatter(pressure, curvature, 'filled', LineWidth=5)
 x = linspace(0, max(pressure)+0.1*max(pressure), 100);
 y = k_data * x + k_intercept;
-plot(x, y, 'r');
+plot(x, y, 'r', LineWidth=5)
 hold off;
-ylabel("Curvature [1/m]");
-xlabel("Pressure [Pa]");
-title("Linear Model for Pressure vs Curvature for Free Motion Experiment");
+ylabel("Curvature [1/m]", 'Interpreter', 'latex', 'fontsize', 30);
+xlabel("Pressure [Pa]", 'Interpreter', 'latex', 'fontsize', 30);
+title("Linear Model for Pressure vs Curvature for Free Motion Experiment", 'Interpreter', 'latex', 'fontsize', 30);
 xlim([0, max(pressure)+0.1*max(pressure)]);
 ylim([0, max(curvature)+0.1*max(curvature)]);
+% Adjust x-ticks and x-tick labels for pressure
+xticks_current = get(gca, 'xtick');
+set(gca, 'xtick', xticks_current);
+set(gca, 'xticklabel', xticks_current);
+ax = gca;  % Get handle to current axes.
+ax.FontSize = 30;  % Set font size.
 
 % Same but for pressure vs epsilon
 % Calculate epsilon

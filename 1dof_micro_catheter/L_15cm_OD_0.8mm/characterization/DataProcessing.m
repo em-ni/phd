@@ -546,8 +546,8 @@ fill(X_fill_curvature, Y_fill_curvature, light_grey, 'EdgeColor', 'none', 'Displ
 % plot(pressure_f_curvature(plot_k_interval), curvature_f_resampled(plot_k_interval), 'DisplayName', 'Measured Data', 'LineWidth', 3, 'Color', light_grey)%, 'Marker', '*', 'MarkerSize', 10, 'LineStyle', 'none')
 plot(pressure_f, circle_model_curvature, 'b',  'DisplayName', 'Circular Cross section', 'LineWidth', 5)
 plot(pressure_f, opt_model_curvature, 'r', 'DisplayName', 'Optimized Shape', 'LineWidth', 5)
-xlabel('$p$ [MPa]', 'Interpreter', 'latex', 'fontsize', 40)
-ylabel('$\kappa$ [1/mm]', 'Interpreter', 'latex', 'fontsize', 40)
+xlabel('$p$ [MPa]', 'Interpreter', 'latex', 'fontsize', 60)
+ylabel('$\kappa$ [1/mm]', 'Interpreter', 'latex', 'fontsize', 60)
 
 % Adjust x-ticks and x-tick labels for pressure
 xticks_current = get(gca, 'xtick');
@@ -557,11 +557,11 @@ set(gca, 'xticklabel', xticks_current / 10);
 % Set y-axis limits to focus on specific range
 ylim([0.025 0.175]);
 
-lgd = legend('Experimental Data', 'Nominal cross section', 'Optimized cross section', 'Box', 'off');
-set(lgd,'FontSize',40);
+lgd = legend('Experimental Data', 'Nominal', 'Optimized', 'Box', 'off');
+set(lgd,'FontSize',60);
 legend('Location', 'Best');
 ax = gca;  % Get handle to current axes.
-ax.FontSize = 40;  % Set font size.
+ax.FontSize = 60;  % Set font size.
 hold off
 
 
@@ -589,7 +589,7 @@ curvature_f_resampled = interp1(old_indices, curvature_f_resampled, new_indices,
 
 % Reduce dimension of all vectors
 interval = [420:1900]; %orientation
-%interval = [200:2900];
+% interval = [200:2900];
 pressure_f = pressure_f(interval);
 curvature_f_resampled = curvature_f_resampled(interval);
 arc_length_f_resampled = arc_length_f_resampled(interval);
@@ -600,8 +600,12 @@ opt_model_elongation = opt_model_elongation(interval);
 
 
 % Define the kinematic model
-x_t = arc_length_f_resampled .* ( 1 - cos(curvature_f_resampled.*arc_length_f_resampled)) ./ (curvature_f_resampled.*arc_length_f_resampled);
+% arc_length_f_resampled = arc_length_f_resampled/2 - 0.2;
+% curvature_f_resampled = opt_model_curvature;
+x_t = arc_length_f_resampled .* ( 1 - cos(curvature_f_resampled.*arc_length_f_resampled)) ./ (curvature_f_resampled.*arc_length_f_resampled)+0.1;
 y_t = arc_length_f_resampled .* sin(curvature_f_resampled.*arc_length_f_resampled) ./ (curvature_f_resampled.*arc_length_f_resampled);
+% x_t = arc_length_f_resampled .* ( 1 - cos(curvature_f_resampled.*arc_length_f_resampled)) ./ (curvature_f_resampled.*arc_length_f_resampled);
+% y_t = arc_length_f_resampled .* sin(curvature_f_resampled.*arc_length_f_resampled) ./ (curvature_f_resampled.*arc_length_f_resampled);
 
 x_t_nominal = L .* ( 1 - cos(circle_model_curvature.*L)) ./ (circle_model_curvature.*L);
 y_t_nominal = L .* sin(circle_model_curvature.*L) ./ (circle_model_curvature.*L)-0.01;
@@ -631,30 +635,31 @@ for i = 1:length(unique_xt)
     y_lower(i) = min(y_t(idx));
 end
 
+
 % Create x and y vectors for fill
 X_fill_position = [unique_xt, fliplr(unique_xt)]; 
 Y_fill_position = [y_upper, fliplr(y_lower)];
 
 % Use fill function to create shaded region
 fill(X_fill_position, Y_fill_position, light_grey, 'EdgeColor', 'none', 'DisplayName', 'Experimental Data', 'FaceAlpha', 0.5);
-
+hold on
 %plot(x_t, y_t, 'DisplayName', 'Measured Data', 'LineWidth', 3, 'Color', light_grey, 'Marker', '*', 'MarkerSize', 10)
 % plot_pos_interval = [1:1:length(x_t)];
 % plot(x_t(plot_pos_interval), y_t(plot_pos_interval), 'DisplayName', 'Measured Data', 'LineWidth', 3, 'Color', light_grey)%, 'Marker', '*', 'MarkerSize', 10, 'LineStyle', 'none')
 
 plot(x_t_nominal, y_t_nominal, 'b',  'DisplayName', 'Circular Cross section', 'LineWidth', 5)
 plot(x_t_opt, y_t_opt, 'r', 'DisplayName', 'Optimized Shape', 'LineWidth', 5)
-xlabel('$x_t$ [mm]', 'Interpreter', 'latex', 'fontsize', 40)
-ylabel('$y_t$ [mm] ', 'Interpreter', 'latex', 'fontsize', 40)
+xlabel('$x_t$ [mm]', 'Interpreter', 'latex', 'fontsize', 60)
+ylabel('$y_t$ [mm] ', 'Interpreter', 'latex', 'fontsize', 60)
 
-lgd = legend('Experimental Data', 'Circular cross section', 'Optimized cross section', 'Interpreter', 'latex', 'fontsize', 40, 'Box', 'off');
-set(lgd,'FontSize',40);
-legend('Location', 'Best');
+% lgd = legend('Experimental Data', 'Nominal', 'Optimized', 'Box', 'off');
+% set(lgd,'FontSize',60);
+% legend('Location', 'Best');
 xlim([0.4 2])
 ylim([4.35 5.25])
 
 ax = gca;  % Get handle to current axes.
-ax.FontSize = 40;  % Set font size.
+ax.FontSize = 60;  % Set font size.
 
 hold off
 
@@ -687,24 +692,24 @@ plot_or_interval = [1:10:length(pressure_f)-500];
 
 plot(pressure_f, alpha_nominal, 'b', 'DisplayName', 'Circular Cross section', 'LineWidth', 5);
 plot(pressure_f, alpha_opt, 'r', 'DisplayName', 'Optimized Shape', 'LineWidth', 5);
-xlabel('$p$ [MPa]', 'Interpreter', 'latex', 'fontsize', 40);
-ylabel('$\theta$ [rad]', 'Interpreter', 'latex', 'fontsize', 40);
+xlabel('$p$ [MPa]', 'Interpreter', 'latex', 'fontsize', 60);
+ylabel('$\theta$ [rad]', 'Interpreter', 'latex', 'fontsize', 60);
 
 % Adjust x-ticks and x-tick labels for pressure
 xticks_current = get(gca, 'xtick');
 set(gca, 'xtick', xticks_current);
-set(gca, 'xticklabel', xticks_current / 10);
+set(gca, 'xticklabel', xticks_current);
 
 % Set y-axis limits to focus on specific range
 % xlim([1.5 6]);
 % ylim([0 1]);
 
-lgd = legend('Experimental Data', 'Nominal cross section', 'Optimized cross section', 'Box', 'off');
-set(lgd,'FontSize',40);
+% lgd = legend('Experimental Data', 'Nominal', 'Optimized', 'Box', 'off', 'Location','southeast');
+% set(lgd,'FontSize',60);
 
-legend('Location', 'Best');
+% legend('Location', 'Best');
 ax = gca;  % Get handle to current axes.
-ax.FontSize = 40;  % Set font size.
+ax.FontSize = 60;  % Set font size.
 
 hold off;
 

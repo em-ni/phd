@@ -1,7 +1,7 @@
 """
 50 epochs
 MODEL       BATCH       TRAINABLE (on local GPU)  FILE REF (runs/detect)  TRAIN MEMORY (dedicated GPU - shared GPU - GPU memory)
-yolov10n    32          V                         train7  val4            ?
+yolov10n    32          V                         train7  val4            10 GB (Task Manager) 6.5 GB (Terminal)
 yolov10l    32          V                         train11 val7            31/32 GB (Task Manager) 28.5 GB (Terminal) <---- BEST I CAN DO WITH LOCAL PC
 yolov10x    16          V                         train9  val6            24/32 GB
 yolov10x    32          X                         train8  val5            /
@@ -13,7 +13,6 @@ yolov10l    32          V                         train13 val9            28.5 G
 yolov10x    16          V                         
 yolov10x    32          X                         /                         /
 
-Train for more epochs and check if that problem is solved. Start with yolov10n 
 """
 
 import os

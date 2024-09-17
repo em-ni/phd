@@ -6,17 +6,14 @@ from scipy import optimize
 from utils import *  
 import os
 
-#experiment_name = 'free_motion'
-experiment_name = 'force_large_bending'
-# experiment_name = 'force_small_bending'
+experiment_name = 'sofa_free_motion'
+# experiment_name = 'sofa_force_small_bending'
 
 # Path to the directory containing images
-if experiment_name == 'free_motion':
-    image_files = glob.glob('data/free_motion/crop/*')
-elif experiment_name == 'force_large_bending':
-    image_files = glob.glob('data/force_large_bending/crop/*')
-elif experiment_name == 'force_small_bending':
-    image_files = glob.glob('data/force_small_bending/crop/*')
+if experiment_name == 'sofa_free_motion':
+    image_files = glob.glob('data/sofa_free_motion/crop/*')
+elif experiment_name == 'sofa_force_small_bending':
+    image_files = glob.glob('data/sofa_force_small_bending/crop/*')
 
 # Flag variable to track the first iteration
 first_iteration = True  
@@ -30,38 +27,27 @@ for image_file in image_files:
         # For example, convert the frame to HSV
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        if experiment_name == 'free_motion':
+        if experiment_name == 'sofa_free_motion':
             # Define the color range for red (tip)
             lower_red1 = np.array([0, 100, 100])  # Increase saturation and value
             upper_red1 = np.array([10, 255, 255])
             lower_red2 = np.array([160, 100, 100])  # Increase saturation and value
             upper_red2 = np.array([180, 255, 255])
 
-            # Define the color range for blue
-            lower_blue = np.array([100, 50, 50])  # Blue hue range
-            upper_blue = np.array([140, 255, 255])
+            # Define a color range for yellow
+            lower_yellow = np.array([25, 150, 150])  # Wider range for yellow detection
+            upper_yellow = np.array([35, 255, 250])
 
-        elif experiment_name == 'force_large_bending':
-            # Define the color ranges for red
-            lower_red1 = np.array([0, 100, 100])  # Increase saturation and value
-            upper_red1 = np.array([10, 255, 255])
-            lower_red2 = np.array([160, 100, 100])  # Increase saturation and value
-            upper_red2 = np.array([180, 255, 255])
-            
-            # Define the color range for blue
-            lower_blue = np.array([100, 100, 50])  # Increase saturation
-            upper_blue = np.array([130, 255, 255])  # Narrow the hue range
-
-        elif experiment_name == 'force_small_bending':
+        elif experiment_name == 'sofa_force_small_bending':
             # Define the color ranges for red
             lower_red1 = np.array([0, 140, 90])  # Slightly higher saturation and value
             upper_red1 = np.array([6, 255, 255])
             lower_red2 = np.array([174, 140, 90])  # Slightly higher saturation and value
             upper_red2 = np.array([179, 255, 255])
             
-            # Define the color range for blue
-            lower_blue = np.array([100, 100, 50])  # Increase saturation
-            upper_blue = np.array([130, 255, 255])  # Narrow the hue range
+            # Define a color range for yellow
+            lower_yellow = np.array([25, 150, 150])  # Wider range for yellow detection
+            upper_yellow = np.array([35, 255, 250])
 
         # Get average of coorinates of point in red tip
         mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
@@ -70,12 +56,12 @@ for image_file in image_files:
         red_tip = cv2.bitwise_and(frame, frame, mask=mask_red)
         x_tip, y_tip = get_red_tip_avg(red_tip)
         
-        # Detect blue objects
-        mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
-        blue_base = cv2.bitwise_and(frame, frame, mask=mask_blue)
+        # Detect yellow objects
+        mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+        yellow_base = cv2.bitwise_and(frame, frame, mask=mask_yellow)
 
-        # Get average coordinates of blue base
-        x_base, y_base = get_blue_base_avg(blue_base)
+        # Get average coordinates of yellow base
+        x_base, y_base = get_blue_base_avg(yellow_base)
 
         # Draw points on the frame (for debugging)
         if not np.isnan(x_tip) and not np.isnan(y_tip):
@@ -84,19 +70,6 @@ for image_file in image_files:
             cv2.circle(frame, (int(x_base), int(y_base)), 10, (0, 255, 0), 5)    
 
         # Apply the new edge detection process
-        # Remove also black color if small bendingexperiment
-        if experiment_name == 'force_small_bending':
-            lower_black = np.array([0, 0, 0])
-            upper_black = np.array([180, 255, 30])
-            mask_black = cv2.inRange(hsv, lower_black, upper_black)
-            mask_background = cv2.bitwise_or(mask_black, mask_blue)
-        
-            # Remove more black
-            lower_black2 = np.array([0, 0, 0])
-            upper_black2 = np.array([180, 255, 50])
-            mask_black2 = cv2.inRange(hsv, lower_black2, upper_black2)
-            mask_background = cv2.bitwise_or(mask_background, mask_black2)
-
         edges = process_frame_for_edges(frame)
 
         points = np.where(edges > 0)
@@ -145,9 +118,6 @@ for image_file in image_files:
             # Compute arc length
             arc_length = compute_arc_length(x_c, y_c, radius, x_base, y_base, x_tip, y_tip)
 
-            # Inside the loop, after processing each image:
-            pressure, force = parse_filename(image_file)
-
             # Define the path to the CSV file
             csv_path = f'data/{experiment_name}/cv_output.csv'  
 
@@ -159,7 +129,7 @@ for image_file in image_files:
 
             with open(csv_path, 'a') as f:
                 # Include pressure and force in the CSV entry
-                f.write(f'{pressure},{force},{radius:.2f},{curvature:.2f},{arc_length:.2f},{x_tip:.2f},{y_tip:.2f},{x_base:.2f},{y_base:.2f}\n')
+                f.write(f'{radius:.2f},{curvature:.2f},{arc_length:.2f},{x_tip:.2f},{y_tip:.2f},{x_base:.2f},{y_base:.2f}\n')
 
             # Check radius thresold
             if radius < 1000:               
@@ -170,8 +140,6 @@ for image_file in image_files:
             font = cv2.FONT_HERSHEY_SIMPLEX
             cv2.putText(frame, 'Radius: {:.2f} px'.format(radius), (10, 50), font, 0.5, (204, 229, 255), 1, cv2.LINE_AA)
             cv2.putText(frame, 'Arc Length: {:.2f} px'.format(arc_length), (10, 90), font, 0.5, (204, 229, 255), 1, cv2.LINE_AA)
-            cv2.putText(frame, 'Pressure: {}'.format(pressure), (10, 130), font, 0.5, (204, 229, 255), 1, cv2.LINE_AA)
-            cv2.putText(frame, 'Force: {}'.format(force), (10, 170), font, 0.5, (204, 229, 255), 1, cv2.LINE_AA)
             cv2.putText(frame, 'X Tip: {:.2f}'.format(x_tip), (10, 210), font, 0.5, (204, 229, 255), 1, cv2.LINE_AA)
             cv2.putText(frame, 'Y Tip: {:.2f}'.format(y_tip), (10, 250), font, 0.5, (204, 229, 255), 1, cv2.LINE_AA)
         

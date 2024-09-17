@@ -8,7 +8,7 @@ L = 8*1e-3; % [m]
 % Get data from large bending experiment
 % Pressure [Bar], Force [g], Radius [px], Curvature [1/px], Arc Length [px], x_tip [px], y_tip [px], x_base [px], y_base [px]
 data = load("data/force_small_bending/cv_output.csv");
-%data = load("data/force_large_bending/cv_output.csv");
+% data = load("data/force_large_bending/cv_output.csv");
 
 % [Bar] to [Pa]
 pressure_bar = data(:,1); % [Bar]
@@ -169,9 +169,11 @@ for i = 1:length(pressure)
     fy_epsilon(i) = f_epsilon(i) * sin(arc_length(i)*curvature(i));
 
     % Add the force from the elongation of the robot to the force prediction
-    alpha = 1e-5;
-    beta = 8.2e-3;
-    beta = 6.3e-3;
+    % alpha = 1e-5;
+    % beta = 8.2e-3;
+    % beta = 6.3e-3;
+    alpha = 1.4e-5;
+    beta = 9.3e-3;
     force_pred(i) = force_pred(i) + alpha*pressure(i)*fy_epsilon(i)/curvature(i) - beta;
     if force_pred(i) < 0
         force_pred(i) = 0;
@@ -180,63 +182,75 @@ for i = 1:length(pressure)
 end
 
 % Plot force components vs pressure
-figure
-hold on
-plot(pressure, fx_pred, 'o', 'DisplayName', 'Fx prediction')
-plot(pressure, fy_pred, 'o', 'DisplayName', 'Fy prediction')
-xlabel('Pressure [Pa]')
-ylabel('Force [N]')
-legend
-title('Force components vs pressure')
+% figure
+% hold on
+% plot(pressure, fx_pred, 'o', 'DisplayName', 'Fx prediction')
+% plot(pressure, fy_pred, 'o', 'DisplayName', 'Fy prediction')
+% xlabel('Pressure [Pa]')
+% ylabel('Force [N]')
+% legend
+% title('Force components vs pressure')
 
-% Plot force pred vs pressure
-figure
-hold on
-plot(pressure, force_pred_abs, 'o', 'DisplayName', 'Force prediction absolute value')
-xlabel('Pressure [Pa]')
-ylabel('Force [N]')
-legend
-title('Force prediction vs pressure')
+% % Plot force pred vs pressure
+% figure
+% hold on
+% plot(pressure, force_pred_abs, 'o', 'DisplayName', 'Force prediction absolute value')
+% xlabel('Pressure [Pa]')
+% ylabel('Force [N]')
+% legend
+% title('Force prediction vs pressure')
 
 % Plot force pred vs pressure and force data vs pressure
 figure
 hold on
-plot(pressure, force_pred, 'o', 'DisplayName', 'Force prediction vertical component')
-plot(pressure, force_data, 'o', 'DisplayName', 'Force data')
-xlabel('Pressure [Pa]')
-ylabel('Force [N]')
-legend
-title('Force prediction vs data')
+plot(pressure./1e5, force_pred.*1e3, 'o', 'DisplayName', 'Force prediction', LineWidth=5)
+plot(pressure./1e5, force_data.*1e3, 'o', 'DisplayName', 'Force data', LineWidth=5)
+xlabel('Pressure [MPa]', 'Interpreter', 'latex', 'fontsize', 45);
+ylabel('Force [mN]', 'Interpreter', 'latex', 'fontsize', 45);
+lgd = legend('Box', 'off');
+set(lgd,'FontSize',30);
+legend('Location', 'Best');
+title('Force prediction vs data', 'Interpreter', 'latex', 'fontsize', 45);
+% Adjust x-ticks and x-tick labels for pressure
+xticks_current = get(gca, 'xtick');
+set(gca, 'xtick', xticks_current);
+set(gca, 'xticklabel', xticks_current);
+ax = gca;  % Get handle to current axes.
+ax.FontSize = 45;  % Set font size.
 
-% Plot f epsilon vs pressure
-figure
-hold on
-plot(pressure, f_epsilon, 'o', 'DisplayName', 'F epsilon')
-xlabel('Pressure [Pa]')
-ylabel('Force [N]')
-legend
-title('F epsilon vs pressure')
+hold off;
 
-% Plot fy epsilon vs pressure
-figure
-hold on
-plot(pressure, fy_epsilon, 'o', 'DisplayName', 'Fy epsilon')
-xlabel('Pressure [Pa]')
-ylabel('Force [N]')
-legend
-title('Fy epsilon vs pressure')
 
-% Calculate squared differences
-squared_diffs = (force_pred - force_data').^2;
+% % Plot f epsilon vs pressure
+% figure
+% hold on
+% plot(pressure, f_epsilon, 'o', 'DisplayName', 'F epsilon')
+% xlabel('Pressure [Pa]')
+% ylabel('Force [N]')
+% legend
+% title('F epsilon vs pressure')
 
-% Calculate mean of squared differences
-mse = mean(squared_diffs);
+% % Plot fy epsilon vs pressure
+% figure
+% hold on
+% plot(pressure, fy_epsilon, 'o', 'DisplayName', 'Fy epsilon')
+% xlabel('Pressure [Pa]')
+% ylabel('Force [N]')
+% legend
+% title('Fy epsilon vs pressure')
+% 
+% % Calculate squared differences
+% squared_diffs = (force_pred - force_data').^2;
+% 
+% % Calculate mean of squared differences
+% mse = mean(squared_diffs);
+% 
+% % Calculate root mean square error
+% rmse = sqrt(mse);
+% 
+% % Display the RMSE
+% disp(['The RMSE between predicted and actual force data is: ', num2str(rmse), ' N']);
 
-% Calculate root mean square error
-rmse = sqrt(mse);
-
-% Display the RMSE
-disp(['The RMSE between predicted and actual force data is: ', num2str(rmse), ' N']);
 
 
 

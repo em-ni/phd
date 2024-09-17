@@ -32,6 +32,8 @@ Estimates of memory requirements:
 3. Total Memory = Forward Memory + Backward Memory = 12 GB for batch size of 32
 4. Inference Memory = 62M x 4 bytes = 248 MB (for a single image)
 5. Measured Memory during training = 11 GB for batch size of 32 (done a good estimate!)
+Images size ~ 500 x 350 = 175000 pixels, 175000x3=525000 bytes ~ 525000/1024 = 512.7 KB
+Datset size ~ 4.30 GB -> average image size ~ 431 kB
 
 Then we can estimate the memory requirements for the other models:
 YOLOv10-N:
@@ -39,10 +41,21 @@ YOLOv10-N:
   Measure during training ~ 6.5 GB for batch size of 32 (wrong estimate)
 - Inference: 2.3M x 4 bytes = 9.2 MB (for a single image)
 
+YOLOv10-L:
+- Train: 24.4M x Batch Size x 4 bytes + 0.5 x 24.4M x Batch Size x 4 bytes = 146.4 MB x Batch Size ~ 4.7 GB for batch size of 32
+  Measure during training ~ 28.5 GB for batch size of 32 (wrong estimate)
+- Inference: 24.4M x 4 bytes = 97.6 MB (for a single image)
+
 YOLOv10-X:
 - Train: 29.5M x Batch Size x 4 bytes + 0.5 x 29.5M x Batch Size x 4 bytes = 177 MB x Batch Size ~ 5.7 GB for batch size of 32
-  Measure during training ~ 16 GB for batch size of 32 (wrong estimate)
+  Measure during training ~ ?? GB for batch size of 32 (wrong estimate)
 - Inference: 29.5M x 4 bytes = 118 MB (for a single image)
+
+Estimates might be wrong because of the smaller images size
+Original dataset = 2132 + 789 = 2921 images
+Images size ~ 480 x 480 = 230400 pixels -> estimated memory = 230400x3=691200 bytes ~ 691200/1024 = 675 KB
+Dataset size ~ 2921 x 675 KB = 1.97 GB 
+Actual dataset size = 580 MB
 """
 
 import cv2
