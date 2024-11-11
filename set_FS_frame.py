@@ -1,3 +1,4 @@
+import argparse
 import pyvista as pv
 import numpy as np
 from scipy.interpolate import CubicSpline
@@ -159,7 +160,7 @@ def draw_FS_frames(
     # Load the .vtp file
     # line_model = pv.read("data/mesh/vascularmodel/0023_H_AO_MFS/sim/path.vtp")
     # line_model = pv.read("data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/path.vtp")
-    line_model = pv.read("data/mesh/easier_slam_test/path.vtp")
+    line_model = pv.read("data/mesh/easier_slam_test/centerline.vtp")
     print(f"points: {line_model.points.shape}")
 
     # Interpolate the line for smoothing
@@ -183,6 +184,17 @@ def draw_FS_frames(
     # Select random points from the interpolated line to display tangents
     random_indices = np.random.choice(
         len(interpolated_points), num_points, replace=False
+    )
+    
+    # Draw the origin of the world frame
+    plotter.add_arrows(
+        np.zeros((1, 3)), np.array([[100, 0, 0]]), color="black", mag=1
+    )
+    plotter.add_arrows(
+        np.zeros((1, 3)), np.array([[0, 100, 0]]), color="black", mag=1
+    )
+    plotter.add_arrows(
+        np.zeros((1, 3)), np.array([[0, 0, 100]]), color="black", mag=1
     )
 
     # Add Frenet-Serret frames to the plotter for the random points
@@ -210,11 +222,45 @@ def draw_FS_frames(
 
     # Show the plotter
     plotter.show()
-
     return
+
+def save_frames(input_path, output_path):
+    # Load the .vtp file
+    line_model = pv.read(input_path)
+    print(f"points: {line_model.points.shape}")
+
+    # Interpolate the line for smoothing
+    interpolated_points = interpolate_line(line_model.points)
+
+    # Compute tangent vectors for the interpolated points
+    tangents = compute_tangent_vectors(interpolated_points)
+
+    # Compute the Frenet-Serret frame using the MRF algorithm
+    normals, binormals = compute_MRF(tangents)
+
+    # For each point save the coordinates and the respective FS frame
+    with open(output_path, "w") as file:
+        for idx in range(len(interpolated_points)):
+            point = interpolated_points[idx]
+            # point = interpolated_points[idx] / 1000.0 # Convert to meters from mm
+            tangent = tangents[idx]
+            normal = normals[idx]
+            binormal = binormals[idx]
+
+            file.write(f"{point[0]}, {point[1]}, {point[2]}, {tangent[0]}, {tangent[1]}, {tangent[2]}, {normal[0]}, {normal[1]}, {normal[2]}, {binormal[0]}, {binormal[1]}, {binormal[2]}\n")
+
+
+# Add at the beginning of the file, after the existing imports
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Process centerline file and compute Frenet-Serret frames.')
+    parser.add_argument('i', type=str, help='Path to the input centerline .vtp file')
+    parser.add_argument('o', type=str, help='Path for the output frames .txt file')
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    draw_FS_frames(
-        num_points=689, draw_tangent=True, draw_normal=True, draw_binormal=True
-    )
+    # draw_FS_frames(
+    #     num_points=689, draw_tangent=True, draw_normal=True, draw_binormal=True
+    # )
+    args = parse_arguments()
+    save_frames(args.i, args.o)
