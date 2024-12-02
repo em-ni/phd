@@ -52,7 +52,7 @@ def preprocess_points(points, epsilon=1e-5):
 
 def interpolate_line(points, num_points=None):
     """
-    Robustly interpolate a line through 3D points.
+    Robustly interpolate a line through 3D points, handling duplicates and non-monotonic data.
     :param points: np.array of 3D points
     :param num_points: Number of points in the interpolated line
     :return: np.array of interpolated points
@@ -63,20 +63,40 @@ def interpolate_line(points, num_points=None):
             num_points = len(points) * 2  # Default to double the input points
 
         # Compute the cumulative distance along the line
-        distance = np.cumsum(np.r_[0, np.linalg.norm(np.diff(points, axis=0), axis=1)])
-        distance_normalized = distance / distance[-1]
+        distances = np.cumsum(
+            np.r_[0, np.linalg.norm(np.diff(points, axis=0), axis=1)]
+        )
+        
+        # Handle duplicates in distances
+        distances, unique_indices = np.unique(distances, return_index=True)
+        points = points[unique_indices]
+
+        # Ensure that distances are strictly increasing
+        if len(distances) < 2 or np.any(np.diff(distances) <= 0):
+            print("Error: Not enough unique points to interpolate.")
+            return None
+
+        # Normalize the distances
+        distance_normalized = distances / distances[-1]
 
         # Interpolate for each dimension
         interpolated_points = np.zeros((num_points, 3))
         for i in range(3):
-            interpolator = interp1d(distance_normalized, points[:, i], kind="cubic")
+            interpolator = interp1d(
+                distance_normalized,
+                points[:, i],
+                kind="cubic",
+                bounds_error=False,
+                fill_value="extrapolate",
+            )
             interpolated_points[:, i] = interpolator(np.linspace(0, 1, num_points))
 
         return interpolated_points
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"An error occurred during interpolation: {e}")
         return None
+
 
 
 def compute_tangent_vectors(interpolated_points):
@@ -161,30 +181,33 @@ def draw_FS_frames(
     # line_model = pv.read("data/mesh/vascularmodel/0023_H_AO_MFS/sim/path.vtp")
     # line_model = pv.read("data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/path.vtp")
     line_model = pv.read("data/mesh/easier_slam_test/centerline.vtp")
+    # line_model = pv.read("data/mesh/easier_slam_test/path.vtp")
+    n_cells = line_model.n_cells
     print(f"points: {line_model.points.shape}")
+    print(f"Number of branches (cells): {n_cells}")
 
-    # Interpolate the line for smoothing
-    interpolated_points = interpolate_line(line_model.points)
+    # # Interpolate the line for smoothing
+    # interpolated_points = interpolate_line(line_model.points)
 
-    # Compute tangent vectors for the interpolated points
-    tangents = compute_tangent_vectors(interpolated_points)
+    # # Compute tangent vectors for the interpolated points
+    # tangents = compute_tangent_vectors(interpolated_points)
 
     # Compute normal and binormal vectors for the interpolated points
     # normals = compute_normal_vectors(tangents)
     # binormals = compute_binormal_vectors(tangents, normals)
 
-    # Compute the Frenet-Serret frame using the MRF algorithm
-    normals, binormals = compute_MRF(tangents)
+    # # Compute the Frenet-Serret frame using the MRF algorithm
+    # normals, binormals = compute_MRF(tangents)
 
     # Create a plotter
     plotter = pv.Plotter()
-    # Add the original line to the plotter
-    plotter.add_mesh(line_model, color="blue", line_width=2)
+    # # Add the original line to the plotter
+    # plotter.add_mesh(line_model, color="blue", line_width=2)
 
-    # Select random points from the interpolated line to display tangents
-    random_indices = np.random.choice(
-        len(interpolated_points), num_points, replace=False
-    )
+    # # Select random points from the interpolated line to display tangents
+    # random_indices = np.random.choice(
+    #     len(interpolated_points), num_points, replace=False
+    # )
     
     # Draw the origin of the world frame
     plotter.add_arrows(
@@ -197,28 +220,59 @@ def draw_FS_frames(
         np.zeros((1, 3)), np.array([[0, 0, 100]]), color="black", mag=1
     )
 
-    # Add Frenet-Serret frames to the plotter for the random points
-    for idx in random_indices:
-        point = interpolated_points[idx]
-        tangent = tangents[idx]
-        normal = normals[idx]
-        binormal = binormals[idx]
+    for i in range(n_cells):
+        # Extract the i-th cell (branch)
+        single_line = line_model.extract_cells(i)
+        points = single_line.points
+        print(f"Processing branch {i} with {len(points)} points")
 
-        # Draw the tangent vector
-        if draw_tangent:
-            plotter.add_arrows(
-                point[np.newaxis], tangent[np.newaxis], color="green", mag=0.1
-            )
-        # Draw the normal vector
-        if draw_normal:
-            plotter.add_arrows(
-                point[np.newaxis], normal[np.newaxis], color="red", mag=0.1
-            )
-        # Draw the binormal vector
-        if draw_binormal:
-            plotter.add_arrows(
-                point[np.newaxis], binormal[np.newaxis], color="blue", mag=0.1
-            )
+        if len(points) < 2:
+            print(f"Skipping branch {i} due to insufficient points.")
+            continue
+
+        # Interpolate the line for smoothing
+        interpolated_points = interpolate_line(points)
+
+        if interpolated_points is None or len(interpolated_points) == 0:
+            print(f"Skipping branch {i} due to interpolation failure.")
+            continue
+
+        # Compute tangent vectors for the interpolated points
+        tangents = compute_tangent_vectors(interpolated_points)
+
+        # Compute the Frenet-Serret frame using the MRF algorithm
+        normals, binormals = compute_MRF(tangents)
+
+        # Add the branch to the plotter
+        plotter.add_mesh(single_line, color="blue", line_width=2)
+
+        # Select random points from the interpolated line to display frames
+        random_indices = np.random.choice(
+            len(interpolated_points), min(num_points, len(interpolated_points)), replace=False
+        )
+
+        # Add Frenet-Serret frames to the plotter for the random points
+        for idx in random_indices:
+            point = interpolated_points[idx]
+            tangent = tangents[idx]
+            normal = normals[idx]
+            binormal = binormals[idx]
+
+            # Draw the tangent vector
+            if draw_tangent:
+                plotter.add_arrows(
+                    point[np.newaxis], tangent[np.newaxis], color="green", mag=0.1
+                )
+            # Draw the normal vector
+            if draw_normal:
+                plotter.add_arrows(
+                    point[np.newaxis], normal[np.newaxis], color="red", mag=0.1
+                )
+            # Draw the binormal vector
+            if draw_binormal:
+                plotter.add_arrows(
+                    point[np.newaxis], binormal[np.newaxis], color="blue", mag=0.1
+                )
 
     # Show the plotter
     plotter.show()
@@ -228,6 +282,9 @@ def save_frames(input_path, output_path):
     # Load the .vtp file
     line_model = pv.read(input_path)
     print(f"points: {line_model.points.shape}")
+    
+    # Convert from mm to m
+    line_model.points = line_model.points / 1000
 
     # Interpolate the line for smoothing
     interpolated_points = interpolate_line(line_model.points)
@@ -242,7 +299,6 @@ def save_frames(input_path, output_path):
     with open(output_path, "w") as file:
         for idx in range(len(interpolated_points)):
             point = interpolated_points[idx]
-            # point = interpolated_points[idx] / 1000.0 # Convert to meters from mm
             tangent = tangents[idx]
             normal = normals[idx]
             binormal = binormals[idx]
@@ -259,8 +315,8 @@ def parse_arguments():
 
 
 if __name__ == "__main__":
-    # draw_FS_frames(
-    #     num_points=689, draw_tangent=True, draw_normal=True, draw_binormal=True
-    # )
-    args = parse_arguments()
-    save_frames(args.i, args.o)
+    draw_FS_frames(
+        num_points=689, draw_tangent=True, draw_normal=True, draw_binormal=True
+    )
+    # args = parse_arguments()
+    # save_frames(args.i, args.o)
