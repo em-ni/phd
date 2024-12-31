@@ -1,4 +1,5 @@
 import argparse
+import os
 import pyvista as pv
 import numpy as np
 from scipy.interpolate import CubicSpline
@@ -63,10 +64,8 @@ def interpolate_line(points, num_points=None):
             num_points = len(points) * 2  # Default to double the input points
 
         # Compute the cumulative distance along the line
-        distances = np.cumsum(
-            np.r_[0, np.linalg.norm(np.diff(points, axis=0), axis=1)]
-        )
-        
+        distances = np.cumsum(np.r_[0, np.linalg.norm(np.diff(points, axis=0), axis=1)])
+
         # Handle duplicates in distances
         distances, unique_indices = np.unique(distances, return_index=True)
         points = points[unique_indices]
@@ -96,7 +95,6 @@ def interpolate_line(points, num_points=None):
     except Exception as e:
         print(f"An error occurred during interpolation: {e}")
         return None
-
 
 
 def compute_tangent_vectors(interpolated_points):
@@ -175,50 +173,25 @@ def compute_binormal_vectors(tangents, normals):
 
 
 def draw_FS_frames(
-    num_points=10, draw_tangent=True, draw_normal=True, draw_binormal=True
+    num_points=10, draw_tangent=True, draw_normal=True, draw_binormal=True, path=None
 ):
     # Load the .vtp file
     # line_model = pv.read("data/mesh/vascularmodel/0023_H_AO_MFS/sim/path.vtp")
     # line_model = pv.read("data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/path.vtp")
-    line_model = pv.read("data/mesh/easier_slam_test/centerline.vtp")
+    # line_model = pv.read("data/mesh/easier_slam_test/centerline.vtp")
+    line_model = pv.read(path)
     # line_model = pv.read("data/mesh/easier_slam_test/path.vtp")
     n_cells = line_model.n_cells
     print(f"points: {line_model.points.shape}")
     print(f"Number of branches (cells): {n_cells}")
 
-    # # Interpolate the line for smoothing
-    # interpolated_points = interpolate_line(line_model.points)
-
-    # # Compute tangent vectors for the interpolated points
-    # tangents = compute_tangent_vectors(interpolated_points)
-
-    # Compute normal and binormal vectors for the interpolated points
-    # normals = compute_normal_vectors(tangents)
-    # binormals = compute_binormal_vectors(tangents, normals)
-
-    # # Compute the Frenet-Serret frame using the MRF algorithm
-    # normals, binormals = compute_MRF(tangents)
-
     # Create a plotter
     plotter = pv.Plotter()
-    # # Add the original line to the plotter
-    # plotter.add_mesh(line_model, color="blue", line_width=2)
 
-    # # Select random points from the interpolated line to display tangents
-    # random_indices = np.random.choice(
-    #     len(interpolated_points), num_points, replace=False
-    # )
-    
     # Draw the origin of the world frame
-    plotter.add_arrows(
-        np.zeros((1, 3)), np.array([[100, 0, 0]]), color="black", mag=1
-    )
-    plotter.add_arrows(
-        np.zeros((1, 3)), np.array([[0, 100, 0]]), color="black", mag=1
-    )
-    plotter.add_arrows(
-        np.zeros((1, 3)), np.array([[0, 0, 100]]), color="black", mag=1
-    )
+    plotter.add_arrows(np.zeros((1, 3)), np.array([[10, 0, 0]]), color="red", mag=1)
+    plotter.add_arrows(np.zeros((1, 3)), np.array([[0, 10, 0]]), color="green", mag=1)
+    plotter.add_arrows(np.zeros((1, 3)), np.array([[0, 0, 10]]), color="blue", mag=1)
 
     for i in range(n_cells):
         # Extract the i-th cell (branch)
@@ -243,12 +216,21 @@ def draw_FS_frames(
         # Compute the Frenet-Serret frame using the MRF algorithm
         normals, binormals = compute_MRF(tangents)
 
+        # Define a list of distinct colors for branches
+        branch_colors = ["red", "green", "blue", "orange", "purple", "cyan", "yellow"]
+        branch_color = branch_colors[i % len(branch_colors)]  # Cycle through colors
+
+        # Draw the very first point of the branch
+        plotter.add_points(interpolated_points[0], color=branch_color, point_size=10)
+
         # Add the branch to the plotter
         plotter.add_mesh(single_line, color="blue", line_width=2)
 
         # Select random points from the interpolated line to display frames
         random_indices = np.random.choice(
-            len(interpolated_points), min(num_points, len(interpolated_points)), replace=False
+            len(interpolated_points),
+            min(num_points, len(interpolated_points)),
+            replace=False,
         )
 
         # Add Frenet-Serret frames to the plotter for the random points
@@ -258,65 +240,192 @@ def draw_FS_frames(
             normal = normals[idx]
             binormal = binormals[idx]
 
+            mag = 1.0
             # Draw the tangent vector
             if draw_tangent:
                 plotter.add_arrows(
-                    point[np.newaxis], tangent[np.newaxis], color="green", mag=0.1
+                    point[np.newaxis], tangent[np.newaxis], color="green", mag=mag
                 )
             # Draw the normal vector
             if draw_normal:
                 plotter.add_arrows(
-                    point[np.newaxis], normal[np.newaxis], color="red", mag=0.1
+                    point[np.newaxis], normal[np.newaxis], color="red", mag=mag
                 )
             # Draw the binormal vector
             if draw_binormal:
                 plotter.add_arrows(
-                    point[np.newaxis], binormal[np.newaxis], color="blue", mag=0.1
+                    point[np.newaxis], binormal[np.newaxis], color="blue", mag=mag
                 )
 
     # Show the plotter
     plotter.show()
     return
 
-def save_frames(input_path, output_path):
+
+def save_frames_single_branch(input_path):
+
+    output_path = input_path.replace(".vtp", "_frames.txt")
+
     # Load the .vtp file
     line_model = pv.read(input_path)
-    print(f"points: {line_model.points.shape}")
-    
-    # Convert from mm to m
-    line_model.points = line_model.points / 1000
+    n_cells = line_model.n_cells
+    print(f"Number of branches (cells): {n_cells}")
 
-    # Interpolate the line for smoothing
-    interpolated_points = interpolate_line(line_model.points)
-
-    # Compute tangent vectors for the interpolated points
-    tangents = compute_tangent_vectors(interpolated_points)
-
-    # Compute the Frenet-Serret frame using the MRF algorithm
-    normals, binormals = compute_MRF(tangents)
-
-    # For each point save the coordinates and the respective FS frame
+    # Open the output file once
     with open(output_path, "w") as file:
-        for idx in range(len(interpolated_points)):
-            point = interpolated_points[idx]
-            tangent = tangents[idx]
-            normal = normals[idx]
-            binormal = binormals[idx]
+        for i in range(n_cells):
+            # Extract the i-th cell (branch)
+            single_line = line_model.extract_cells(i)
+            points = single_line.points
+            print(f"Processing branch {i} with {len(points)} points")
 
-            file.write(f"{point[0]}, {point[1]}, {point[2]}, {tangent[0]}, {tangent[1]}, {tangent[2]}, {normal[0]}, {normal[1]}, {normal[2]}, {binormal[0]}, {binormal[1]}, {binormal[2]}\n")
+            # Convert from mm to m
+            points = points / 1000
+
+            if len(points) < 2:
+                print(f"Skipping branch {i} due to insufficient points.")
+                continue
+
+            # Interpolate the line for smoothing
+            interpolated_points = interpolate_line(points)
+
+            if interpolated_points is None or len(interpolated_points) == 0:
+                print(f"Skipping branch {i} due to interpolation failure.")
+                continue
+
+            # Compute tangent vectors for the interpolated points
+            tangents = compute_tangent_vectors(interpolated_points)
+
+            # Compute the Frenet-Serret frame using the MRF algorithm
+            normals, binormals = compute_MRF(tangents)
+
+            # For each point, save the coordinates and the respective FS frame
+            for idx in range(len(interpolated_points)):
+                point = interpolated_points[idx]
+                tangent = tangents[idx]
+                normal = normals[idx]
+                binormal = binormals[idx]
+
+                # Write to file
+                file.write(
+                    f"{point[0]}, {point[1]}, {point[2]}, "
+                    f"{tangent[0]}, {tangent[1]}, {tangent[2]}, "
+                    f"{normal[0]}, {normal[1]}, {normal[2]}, "
+                    f"{binormal[0]}, {binormal[1]}, {binormal[2]}\n"
+                )
 
 
-# Add at the beginning of the file, after the existing imports
+def save_frames_all_branches(input_paths):
+
+    output_path = os.path.join(
+        os.path.dirname(input_paths[0]), "centerline_frames_all_branches.txt"
+    )
+    all_frames = []
+
+    # Open the output file once
+    with open(output_path, "w") as file:
+        for input_path in input_paths:
+            # Load the .vtp file
+            line_model = pv.read(input_path)
+            n_cells = line_model.n_cells
+            print(f"Number of branches (cells): {n_cells}")
+            branch_frames = []
+
+            for i in range(n_cells):
+                # Extract the i-th cell (branch)
+                single_line = line_model.extract_cells(i)
+                points = single_line.points
+                print(f"Processing branch {i} with {len(points)} points")
+
+                # Convert from mm to m
+                points = points / 1000
+
+                if len(points) < 2:
+                    print(f"Skipping branch {i} due to insufficient points.")
+                    continue
+
+                # Interpolate the line for smoothing
+                interpolated_points = interpolate_line(points)
+
+                if interpolated_points is None or len(interpolated_points) == 0:
+                    print(f"Skipping branch {i} due to interpolation failure.")
+                    continue
+
+                # Compute tangent vectors for the interpolated points
+                tangents = compute_tangent_vectors(interpolated_points)
+
+                # Compute the Frenet-Serret frame using the MRF algorithm
+                normals, binormals = compute_MRF(tangents)
+
+                # For each point, save the coordinates and the respective FS frame
+                for idx in range(len(interpolated_points)):
+                    point = interpolated_points[idx]
+                    tangent = tangents[idx]
+                    normal = normals[idx]
+                    binormal = binormals[idx]
+
+                    # Add to branch frames
+                    branch_frames.append(
+                        [
+                            point[0],
+                            point[1],
+                            point[2],
+                            tangent[0],
+                            tangent[1],
+                            tangent[2],
+                            normal[0],
+                            normal[1],
+                            normal[2],
+                            binormal[0],
+                            binormal[1],
+                            binormal[2],
+                        ]
+                    )
+
+            # Add branch frames to all frames
+            all_frames.append(branch_frames)
+
+        # Process and write each branch separately
+        for branch_frames in all_frames:
+
+            # Write frames from this branch
+            for frame in branch_frames:
+                file.write(
+                    f"{frame[0]}, {frame[1]}, {frame[2]}, "
+                    f"{frame[3]}, {frame[4]}, {frame[5]}, "
+                    f"{frame[6]}, {frame[7]}, {frame[8]}, "
+                    f"{frame[9]}, {frame[10]}, {frame[11]}\n"
+                )
+
+
 def parse_arguments():
-    parser = argparse.ArgumentParser(description='Process centerline file and compute Frenet-Serret frames.')
-    parser.add_argument('i', type=str, help='Path to the input centerline .vtp file')
-    parser.add_argument('o', type=str, help='Path for the output frames .txt file')
+    parser = argparse.ArgumentParser(
+        description="Process centerline file and compute Frenet-Serret frames."
+    )
+    parser.add_argument(
+        "i", type=str, help="Path to the input centerline .vtp file or folder"
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
-    draw_FS_frames(
-        num_points=689, draw_tangent=True, draw_normal=True, draw_binormal=True
-    )
-    # args = parse_arguments()
-    # save_frames(args.i, args.o)
+    args = parse_arguments()
+
+    # Check if input is a file or directory
+    if os.path.isfile(args.i) and args.i.endswith(".vtp"):
+        # Process single .vtp file
+        save_frames_single_branch(args.i)
+    elif os.path.isdir(args.i):
+        # Process all centerline_b*.vtp files in directory
+        vtp_files = [
+            os.path.join(args.i, f)
+            for f in os.listdir(args.i)
+            if f.startswith("centerline_b") and f.endswith(".vtp")
+        ]
+
+        save_frames_all_branches(vtp_files)
+
+    else:
+        print(
+            "Error: Input must be either a .vtp file or a directory containing .vtp files"
+        )
