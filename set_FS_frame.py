@@ -110,13 +110,32 @@ def compute_tangent_vectors(interpolated_points):
     return tangents
 
 
+import numpy as np
+
+
+def smooth_vectors(vectors):
+    # Placeholder for your smoothing function
+    # Implement your smoothing logic here
+    return vectors
+
+
 def compute_MRF(tangents):
+    tangents = np.array(tangents)
     normals = np.zeros_like(tangents)
     binormals = np.zeros_like(tangents)
 
     # Initialize the normal for the first point
-    # Make sure this is orthogonal to the first tangent
-    normals[0] = np.array([tangents[0][1], -tangents[0][0], 0])
+    # Choose an arbitrary vector that is not parallel to the tangent
+    arbitrary = (
+        np.array([0, 0, 1])
+        if not np.allclose(tangents[0], [0, 0, 1])
+        else np.array([0, 1, 0])
+    )
+    normals[0] = np.cross(tangents[0], arbitrary)
+    if np.linalg.norm(normals[0]) == 0:
+        raise ValueError(
+            "Cannot define a normal vector; tangent is parallel to the arbitrary vector."
+        )
     normals[0] /= np.linalg.norm(normals[0])
 
     # Compute the binormal for the first point
@@ -125,14 +144,58 @@ def compute_MRF(tangents):
     # Propagate the frame along the curve
     for i in range(1, len(tangents)):
         # Project the previous normal onto the plane orthogonal to the current tangent
-        normals[i] = normals[i - 1] - np.dot(normals[i - 1], tangents[i]) * tangents[i]
-        normals[i] /= np.linalg.norm(normals[i])
+        proj = normals[i - 1] - np.dot(normals[i - 1], tangents[i]) * tangents[i]
+        norm_proj = np.linalg.norm(proj)
+        if norm_proj < 1e-6:
+            # Handle the case where the previous normal is parallel to the current tangent
+            arbitrary = (
+                np.array([0, 0, 1])
+                if not np.allclose(tangents[i], [0, 0, 1])
+                else np.array([0, 1, 0])
+            )
+            normals[i] = np.cross(tangents[i], arbitrary)
+        else:
+            normals[i] = proj / norm_proj
 
         # Compute the binormal as the cross product of tangent and normal
         binormals[i] = np.cross(tangents[i], normals[i])
 
+    # Smooth the normals and binormals if needed
     normals = smooth_vectors(normals)
     binormals = smooth_vectors(binormals)
+
+    # Re-orthogonalize the frame after smoothing to correct any deviations
+    for i in range(len(tangents)):
+        # Ensure tangent is normalized
+        tangents[i] /= np.linalg.norm(tangents[i])
+
+        # Recompute normal: make it orthogonal to tangent
+        normals[i] = normals[i] - np.dot(normals[i], tangents[i]) * tangents[i]
+        normals[i] /= np.linalg.norm(normals[i])
+
+        # Recompute binormal to ensure right-handedness
+        binormals[i] = np.cross(tangents[i], normals[i])
+        binormals[i] /= np.linalg.norm(binormals[i])
+
+    # Build rotation matrix
+    R = np.stack((tangents, normals, binormals), axis=1)
+
+    # Check if the matrix is orthogonal
+    # Verify orthogonality
+    for i in range(len(R)):
+        RtR = R[i].T @ R[i]
+        I = np.eye(3)
+        error = RtR - I
+        max_error = np.abs(error).max()
+        if max_error > 1e-6:
+            print(
+                f"Rotation matrix at index {i} is not orthogonal enough. Max error: {max_error}"
+            )
+            raise ValueError("Frame is not orthogonal.")
+
+    # Check if the matrix is right-handed
+    if not np.allclose(np.linalg.det(R), 1):
+        raise ValueError("Frame is not right-handed.")
 
     return normals, binormals
 
@@ -173,7 +236,7 @@ def compute_binormal_vectors(tangents, normals):
 
 
 def draw_FS_frames(
-    num_points=10, draw_tangent=True, draw_normal=True, draw_binormal=True, path=None
+    num_points=100, draw_tangent=True, draw_normal=True, draw_binormal=True, path=None
 ):
     # Load the .vtp file
     # line_model = pv.read("data/mesh/vascularmodel/0023_H_AO_MFS/sim/path.vtp")
@@ -244,12 +307,12 @@ def draw_FS_frames(
             # Draw the tangent vector
             if draw_tangent:
                 plotter.add_arrows(
-                    point[np.newaxis], tangent[np.newaxis], color="green", mag=mag
+                    point[np.newaxis], tangent[np.newaxis], color="red", mag=mag
                 )
             # Draw the normal vector
             if draw_normal:
                 plotter.add_arrows(
-                    point[np.newaxis], normal[np.newaxis], color="red", mag=mag
+                    point[np.newaxis], normal[np.newaxis], color="green", mag=mag
                 )
             # Draw the binormal vector
             if draw_binormal:
@@ -410,6 +473,8 @@ def parse_arguments():
 
 if __name__ == "__main__":
     args = parse_arguments()
+
+    # draw_FS_frames(path=args.i)
 
     # Check if input is a file or directory
     if os.path.isfile(args.i) and args.i.endswith(".vtp"):
