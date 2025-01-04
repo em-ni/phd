@@ -1,10 +1,11 @@
 import argparse
 import threading
-from direct.showbase.ShowBase import ShowBase # type: ignore
-from panda3d.core import * # type: ignore
-from direct.task import Task # type: ignore
-from direct.gui.DirectGui import DirectLabel # type: ignore
-import pyvista as pv # type: ignore
+import time
+from direct.showbase.ShowBase import ShowBase  # type: ignore
+from panda3d.core import *  # type: ignore
+from direct.task import Task  # type: ignore
+from direct.gui.DirectGui import DirectLabel  # type: ignore
+import pyvista as pv  # type: ignore
 from set_FS_frame import (
     interpolate_line,
     compute_tangent_vectors,
@@ -12,13 +13,21 @@ from set_FS_frame import (
     compute_binormal_vectors,
     compute_MRF,
 )
-import numpy as np # type: ignore
+import numpy as np  # type: ignore
 import socket
 
 data_folder = "data/mesh/easier_slam_test/"
-path_name = "path.vtp"
-negative_model_name = "easier_slam_test_negative.obj"
-model_name = "easier_slam_test.obj"
+# path_name = "path.vtp"
+# path_name = "centerline_b1.vtp"
+path_name = "centerline_b2.vtp"
+# path_name = "centerline_b3.vtp"
+# path_name = "centerline_b4.vtp"
+# path_name = "centerline_b5.vtp"
+# negative_model_name = "easier_slam_test_negative.obj"
+negative_model_name = "easier_slam_test_moved_negative.obj"
+# model_name = "easier_slam_test.obj"
+model_name = "easier_slam_test_moved.obj"
+centerline_frames = "centerline_frames.txt"
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Path Navigation Tool")
@@ -38,9 +47,9 @@ parser.add_argument(
 args = parser.parse_args()
 
 # Configuration settings
-loadPrcFileData("", "win-size 800 600") # type: ignore
-loadPrcFileData("", "window-title Panda3D Full Camera Control") # type: ignore
-loadPrcFileData("", "load-file-type p3assimp") # type: ignore
+loadPrcFileData("", "win-size 800 600")  # type: ignore
+loadPrcFileData("", "window-title Panda3D Full Camera Control")  # type: ignore
+loadPrcFileData("", "load-file-type p3assimp")  # type: ignore
 
 
 class MyApp(ShowBase):
@@ -56,6 +65,10 @@ class MyApp(ShowBase):
         # Check the live mode
         self.live_mode = args.live
         print(f"View mode: {self.view_mode}\n Live mode: {self.live_mode}")
+
+        # Init transformation matrices
+        self.Tcw = np.eye(4)
+        self.w_T_o = self.setup_w_T_o()
 
         # Set background color
         self.setBackgroundColor(0, 0.168627, 0.211765, 1.0)
@@ -75,11 +88,11 @@ class MyApp(ShowBase):
         )
 
         # Enable transparency for these icons
-        self.up_arrow.setTransparency(TransparencyAttrib.MDual) # type: ignore
-        self.down_arrow.setTransparency(TransparencyAttrib.MDual) # type: ignore
+        self.up_arrow.setTransparency(TransparencyAttrib.MDual)  # type: ignore
+        self.down_arrow.setTransparency(TransparencyAttrib.MDual)  # type: ignore
 
         # Set antialiasing
-        self.render.setAntialias(AntialiasAttrib.MAuto) # type: ignore
+        self.render.setAntialias(AntialiasAttrib.MAuto)  # type: ignore
 
         # Initialize timer for blinking
         self.blink_timer = 0
@@ -134,12 +147,12 @@ class MyApp(ShowBase):
             # Load the phantom model
             self.scene = self.loader.loadModel(self.model)
             self.scene.reparentTo(self.render)
-            self.scene.setTransparency(TransparencyAttrib.MDual) # type: ignore
+            self.scene.setTransparency(TransparencyAttrib.MDual)  # type: ignore
             self.scene.setColorScale(1, 1, 1, 1)  # Set transparency level
             self.scene.setTwoSided(True)
 
             # Adjust material properties
-            myMaterial = Material() # type: ignore
+            myMaterial = Material()  # type: ignore
             myMaterial.setShininess(80)  # Higher shininess for more specular highlight
             myMaterial.setSpecular((0.9, 0.9, 0.9, 1))  # Brighter specular highlights
             myMaterial.setAmbient((0.3, 0.3, 0.3, 1))  # Slightly brighter ambient color
@@ -149,7 +162,7 @@ class MyApp(ShowBase):
             self.scene.setMaterial(myMaterial, 1)
 
             # Add directional light (consider also using ambient light)
-            directionalLight = DirectionalLight("directionalLight") # type: ignore
+            directionalLight = DirectionalLight("directionalLight")  # type: ignore
             directionalLight.setColor((1, 0.9, 0.8, 1))  # Warm light color
             directionalLightNP = self.render.attachNewNode(directionalLight)
             directionalLightNP.setHpr(
@@ -158,7 +171,7 @@ class MyApp(ShowBase):
             self.render.setLight(directionalLightNP)
 
             # Add ambient light
-            ambientLight = AmbientLight("ambientLight") # type: ignore
+            ambientLight = AmbientLight("ambientLight")  # type: ignore
             ambientLight.setColor((0.2, 0.2, 0.2, 1))
             ambientLightNP = self.render.attachNewNode(ambientLight)
             self.render.setLight(ambientLightNP)
@@ -181,7 +194,7 @@ class MyApp(ShowBase):
             self.scene.reparentTo(self.render)
 
             # Set transparency level (0.5 for 50% transparency) to see the green point mmoving inside
-            self.scene.setTransparency(TransparencyAttrib.MDual) # type: ignore
+            self.scene.setTransparency(TransparencyAttrib.MDual)  # type: ignore
             self.scene.setColorScale(1, 1, 1, 0.5)
 
             # Initially draw the path up to the first point
@@ -190,12 +203,16 @@ class MyApp(ShowBase):
         print("Initialization done")
 
         if self.live_mode == True:
-            # Init transformation matrix
-            self.Tcw = np.eye(4)
 
             # Start the server in a thread
             self.listen_thread = threading.Thread(target=self.start_server, daemon=True)
             self.listen_thread.start()
+
+            # Start the simulation server
+            self.sim_server_thread = threading.Thread(
+                target=self.sim_server, daemon=True
+            )
+            self.sim_server_thread.start()
 
     ## SETUP METHODS
     def start_server(self, host="127.0.0.1", port=12345):
@@ -207,15 +224,39 @@ class MyApp(ShowBase):
             while True:
                 conn, addr = s.accept()
                 with conn:
-                    print(f"Connected by {addr}")
+                    # print(f"Connected by {addr}")
                     while True:
                         data = conn.recv(1024)
                         if not data:
                             break
-                        print(f"Received: {data.decode()}")
+                        # print(f"Received: {data.decode()}")
                         # Parse the received data and update the transformation matrix
                         self.Tcw = data.decode()
                     print("Connection closed")
+
+    def sim_server(self, host="127.0.0.1", port=12345):
+        time.sleep(1)  # Give the server time to start
+        try:
+            # Create a socket and connect to the server
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((host, port))
+
+            while True:
+                # Create a mock transformation matrix
+                mock_Tcw = np.eye(4)
+                # Add some random noise to the translation
+                mock_Tcw[:3, 3] = np.random.normal(0, 1, 3)
+                # Convert to string and send
+                data = str(mock_Tcw.tolist())
+                s.sendall(data.encode())
+                time.sleep(0.1)  # Add small delay between sends
+
+        except ConnectionRefusedError:
+            print("Could not connect to server. Is it running?")
+        except Exception as e:
+            print(f"Error in sim_server: {e}")
+        finally:
+            s.close()
 
     def draw_elements(self, points):
         # Draw some frames
@@ -264,6 +305,30 @@ class MyApp(ShowBase):
         self.line_length = self.curvilinear_abscissa(self.end_point)
         print("Line length: ", self.line_length)
 
+    def setup_w_T_o(self):
+        """Load the transformation matrix from centerline_frames.txt"""
+        w_T_o = np.eye(4)
+
+        # Read the first line from centerline_frames.txt
+        with open(data_folder + centerline_frames, "r") as f:
+            # Extract data from the first line
+            first_line = f.readline().strip()
+            data = first_line.split(",")
+            point = np.array([float(x) for x in data[0:3]])
+            tangent = np.array([float(x) for x in data[3:6]])
+            normal = np.array([float(x) for x in data[6:9]])
+            binormal = np.array([float(x) for x in data[9:12]])
+
+            # Create the transformation matrix
+            w_T_o[:3, 0] = tangent
+            w_T_o[:3, 1] = normal
+            w_T_o[:3, 2] = binormal
+            w_T_o[:3, 3] = point
+
+        print(f"Transformation matrix w_T_o: \n{w_T_o}")
+
+        return w_T_o
+
     ## LINE UTILS
     def curvilinear_abscissa(self, point):
         # Compute the from the start point to the current point
@@ -286,18 +351,18 @@ class MyApp(ShowBase):
         closest_index = np.argmin(distances)
 
         # Get the corresponding tangent, normal, and binormal vectors
-        tangent = LVector3f(*self.tangents[closest_index]) # type: ignore
-        normal = LVector3f(*self.normals[closest_index]) # type: ignore
-        binormal = LVector3f(*self.binormals[closest_index]) # type: ignore
+        tangent = LVector3f(*self.tangents[closest_index])  # type: ignore
+        normal = LVector3f(*self.normals[closest_index])  # type: ignore
+        binormal = LVector3f(*self.binormals[closest_index])  # type: ignore
 
         # Set the camera position at the green point
-        self.camera.setPos(LVector3f(*self.green_point)) # type: ignore
+        self.camera.setPos(LVector3f(*self.green_point))  # type: ignore
 
         # Calculate the focal point using the tangent vector
         focal_point = self.green_point + tangent
 
         # Set the camera to look at the focal point with the binormal as the up vector
-        self.camera.lookAt(LVector3f(*focal_point), normal) # type: ignore
+        self.camera.lookAt(LVector3f(*focal_point), normal)  # type: ignore
 
         # Update the directional light's orientation to match the camera's orientation
         # if in first-person view mode
@@ -374,7 +439,7 @@ class MyApp(ShowBase):
                 self.unhighlight_arrow("down")
 
     def update_scene(self, task):
-        dt = globalClock.getDt() # type: ignore
+        dt = globalClock.getDt()  # type: ignore
 
         # Update the green point position
         if self.live_mode == False:
@@ -382,6 +447,21 @@ class MyApp(ShowBase):
                 self.update_green_point_position(dt, forward=True)
             if self.keyMap["green_point_backward"]:
                 self.update_green_point_position(dt, forward=False)
+        else:
+            # Update the green point position based on the transformation matrix
+            try:
+                # Convert string to numpy array and multiply matrices
+                Tcw_matrix = np.array(eval(self.Tcw))
+                translation = Tcw_matrix[:3, 3] + 1000 * self.w_T_o[:3, 3]
+
+                # Update the green point position
+                self.green_point = translation
+                # print(f"Green point position: {self.green_point}")
+                # Update the visual representation
+                self.draw_green_point()
+            except (SyntaxError, AttributeError) as e:
+                # Skip update if data is not valid
+                pass
 
         # Update the camera position and orientation
         if self.view_mode == "fp":
@@ -397,7 +477,7 @@ class MyApp(ShowBase):
             self.green_point_visible = not self.green_point_visible  # Toggle visibility
             if self.green_point_node:
                 self.green_point_node.setTransparency(
-                    TransparencyAttrib.MDual # type: ignore
+                    TransparencyAttrib.MDual  # type: ignore
                 )  # Enable transparency
                 self.green_point_node.setAlphaScale(
                     1 if self.green_point_visible else 0.5
@@ -434,19 +514,19 @@ class MyApp(ShowBase):
             self.draw_circle(circle_points)
 
     def draw_circle(self, points):
-        circle = LineSegs() # type: ignore
+        circle = LineSegs()  # type: ignore
         circle.setThickness(5.0)  # Increased thickness
         circle.setColor(1, 1, 0, 1)  # Changed color to yellow for better visibility
 
         # Convert points to LVecBase3f and draw the circle
         for i, point in enumerate(points):
-            panda_point = LVector3f(point[0], point[1], point[2]) # type: ignore
+            panda_point = LVector3f(point[0], point[1], point[2])  # type: ignore
             if i == 0:
                 circle.moveTo(panda_point)
             else:
                 circle.drawTo(panda_point)
         # Connect back to the first point
-        circle.drawTo(LVector3f(points[0][0], points[0][1], points[0][2])) # type: ignore
+        circle.drawTo(LVector3f(points[0][0], points[0][1], points[0][2]))  # type: ignore
 
         # Add the circle to the scene
         circle_node = circle.create()
@@ -511,7 +591,7 @@ class MyApp(ShowBase):
         )  # Ensure this is a valid model path
         green_point_visual.setScale(3)  # Scale to appropriate size
         green_point_visual.setColor(0, 1, 0, 1)  # Set color to green
-        green_point_visual.setPos(LVector3f(*self.green_point)) # type: ignore
+        green_point_visual.setPos(LVector3f(*self.green_point))  # type: ignore
 
         # Create a new node and parent the visual to it
         green_point_node = self.render.attachNewNode("GreenPointNode")
@@ -524,17 +604,17 @@ class MyApp(ShowBase):
             up_to_index = len(points) - 1
 
         # Create the line
-        line = LineSegs() # type: ignore
+        line = LineSegs()  # type: ignore
         line.setThickness(5.0)  # Set a reasonable thickness
         line.setColor(1, 0, 0, 1)  # Red color
 
         # Start drawing the line from the first point
-        first_point = LVector3f(points[0][0], points[0][1], points[0][2]) # type: ignore
+        first_point = LVector3f(points[0][0], points[0][1], points[0][2])  # type: ignore
         line.moveTo(first_point)
 
         # Draw to the rest of the points up to the specified index
         for i in range(1, up_to_index + 1):
-            next_point = LVector3f(points[i][0], points[i][1], points[i][2]) # type: ignore
+            next_point = LVector3f(points[i][0], points[i][1], points[i][2])  # type: ignore
             # Check for large jumps in the points and skip if necessary
             if (
                 next_point - first_point
@@ -556,7 +636,7 @@ class MyApp(ShowBase):
         points = interpolate_line(points, num_points=50)
 
         # Create the line
-        line = LineSegs() # type: ignore
+        line = LineSegs()  # type: ignore
         line.setThickness(5.0)
         line.setColor(
             8 / 255, 232 / 255, 222 / 255, 1
@@ -564,12 +644,12 @@ class MyApp(ShowBase):
 
         # Start drawing the line from the green point
         green_point = self.green_point
-        first_point = LVector3f(green_point[0], green_point[1], green_point[2]) # type: ignore
+        first_point = LVector3f(green_point[0], green_point[1], green_point[2])  # type: ignore
         line.moveTo(first_point)
 
         # Draw to the rest of the points
         for i in range(1, len(points)):
-            next_point = LVector3f(points[i][0], points[i][1], points[i][2]) # type: ignore
+            next_point = LVector3f(points[i][0], points[i][1], points[i][2])  # type: ignore
             if (next_point - first_point).length() < 1.0:
                 line.drawTo(next_point)
                 first_point = next_point
@@ -580,12 +660,12 @@ class MyApp(ShowBase):
 
     def draw_vector(self, start_point, direction, color):
         # Convert NumPy array to LVecBase3f
-        start_point = LVector3f(start_point[0], start_point[1], start_point[2]) # type: ignore
+        start_point = LVector3f(start_point[0], start_point[1], start_point[2])  # type: ignore
         end_point = (
-            start_point + LVector3f(direction[0], direction[1], direction[2]) * 0.2 # type: ignore
+            start_point + LVector3f(direction[0], direction[1], direction[2]) * 0.2  # type: ignore
         )
 
-        line = LineSegs() # type: ignore
+        line = LineSegs()  # type: ignore
         line.setThickness(2.0)
         line.setColor(color)
         line.moveTo(start_point)
