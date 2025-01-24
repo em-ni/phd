@@ -1,4 +1,8 @@
 import argparse
+import os
+import shutil
+import subprocess
+import sys
 import threading
 import time
 from direct.showbase.ShowBase import ShowBase  # type: ignore
@@ -15,19 +19,37 @@ from set_FS_frame import (
 )
 import numpy as np  # type: ignore
 import socket
+import math
 
-data_folder = "data/mesh/easier_slam_test/"
+# data_folder = "data/mesh/easier_slam_test/"
+data_folder = "data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/"
+
 # path_name = "path.vtp"
+# path_name = "centerlines/b1.vtp"
+# path_name = "centerlines/b2.vtp"
+# path_name = "centerlines/b3.vtp"
+# path_name = "centerlines/b4.vtp"
+# path_name = "centerlines/b5.vtp"
+path_name = "centerlines/b21.vtp"
+
 # path_name = "centerline_b1.vtp"
-path_name = "centerline_b2.vtp"
+# path_name = "centerline_b2.vtp"
 # path_name = "centerline_b3.vtp"
 # path_name = "centerline_b4.vtp"
 # path_name = "centerline_b5.vtp"
+
 # negative_model_name = "easier_slam_test_negative.obj"
 negative_model_name = "easier_slam_test_moved_negative.obj"
+negative_model_name = "0063_negative.obj"
+
 # model_name = "easier_slam_test.obj"
 model_name = "easier_slam_test_moved.obj"
-centerline_frames = "centerline_frames.txt"
+model_name = "0063.obj"
+
+# centerline_frames = "centerline_frames.txt"
+centerline_frames = "centerlines/b1.txt"
+
+record_dir = "videos"
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Path Navigation Tool")
@@ -44,12 +66,14 @@ parser.add_argument(
     default=False,
     help="Set live mode: True (live) or False (offline)",
 )
-args = parser.parse_args()
+parser.add_argument(
+    "-record",
+    type=bool,
+    default=False,
+    help="Set record mode: True (record) or False (no record)",
+)
 
-# Configuration settings
-loadPrcFileData("", "win-size 800 600")  # type: ignore
-loadPrcFileData("", "window-title Panda3D Full Camera Control")  # type: ignore
-loadPrcFileData("", "load-file-type p3assimp")  # type: ignore
+args = parser.parse_args()
 
 
 class MyApp(ShowBase):
@@ -59,12 +83,19 @@ class MyApp(ShowBase):
         # Define path of the .vtp file
         self.path = data_folder + path_name
 
-        # Check the view mode
+        # Read parameters from command line
         self.view_mode = args.view
-
-        # Check the live mode
         self.live_mode = args.live
-        print(f"View mode: {self.view_mode}\n Live mode: {self.live_mode}")
+        self.record_mode = args.record
+        print(f"View mode: {self.view_mode}")
+        print(f"Live mode: {self.live_mode}")
+        print(f"Record mode: {self.record_mode}")
+
+        # Quit app on "q"
+        self.accept("q", self.quit_app)
+
+        # Set up camera parameters
+        self.setup_camera_params()
 
         # Init transformation matrices
         self.Tcw = np.eye(4)
@@ -214,6 +245,9 @@ class MyApp(ShowBase):
             )
             self.sim_server_thread.start()
 
+        if self.record_mode == True:
+            self.setup_video_recorder()
+
     ## SETUP METHODS
     def start_server(self, host="127.0.0.1", port=12345):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -267,6 +301,94 @@ class MyApp(ShowBase):
 
         # Draw the green point
         self.draw_green_point()
+
+    def save_calibration_file(
+        self, width, height, fx, fy, cx, cy, filename="calibration_sim.yaml"
+    ):
+        """
+        Writes a YAML file in the same format as shown,
+        but replaces the camera parameters with the ones in code.
+        """
+        # If you want *distortion* to remain zero, just keep them as 0.0
+        # If you want to provide your own, fill them in accordingly.
+        k1 = 0.0
+        k2 = 0.0
+        k3 = 0.0
+        p1 = 0.0
+        p2 = 0.0
+
+        # Construct the file content as a multi-line string
+        yaml_content = f"""%YAML:1.0
+Camera.RGB: 1
+Camera.ThDepth: 40.0
+Camera.bf: 40.0
+Camera.fps: 5
+Camera.height: {height}
+Camera.type: PinHole
+Camera.width: {width}
+Camera1.cx: {cx}
+Camera1.cy: {cy}
+Camera1.fx: {fx}
+Camera1.fy: {fy}
+Camera1.k1: {k1}
+Camera1.k2: {k2}
+Camera1.k3: {k3}
+Camera1.p1: {p1}
+Camera1.p2: {p2}
+File.version: '1.0'
+ORBextractor.iniThFAST: 1
+ORBextractor.minThFAST: 1
+ORBextractor.nFeatures: 2500
+ORBextractor.nLevels: 8
+ORBextractor.scaleFactor: 1.2
+Viewer.CameraLineWidth: 3.0
+Viewer.CameraSize: 0.08
+Viewer.GraphLineWidth: 0.9
+Viewer.KeyFrameLineWidth: 1.0
+Viewer.KeyFrameSize: 0.05
+Viewer.PointSize: 2.0
+Viewer.ViewpointF: 500.0
+Viewer.ViewpointX: 0.0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -1.8
+"""
+
+        # Write to file
+        with open(os.path.join(data_folder, filename), "w") as f:
+            f.write(yaml_content)
+
+        print(f"[INFO] Saved camera calibration to {filename}")
+
+    def setup_camera_params(self):
+        # 1) Camera parameters
+        width, height = 640, 360
+        fx, fy = 344.5854, 343.6861
+        cx, cy = 320.0, 180.0  # near image center for 640x360
+
+        # 2) Force window size and basic config
+        loadPrcFileData("", f"win-size {width} {height}")  # type: ignore
+        loadPrcFileData("", "window-title Panda3D Full Camera Control")  # type: ignore
+        loadPrcFileData("", "load-file-type p3assimp")  # type: ignore
+
+        # 3) Grab PerspectiveLens
+        self.camLens = self.cam.node().getLens()
+
+        # 4) Compute FoV from fx, fy
+        fov_x = 2.0 * math.degrees(math.atan(0.5 * width / fx))
+        fov_y = 2.0 * math.degrees(math.atan(0.5 * height / fy))
+        self.camLens.setFov(fov_x, fov_y)
+
+        # 5) Set film size + offset for the principal point
+        self.camLens.setFilmSize(width, height)
+        offset_x = cx - (width / 2.0)
+        offset_y = (height / 2.0) - cy  # note: Panda has +y pointing "up"
+        self.camLens.setFilmOffset(offset_x, offset_y)
+
+        # 6) Near/far planes
+        self.camLens.setNearFar(0.1, 100.0)
+
+        # 7) Save out the calibration_sim.yaml.
+        self.save_calibration_file(width, height, fx, fy, cx, cy)
 
     def setup_key_controls(self):
         self.keyMap = {"green_point_forward": False, "green_point_backward": False}
@@ -483,6 +605,10 @@ class MyApp(ShowBase):
                     1 if self.green_point_visible else 0.5
                 )  # Set visibility
 
+        # If recording mode is enabled, capture the frame
+        if self.record_mode:
+            self.record_frame()
+
         return Task.cont
 
     def update_trajectory(self):
@@ -589,7 +715,7 @@ class MyApp(ShowBase):
         green_point_visual = self.loader.loadModel(
             "models/smiley"
         )  # Ensure this is a valid model path
-        green_point_visual.setScale(3)  # Scale to appropriate size
+        green_point_visual.setScale(0.1)  # Scale to appropriate size
         green_point_visual.setColor(0, 1, 0, 1)  # Set color to green
         green_point_visual.setPos(LVector3f(*self.green_point))  # type: ignore
 
@@ -685,6 +811,82 @@ class MyApp(ShowBase):
             self.up_arrow["image_color"] = (1, 1, 1, 1)  # Change back to normal color
         elif arrow == "down":
             self.down_arrow["image_color"] = (1, 1, 1, 1)
+
+    # RECORD METHODS
+    def setup_video_recorder(self):
+        """
+        If recording is True, create a directory for frames,
+        and initialize the counter to 0.
+        """
+        self.record_frame_idx = 0
+        if self.record_mode:
+            # Create (or reuse) a directory to store frames
+            self.record_dir = "recorded_frames"
+            os.makedirs(self.record_dir, exist_ok=True)
+            print(f"[INFO] Recording frames to ./{self.record_dir}/")
+        else:
+            self.record_dir = None
+
+    def record_frame(self):
+        """
+        Capture the current window as an image and save it to a numbered PNG.
+        """
+        if not self.record_dir:
+            return  # Not recording
+
+        # Grab a screenshot from the main window.
+        # getScreenshot() returns a PNMImage, which we can write to file.
+        screenshot = self.win.getScreenshot()
+
+        # Create a filename like: frame_00000.png
+        filename = os.path.join(
+            self.record_dir, f"frame_{self.record_frame_idx:05d}.png"
+        )
+        screenshot.write(filename)
+
+        self.record_frame_idx += 1
+
+    def quit_app(self):
+        """
+        Called when the user presses 'q'.
+        Stops the main loop, optionally runs ffmpeg to encode video, and exits.
+        """
+        print("[INFO] Quitting the app now.")
+
+        # Stop the Panda3D main loop
+        self.taskMgr.stop()
+
+        # Set the video directory
+        video_dir = os.path.join(data_folder, "videos")
+        os.makedirs(
+            video_dir, exist_ok=True
+        )  # Create videos directory if it doesn't exist
+        video = os.path.join(video_dir, f"output_{time.time()}.mp4")
+
+        # If we recorded frames, let's encode them
+        if self.record_mode and hasattr(self, "record_dir"):
+            print("[INFO] Converting images to video with ffmpeg...")
+            cmd = [
+                "ffmpeg",
+                "-y",  # overwrite output if exists
+                "-framerate",
+                "15",
+                "-i",
+                os.path.join(self.record_dir, "frame_%05d.png"),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                video,
+            ]
+            subprocess.run(cmd, check=True)
+            print("[INFO] ffmpeg video saved as output.mp4")
+
+        # Delete all the frames
+        shutil.rmtree(self.record_dir)
+
+        # Finally, exit the Python process
+        sys.exit(0)
 
 
 if __name__ == "__main__":

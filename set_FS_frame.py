@@ -4,6 +4,7 @@ import pyvista as pv
 import numpy as np
 from scipy.interpolate import CubicSpline
 from scipy.interpolate import interp1d
+import numpy as np
 
 
 def smooth_vectors(vectors, window_size=10, passes=1):
@@ -108,9 +109,6 @@ def compute_tangent_vectors(interpolated_points):
     tangents = tangents / norms[:, np.newaxis]
     tangents = smooth_vectors(tangents)  # Smooth the tangent vectors
     return tangents
-
-
-import numpy as np
 
 
 def smooth_vectors(vectors):
@@ -327,7 +325,7 @@ def draw_FS_frames(
 
 def save_frames_single_branch(input_path):
 
-    output_path = input_path.replace(".vtp", "_frames.txt")
+    output_path = input_path.replace(".vtp", ".txt")
 
     # Load the .vtp file
     line_model = pv.read(input_path)
@@ -380,85 +378,8 @@ def save_frames_single_branch(input_path):
 
 def save_frames_all_branches(input_paths):
 
-    output_path = os.path.join(
-        os.path.dirname(input_paths[0]), "centerline_frames_all_branches.txt"
-    )
-    all_frames = []
-
-    # Open the output file once
-    with open(output_path, "w") as file:
-        for input_path in input_paths:
-            # Load the .vtp file
-            line_model = pv.read(input_path)
-            n_cells = line_model.n_cells
-            print(f"Number of branches (cells): {n_cells}")
-            branch_frames = []
-
-            for i in range(n_cells):
-                # Extract the i-th cell (branch)
-                single_line = line_model.extract_cells(i)
-                points = single_line.points
-                print(f"Processing branch {i} with {len(points)} points")
-
-                # Convert from mm to m
-                points = points / 1000
-
-                if len(points) < 2:
-                    print(f"Skipping branch {i} due to insufficient points.")
-                    continue
-
-                # Interpolate the line for smoothing
-                interpolated_points = interpolate_line(points)
-
-                if interpolated_points is None or len(interpolated_points) == 0:
-                    print(f"Skipping branch {i} due to interpolation failure.")
-                    continue
-
-                # Compute tangent vectors for the interpolated points
-                tangents = compute_tangent_vectors(interpolated_points)
-
-                # Compute the Frenet-Serret frame using the MRF algorithm
-                normals, binormals = compute_MRF(tangents)
-
-                # For each point, save the coordinates and the respective FS frame
-                for idx in range(len(interpolated_points)):
-                    point = interpolated_points[idx]
-                    tangent = tangents[idx]
-                    normal = normals[idx]
-                    binormal = binormals[idx]
-
-                    # Add to branch frames
-                    branch_frames.append(
-                        [
-                            point[0],
-                            point[1],
-                            point[2],
-                            tangent[0],
-                            tangent[1],
-                            tangent[2],
-                            normal[0],
-                            normal[1],
-                            normal[2],
-                            binormal[0],
-                            binormal[1],
-                            binormal[2],
-                        ]
-                    )
-
-            # Add branch frames to all frames
-            all_frames.append(branch_frames)
-
-        # Process and write each branch separately
-        for branch_frames in all_frames:
-
-            # Write frames from this branch
-            for frame in branch_frames:
-                file.write(
-                    f"{frame[0]}, {frame[1]}, {frame[2]}, "
-                    f"{frame[3]}, {frame[4]}, {frame[5]}, "
-                    f"{frame[6]}, {frame[7]}, {frame[8]}, "
-                    f"{frame[9]}, {frame[10]}, {frame[11]}\n"
-                )
+    for path in input_paths:
+        save_frames_single_branch(path)
 
 
 def parse_arguments():
@@ -485,7 +406,7 @@ if __name__ == "__main__":
         vtp_files = [
             os.path.join(args.i, f)
             for f in os.listdir(args.i)
-            if f.startswith("centerline_b") and f.endswith(".vtp")
+            if f.startswith("b") and f.endswith(".vtp")
         ]
 
         save_frames_all_branches(vtp_files)
