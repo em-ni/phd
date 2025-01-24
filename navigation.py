@@ -10,46 +10,19 @@ from panda3d.core import *  # type: ignore
 from direct.task import Task  # type: ignore
 from direct.gui.DirectGui import DirectLabel  # type: ignore
 import pyvista as pv  # type: ignore
+import numpy as np  # type: ignore
+import socket
+import math
+import configparser
 from set_FS_frame import (
     interpolate_line,
     compute_tangent_vectors,
     compute_normal_vectors,
     compute_binormal_vectors,
     compute_MRF,
+    smooth_vectors,
 )
-import numpy as np  # type: ignore
-import socket
-import math
 
-# data_folder = "data/mesh/easier_slam_test/"
-data_folder = "data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/"
-
-# path_name = "path.vtp"
-# path_name = "centerlines/b1.vtp"
-# path_name = "centerlines/b2.vtp"
-# path_name = "centerlines/b3.vtp"
-# path_name = "centerlines/b4.vtp"
-# path_name = "centerlines/b5.vtp"
-path_name = "centerlines/b21.vtp"
-
-# path_name = "centerline_b1.vtp"
-# path_name = "centerline_b2.vtp"
-# path_name = "centerline_b3.vtp"
-# path_name = "centerline_b4.vtp"
-# path_name = "centerline_b5.vtp"
-
-# negative_model_name = "easier_slam_test_negative.obj"
-negative_model_name = "easier_slam_test_moved_negative.obj"
-negative_model_name = "0063_negative.obj"
-
-# model_name = "easier_slam_test.obj"
-model_name = "easier_slam_test_moved.obj"
-model_name = "0063.obj"
-
-# centerline_frames = "centerline_frames.txt"
-centerline_frames = "centerlines/b1.txt"
-
-record_dir = "videos"
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Path Navigation Tool")
@@ -80,8 +53,20 @@ class MyApp(ShowBase):
     def __init__(self):
         ShowBase.__init__(self)
 
+        # Read the configuration file
+        self.config = configparser.ConfigParser()
+        self.config.read("config.ini")
+        self.data_folder = self.config["PATHS"]["data_folder"]
+        self.path_name = self.config["PATHS"]["path_name"]
+        self.model_name = self.config["PATHS"]["model_name"]
+        self.negative_model_name = self.config["PATHS"]["negative_model_name"]
+        self.centerline_frames = self.config["PATHS"]["centerline_frames"]
+        self.draw_circles_bool = self.config["DRAW"]["draw_circles_bool"]
+        self.draw_centerline_bool = self.config["DRAW"]["draw_centerline_bool"]
+        self.draw_frames_bool = self.config["DRAW"]["draw_frames_bool"]
+
         # Define path of the .vtp file
-        self.path = data_folder + path_name
+        self.path_path = self.data_folder + self.path_name
 
         # Read parameters from command line
         self.view_mode = args.view
@@ -169,10 +154,8 @@ class MyApp(ShowBase):
             - usel boolean difference between the sphere and the solid
             - export the boolean cut as .obj
             """
-            # self.model = (
-            #     "data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/0063_negative.obj"
-            # )
-            self.model = data_folder + negative_model_name
+
+            self.model = self.data_folder + self.negative_model_name
 
             print("initializing First Person View Mode...")
             # Load the phantom model
@@ -217,8 +200,7 @@ class MyApp(ShowBase):
             print("Initializinig Third Person View Mode...")
 
             # Load the standard model to visualize the external part
-            # self.model = "data/mesh/vascularmodel/0063_H_PULMGLN_SVD/sim/0063.obj"
-            self.model = data_folder + model_name
+            self.model = self.data_folder + self.model_name
 
             # Load the phantom model
             self.scene = self.loader.loadModel(self.model)
@@ -293,11 +275,19 @@ class MyApp(ShowBase):
             s.close()
 
     def draw_elements(self, points):
-        # Draw some frames
-        # self.draw_FS_frames(points, num_points=10, draw_tangent=True, draw_normal=True, draw_binormal=True)
+        if self.draw_frames_bool == "1":
+            # Draw some frames
+            self.draw_FS_frames(
+                points,
+                num_points=100,
+                draw_tangent=True,
+                draw_normal=True,
+                draw_binormal=True,
+            )
 
-        # Drawing circles
-        # self.draw_circles_around_points(radius=0.1, num_segments=12)
+        if self.draw_circles_bool == "1":
+            # Drawing circles
+            self.draw_circles_around_points(radius=0.2, num_segments=50)
 
         # Draw the green point
         self.draw_green_point()
@@ -354,16 +344,20 @@ Viewer.ViewpointZ: -1.8
 """
 
         # Write to file
-        with open(os.path.join(data_folder, filename), "w") as f:
+        with open(os.path.join(self.data_folder, filename), "w") as f:
             f.write(yaml_content)
 
         print(f"[INFO] Saved camera calibration to {filename}")
 
     def setup_camera_params(self):
         # 1) Camera parameters
-        width, height = 640, 360
-        fx, fy = 344.5854, 343.6861
-        cx, cy = 320.0, 180.0  # near image center for 640x360
+        # Read camera parameters from config.ini
+        width = int(self.config["CAMERA"]["width"])
+        height = int(self.config["CAMERA"]["height"])
+        fx = float(self.config["CAMERA"]["fx"])
+        fy = float(self.config["CAMERA"]["fy"])
+        cx = float(self.config["CAMERA"]["cx"])
+        cy = float(self.config["CAMERA"]["cy"])
 
         # 2) Force window size and basic config
         loadPrcFileData("", f"win-size {width} {height}")  # type: ignore
@@ -403,8 +397,9 @@ Viewer.ViewpointZ: -1.8
 
     def setup_line(self, points):
         # Load the .vtp file and interpolate the line
-        self.interpolated_points = interpolate_line(points, num_points=100)
+        self.interpolated_points = interpolate_line(points, num_points=1000)
         self.tangents = compute_tangent_vectors(self.interpolated_points)
+        self.tangents = smooth_vectors(self.tangents, 10, 10)
 
         # Compute normal and binormal vectors in the standard way
         # self.normals = compute_normal_vectors(self.tangents)
@@ -432,7 +427,7 @@ Viewer.ViewpointZ: -1.8
         w_T_o = np.eye(4)
 
         # Read the first line from centerline_frames.txt
-        with open(data_folder + centerline_frames, "r") as f:
+        with open(self.data_folder + self.centerline_frames, "r") as f:
             # Extract data from the first line
             first_line = f.readline().strip()
             data = first_line.split(",")
@@ -458,7 +453,7 @@ Viewer.ViewpointZ: -1.8
 
     def get_vtp_line_points(self):
         # Load the .vtp file
-        line_model = pv.read(self.path)
+        line_model = pv.read(self.path_path)
 
         # Convert the points to a list of tuples
         points = [tuple(point) for point in line_model.points]
@@ -589,8 +584,9 @@ Viewer.ViewpointZ: -1.8
         if self.view_mode == "fp":
             self.update_camera_to_green_point()
 
-            # Update the trajectory
-            self.update_trajectory()
+            if self.draw_centerline_bool == "1":
+                # Update the trajectory
+                self.update_trajectory()
 
         # Blinking logic
         self.blink_timer += dt
@@ -616,7 +612,7 @@ Viewer.ViewpointZ: -1.8
         self.draw_trajectory()
 
     ## DRAW METHODS
-    def draw_circles_around_points(self, radius=1, num_segments=12):
+    def draw_circles_around_points(self, radius=1, num_segments=10):
         for i, center in enumerate(self.interpolated_points):
             normal = self.normals[i]
             binormal = self.binormals[i]
@@ -759,7 +755,7 @@ Viewer.ViewpointZ: -1.8
 
         # Smooth a lot the line
         points = self.points
-        points = interpolate_line(points, num_points=50)
+        points = interpolate_line(points, num_points=1000)
 
         # Create the line
         line = LineSegs()  # type: ignore
@@ -856,15 +852,16 @@ Viewer.ViewpointZ: -1.8
         # Stop the Panda3D main loop
         self.taskMgr.stop()
 
-        # Set the video directory
-        video_dir = os.path.join(data_folder, "videos")
-        os.makedirs(
-            video_dir, exist_ok=True
-        )  # Create videos directory if it doesn't exist
-        video = os.path.join(video_dir, f"output_{time.time()}.mp4")
-
         # If we recorded frames, let's encode them
         if self.record_mode and hasattr(self, "record_dir"):
+
+            # Set the video directory
+            video_dir = os.path.join(self.data_folder, "videos")
+            os.makedirs(
+                video_dir, exist_ok=True
+            )  # Create videos directory if it doesn't exist
+            video = os.path.join(video_dir, f"output_{time.time()}.mp4")
+
             print("[INFO] Converting images to video with ffmpeg...")
             cmd = [
                 "ffmpeg",
@@ -882,8 +879,8 @@ Viewer.ViewpointZ: -1.8
             subprocess.run(cmd, check=True)
             print("[INFO] ffmpeg video saved as output.mp4")
 
-        # Delete all the frames
-        shutil.rmtree(self.record_dir)
+            # Delete all the frames
+            shutil.rmtree(self.record_dir)
 
         # Finally, exit the Python process
         sys.exit(0)

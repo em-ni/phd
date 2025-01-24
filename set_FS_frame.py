@@ -62,7 +62,7 @@ def interpolate_line(points, num_points=None):
     try:
         points = preprocess_points(np.array(points))
         if num_points is None:
-            num_points = len(points) * 2  # Default to double the input points
+            num_points = len(points) * 3  # Default to 3x the number of input points
 
         # Compute the cumulative distance along the line
         distances = np.cumsum(np.r_[0, np.linalg.norm(np.diff(points, axis=0), axis=1)])
@@ -109,12 +109,6 @@ def compute_tangent_vectors(interpolated_points):
     tangents = tangents / norms[:, np.newaxis]
     tangents = smooth_vectors(tangents)  # Smooth the tangent vectors
     return tangents
-
-
-def smooth_vectors(vectors):
-    # Placeholder for your smoothing function
-    # Implement your smoothing logic here
-    return vectors
 
 
 def compute_MRF(tangents):
