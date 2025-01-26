@@ -23,6 +23,8 @@ from set_FS_frame import (
     smooth_vectors,
 )
 
+# TODO: add simulated encoder measurement to the saved video using curvilinear abscissa
+# Check all the measurements units and make sure they are consistent
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Path Navigation Tool")
@@ -54,16 +56,16 @@ class MyApp(ShowBase):
         ShowBase.__init__(self)
 
         # Read the configuration file
-        self.config = configparser.ConfigParser()
-        self.config.read("config.ini")
-        self.data_folder = self.config["PATHS"]["data_folder"]
-        self.path_name = self.config["PATHS"]["path_name"]
-        self.model_name = self.config["PATHS"]["model_name"]
-        self.negative_model_name = self.config["PATHS"]["negative_model_name"]
-        self.centerline_frames = self.config["PATHS"]["centerline_frames"]
-        self.draw_circles_bool = self.config["DRAW"]["draw_circles_bool"]
-        self.draw_centerline_bool = self.config["DRAW"]["draw_centerline_bool"]
-        self.draw_frames_bool = self.config["DRAW"]["draw_frames_bool"]
+        self.app_config = configparser.ConfigParser()
+        self.app_config.read("config.ini")
+        self.data_folder = self.app_config["PATHS"]["data_folder"]
+        self.path_name = self.app_config["PATHS"]["path_name"]
+        self.model_name = self.app_config["PATHS"]["model_name"]
+        self.negative_model_name = self.app_config["PATHS"]["negative_model_name"]
+        self.centerline_frames = self.app_config["PATHS"]["centerline_frames"]
+        self.draw_circles_bool = self.app_config["DRAW"]["draw_circles_bool"]
+        self.draw_centerline_bool = self.app_config["DRAW"]["draw_centerline_bool"]
+        self.draw_frames_bool = self.app_config["DRAW"]["draw_frames_bool"]
 
         # Define path of the .vtp file
         self.path_path = self.data_folder + self.path_name
@@ -113,7 +115,7 @@ class MyApp(ShowBase):
         # Initialize timer for blinking
         self.blink_timer = 0
         self.blink_interval = 1  # in seconds
-        self.green_point_visible = True  # Initial visibility status
+        self.robot_tip_visible = True  # Initial visibility status
 
         # Load basic environment
         # self.scene = self.loader.loadModel("models/environment")
@@ -290,7 +292,7 @@ class MyApp(ShowBase):
             self.draw_circles_around_points(radius=0.2, num_segments=50)
 
         # Draw the green point
-        self.draw_green_point()
+        self.draw_robot_tip()
 
     def save_calibration_file(
         self, width, height, fx, fy, cx, cy, filename="calibration_sim.yaml"
@@ -352,12 +354,12 @@ Viewer.ViewpointZ: -1.8
     def setup_camera_params(self):
         # 1) Camera parameters
         # Read camera parameters from config.ini
-        width = int(self.config["CAMERA"]["width"])
-        height = int(self.config["CAMERA"]["height"])
-        fx = float(self.config["CAMERA"]["fx"])
-        fy = float(self.config["CAMERA"]["fy"])
-        cx = float(self.config["CAMERA"]["cx"])
-        cy = float(self.config["CAMERA"]["cy"])
+        width = int(self.app_config["CAMERA"]["width"])
+        height = int(self.app_config["CAMERA"]["height"])
+        fx = float(self.app_config["CAMERA"]["fx"])
+        fy = float(self.app_config["CAMERA"]["fy"])
+        cx = float(self.app_config["CAMERA"]["cx"])
+        cy = float(self.app_config["CAMERA"]["cy"])
 
         # 2) Force window size and basic config
         loadPrcFileData("", f"win-size {width} {height}")  # type: ignore
@@ -385,15 +387,13 @@ Viewer.ViewpointZ: -1.8
         self.save_calibration_file(width, height, fx, fy, cx, cy)
 
     def setup_key_controls(self):
-        self.keyMap = {"green_point_forward": False, "green_point_backward": False}
+        self.keyMap = {"robot_tip_forward": False, "robot_tip_backward": False}
 
         # Bind arrow keys for moving the green point
-        self.accept("arrow_up", self.update_key_map, ["green_point_forward", True])
-        self.accept("arrow_up-up", self.update_key_map, ["green_point_forward", False])
-        self.accept("arrow_down", self.update_key_map, ["green_point_backward", True])
-        self.accept(
-            "arrow_down-up", self.update_key_map, ["green_point_backward", False]
-        )
+        self.accept("arrow_up", self.update_key_map, ["robot_tip_forward", True])
+        self.accept("arrow_up-up", self.update_key_map, ["robot_tip_forward", False])
+        self.accept("arrow_down", self.update_key_map, ["robot_tip_backward", True])
+        self.accept("arrow_down-up", self.update_key_map, ["robot_tip_backward", False])
 
     def setup_line(self, points):
         # Load the .vtp file and interpolate the line
@@ -413,10 +413,10 @@ Viewer.ViewpointZ: -1.8
         self.end_point = self.interpolated_points[-1]
 
         # Initialize the green point
-        self.green_point = self.interpolated_points[
+        self.robot_tip = self.interpolated_points[
             0
         ]  # Setting the first point as the start
-        self.green_point_node = None
+        self.robot_tip_node = None
 
         # Compute line length
         self.line_length = self.curvilinear_abscissa(self.end_point)
@@ -448,8 +448,17 @@ Viewer.ViewpointZ: -1.8
 
     ## LINE UTILS
     def curvilinear_abscissa(self, point):
-        # Compute the from the start point to the current point
-        return np.linalg.norm(point - self.start_point)
+        # Find the closest point to the given point
+        distances = np.linalg.norm(self.interpolated_points - point, axis=1)
+        closest_index = np.argmin(distances)
+
+        # Calculate cumulative distance from start to the closest point
+        total_distance = 0
+        for i in range(closest_index):
+            segment = self.interpolated_points[i + 1] - self.interpolated_points[i]
+            total_distance += np.linalg.norm(segment)
+
+        return total_distance
 
     def get_vtp_line_points(self):
         # Load the .vtp file
@@ -462,9 +471,9 @@ Viewer.ViewpointZ: -1.8
         return points
 
     ## UPDATE METHODS
-    def update_camera_to_green_point(self):
+    def update_camera_to_robot_tip(self):
         # Find the index of the closest point to the green point
-        distances = np.linalg.norm(self.interpolated_points - self.green_point, axis=1)
+        distances = np.linalg.norm(self.interpolated_points - self.robot_tip, axis=1)
         closest_index = np.argmin(distances)
 
         # Get the corresponding tangent, normal, and binormal vectors
@@ -473,10 +482,10 @@ Viewer.ViewpointZ: -1.8
         binormal = LVector3f(*self.binormals[closest_index])  # type: ignore
 
         # Set the camera position at the green point
-        self.camera.setPos(LVector3f(*self.green_point))  # type: ignore
+        self.camera.setPos(LVector3f(*self.robot_tip))  # type: ignore
 
         # Calculate the focal point using the tangent vector
-        focal_point = self.green_point + tangent
+        focal_point = self.robot_tip + tangent
 
         # Set the camera to look at the focal point with the binormal as the up vector
         self.camera.lookAt(LVector3f(*focal_point), normal)  # type: ignore
@@ -492,12 +501,12 @@ Viewer.ViewpointZ: -1.8
             self.camera.getX(), self.camera.getY(), self.camera.getZ()
         )
 
-    def update_green_point_position(self, dt, forward=True):
+    def update_robot_tip_position(self, dt, forward=True):
         # Define the speed of movement along the line
         movement_speed = 5  # Adjust as needed
 
-        # Calculate distances from self.green_point to each point in self.interpolated_points
-        distances = np.linalg.norm(self.interpolated_points - self.green_point, axis=1)
+        # Calculate distances from self.robot_tip to each point in self.interpolated_points
+        distances = np.linalg.norm(self.interpolated_points - self.robot_tip, axis=1)
         current_index = np.argmin(distances)
 
         if forward:
@@ -527,29 +536,42 @@ Viewer.ViewpointZ: -1.8
             )
 
         # Update the position
-        new_position = self.green_point + direction * step_size
-        self.green_point = new_position
+        new_position = self.robot_tip + direction * step_size
+        self.robot_tip = new_position
 
         # Find the index of the closest point to the green point
-        distances = np.linalg.norm(self.interpolated_points - self.green_point, axis=1)
+        distances = np.linalg.norm(self.interpolated_points - self.robot_tip, axis=1)
         closest_index = np.argmin(distances)
 
         if self.view_mode == "tp":
             # Redraw the path up to the green point
             self.draw_path(self.interpolated_points, closest_index)
 
+        # Get the current point on the centerline using the closest_index
+        current_point = self.interpolated_points[closest_index]
+
+        # Compute the curvilinear abscissa
+        self.current_ca = self.curvilinear_abscissa(current_point)
+
+        # Print the current_ca updating a single line in the terminal
+        print(
+            f"\rCurrent curvilinear abscissa: {self.current_ca:.2f} mm",
+            end="",
+            flush=True,
+        )
+
         # Update the visual representation
-        self.draw_green_point()
+        self.draw_robot_tip()
 
     def update_key_map(self, controlName, controlState):
         self.keyMap[controlName] = controlState
 
-        if controlName == "green_point_forward":
+        if controlName == "robot_tip_forward":
             if controlState:
                 self.highlight_arrow("up")
             else:
                 self.unhighlight_arrow("up")
-        elif controlName == "green_point_backward":
+        elif controlName == "robot_tip_backward":
             if controlState:
                 self.highlight_arrow("down")
             else:
@@ -560,10 +582,10 @@ Viewer.ViewpointZ: -1.8
 
         # Update the green point position
         if self.live_mode == False:
-            if self.keyMap["green_point_forward"]:
-                self.update_green_point_position(dt, forward=True)
-            if self.keyMap["green_point_backward"]:
-                self.update_green_point_position(dt, forward=False)
+            if self.keyMap["robot_tip_forward"]:
+                self.update_robot_tip_position(dt, forward=True)
+            if self.keyMap["robot_tip_backward"]:
+                self.update_robot_tip_position(dt, forward=False)
         else:
             # Update the green point position based on the transformation matrix
             try:
@@ -572,17 +594,17 @@ Viewer.ViewpointZ: -1.8
                 translation = Tcw_matrix[:3, 3] + 1000 * self.w_T_o[:3, 3]
 
                 # Update the green point position
-                self.green_point = translation
-                # print(f"Green point position: {self.green_point}")
+                self.robot_tip = translation
+                # print(f"Green point position: {self.robot_tip}")
                 # Update the visual representation
-                self.draw_green_point()
+                self.draw_robot_tip()
             except (SyntaxError, AttributeError) as e:
                 # Skip update if data is not valid
                 pass
 
         # Update the camera position and orientation
         if self.view_mode == "fp":
-            self.update_camera_to_green_point()
+            self.update_camera_to_robot_tip()
 
             if self.draw_centerline_bool == "1":
                 # Update the trajectory
@@ -592,13 +614,13 @@ Viewer.ViewpointZ: -1.8
         self.blink_timer += dt
         if self.blink_timer >= self.blink_interval:
             self.blink_timer = 0  # Reset timer
-            self.green_point_visible = not self.green_point_visible  # Toggle visibility
-            if self.green_point_node:
-                self.green_point_node.setTransparency(
+            self.robot_tip_visible = not self.robot_tip_visible  # Toggle visibility
+            if self.robot_tip_node:
+                self.robot_tip_node.setTransparency(
                     TransparencyAttrib.MDual  # type: ignore
                 )  # Enable transparency
-                self.green_point_node.setAlphaScale(
-                    1 if self.green_point_visible else 0.5
+                self.robot_tip_node.setAlphaScale(
+                    1 if self.robot_tip_visible else 0.5
                 )  # Set visibility
 
         # If recording mode is enabled, capture the frame
@@ -703,22 +725,122 @@ Viewer.ViewpointZ: -1.8
             if draw_binormal:
                 self.draw_vector(point, binormals[i], (0, 0, 1, 1))  # Blue for binormal
 
-    def draw_green_point(self):
-        if self.green_point_node:
-            self.green_point_node.removeNode()  # Remove the old node if it exists
+    def draw_light_cone(self):
+        """
+        Creates a Spotlight at the robot tip and orients it along the tangent vector.
+        """
+        # If you already have a spotlight, remove or detach it first
+        if hasattr(self, "light_cone_np") and self.light_cone_np:
+            self.light_cone_np.removeNode()
+
+        # 1) Find the index of the closest centerline point
+        distances = np.linalg.norm(self.interpolated_points - self.robot_tip, axis=1)
+        idx = np.argmin(distances)
+
+        # 2) Get the tangent vector at that point
+        tangent = self.tangents[idx]  # e.g. an (x,y,z) array
+        tangent_vec = LVector3f(*tangent)
+
+        # 3) Create a Spotlight
+        spot = Spotlight("robotTipLight")
+        spot.setColor((1, 1, 0.8, 1))  # Slightly warm color
+        lens = PerspectiveLens()
+        lens.setFov(30)  # Controls the cone's spread (in degrees)
+        spot.setLens(lens)
+
+        # 4) Attach it under the same node as the robot tip,
+        #    so it inherits the tip’s position.
+        #    We'll store the resulting NodePath in self.light_cone_np
+        self.light_cone_np = self.robot_tip_node.attachNewNode(spot)
+
+        # By default, a Spotlight in Panda3D “shines” down the **-Y** axis of its own node.
+        # We need to rotate/orient the light to point along `tangent_vec`.
+        # A quick trick: tell it to "lookAt" a point in front of the tip node.
+        # We'll pick a dummy target that is '10 units' along the tangent direction.
+        target = self.robot_tip + tangent * 10
+        self.light_cone_np.lookAt(LVector3f(*target))
+
+        # 5) Enable the spotlight in the scene
+        self.render.setLight(self.light_cone_np)
+
+    def draw_light_cone_geom(self):
+        """
+        Draws a translucent cone geometry that starts at the robot tip
+        and extends in the tangent direction.
+        """
+        # Remove old cone if it exists
+        if hasattr(self, "light_cone_geom_np") and self.light_cone_geom_np:
+            self.light_cone_geom_np.removeNode()
+
+        # Find the index of the closest point to the green point
+        distances = np.linalg.norm(self.interpolated_points - self.robot_tip, axis=1)
+        closest_index = np.argmin(distances)
+
+        # Get the corresponding tangent, normal, and binormal vectors
+        tangent_vector = LVector3f(*self.tangents[closest_index])  # type: ignore
+
+        # Load or generate a cone model. For instance, a small .egg file
+        # or we can code a custom Geom. For simplicity, assume we have "cone.egg"
+        # that is shaped so its apex is at (0,0,0) and extends along +Z:
+        cone_model = self.loader.loadModel(
+            "/home/emanuele/Desktop/github/navigation/data/icons/cone.obj"
+        )  # your own file
+        cone_model.reparentTo(self.robot_tip_node)
+
+        # Set size and color/transparency
+        cone_model.setScale(0.1)
+        cone_model.setColor(1, 1, 0, 0.3)  # Slightly yellow, partial alpha
+        cone_model.setTransparency(TransparencyAttrib.MAlpha)  # type: ignore
+
+        # Orient the cone so that +Z aligns with the tangent and the origin of the cone is at the robot tip.
+        # Create a transformation node to handle the orientation
+        cone_np = self.render.attachNewNode("cone_transform")
+
+        # Position the cone at the origin
+        cone_np.setPos(LVector3f(*(np.zeros(3))))  # type: ignore
+
+        # Calculate the angle between the tangent and the Z axis
+        angle = tangent_vector.angleDeg(LVector3f(0, 0, 1))  # type: ignore
+
+        # Calculate the axis of rotation
+        axis = tangent_vector.cross(LVector3f(0, 0, 1))  # type: ignore
+        axis.normalize()
+
+        # TODO: fix this
+        # Use quaternion angle axis to rotate the cone
+        q = LQuaternionf()  # type: ignore
+        q.setFromAxisAngle(angle, axis)
+        cone_np.setQuat(q)  # type: ignore
+
+        # Move the cone to the robot tip
+        cone_np.setPos(LVector3f(*self.robot_tip))  # type: ignore
+
+        # Parent the cone model to the transformation node
+        cone_model.reparentTo(cone_np)
+
+        # Store for later (if we want to remove it next frame)
+        self.light_cone_geom_np = cone_np
+
+    def draw_robot_tip(self):
+        if self.robot_tip_node:
+            self.robot_tip_node.removeNode()  # Remove the old node if it exists
 
         # Create the green point visual
-        green_point_visual = self.loader.loadModel(
+        robot_tip_visual = self.loader.loadModel(
             "models/smiley"
         )  # Ensure this is a valid model path
-        green_point_visual.setScale(0.1)  # Scale to appropriate size
-        green_point_visual.setColor(0, 1, 0, 1)  # Set color to green
-        green_point_visual.setPos(LVector3f(*self.green_point))  # type: ignore
+
+        robot_tip_visual.setScale(0.1)  # Scale to appropriate size
+        robot_tip_visual.setColor(0, 1, 0, 1)  # Set color to green
+        robot_tip_visual.setPos(LVector3f(*self.robot_tip))  # type: ignore
 
         # Create a new node and parent the visual to it
-        green_point_node = self.render.attachNewNode("GreenPointNode")
-        green_point_visual.reparentTo(green_point_node)
-        self.green_point_node = green_point_node
+        robot_tip_node = self.render.attachNewNode("GreenPointNode")
+        robot_tip_visual.reparentTo(robot_tip_node)
+        self.robot_tip_node = robot_tip_node
+
+        # Draw the light cone geometry
+        self.draw_light_cone_geom()
 
     def draw_path(self, points, up_to_index):
         # Ensure the up_to_index is within bounds
@@ -765,8 +887,8 @@ Viewer.ViewpointZ: -1.8
         )  # Same color as the arrow button
 
         # Start drawing the line from the green point
-        green_point = self.green_point
-        first_point = LVector3f(green_point[0], green_point[1], green_point[2])  # type: ignore
+        robot_tip = self.robot_tip
+        first_point = LVector3f(robot_tip[0], robot_tip[1], robot_tip[2])  # type: ignore
         line.moveTo(first_point)
 
         # Draw to the rest of the points
@@ -834,10 +956,17 @@ Viewer.ViewpointZ: -1.8
         # getScreenshot() returns a PNMImage, which we can write to file.
         screenshot = self.win.getScreenshot()
 
-        # Create a filename like: frame_00000.png
-        filename = os.path.join(
-            self.record_dir, f"frame_{self.record_frame_idx:05d}.png"
-        )
+        # Create a filename like: frame_00000_ca_XXX
+        if hasattr(self, "current_ca"):
+            filename = os.path.join(
+                self.record_dir,
+                f"frame_{self.record_frame_idx:05d}_ca_{self.current_ca:.2f}_mm.png",
+            )
+        else:
+            filename = os.path.join(
+                self.record_dir,
+                f"frame_{self.record_frame_idx:05d}_ca_0.0_mm.png",
+            )
         screenshot.write(filename)
 
         self.record_frame_idx += 1
@@ -854,13 +983,32 @@ Viewer.ViewpointZ: -1.8
 
         # If we recorded frames, let's encode them
         if self.record_mode and hasattr(self, "record_dir"):
-
             # Set the video directory
             video_dir = os.path.join(self.data_folder, "videos")
-            os.makedirs(
-                video_dir, exist_ok=True
-            )  # Create videos directory if it doesn't exist
-            video = os.path.join(video_dir, f"output_{time.time()}.mp4")
+            os.makedirs(video_dir, exist_ok=True)
+            timestamp = time.time()
+            video = os.path.join(video_dir, f"output_{timestamp}.mp4")
+
+            # Extract timestamps and CA values from filenames
+            frames = sorted(os.listdir(self.record_dir))
+            timestamps = []
+            ca_values = []
+
+            for frame in frames:
+                if frame.endswith(".png"):
+                    # Extract CA value from filename
+                    ca_str = frame.split("_ca_")[1].split("_mm")[0]
+                    ca_values.append(float(ca_str))
+                    # Calculate timestamp based on frame number (at 15 fps)
+                    frame_num = int(frame.split("_")[1])
+                    timestamps.append(frame_num / 15.0)  # 15 fps
+
+            # Save timestamps and CA values to CSV
+            csv_file = os.path.join(video_dir, f"ca_data_{timestamp}.csv")
+            with open(csv_file, "w") as f:
+                f.write("timestamp,curvilinear_abscissa\n")
+                for t, ca in zip(timestamps, ca_values):
+                    f.write(f"{t:.3f},{ca:.3f}\n")
 
             print("[INFO] Converting images to video with ffmpeg...")
             cmd = [
@@ -868,8 +1016,10 @@ Viewer.ViewpointZ: -1.8
                 "-y",  # overwrite output if exists
                 "-framerate",
                 "15",
+                "-pattern_type",
+                "glob",
                 "-i",
-                os.path.join(self.record_dir, "frame_%05d.png"),
+                os.path.join(self.record_dir, "frame_*_ca_*_mm.png"),
                 "-c:v",
                 "libx264",
                 "-pix_fmt",
@@ -878,12 +1028,13 @@ Viewer.ViewpointZ: -1.8
             ]
             subprocess.run(cmd, check=True)
             print("[INFO] ffmpeg video saved as output.mp4")
+            print("[INFO] Curvilinear abscissa data saved to CSV")
 
             # Delete all the frames
             shutil.rmtree(self.record_dir)
 
         # Finally, exit the Python process
-        sys.exit(0)
+        self.userExit()
 
 
 if __name__ == "__main__":
