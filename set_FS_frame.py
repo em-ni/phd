@@ -6,6 +6,11 @@ from scipy.interpolate import CubicSpline
 from scipy.interpolate import interp1d
 import numpy as np
 
+"""
+This script reads a centerline .vtp file and computes the Frenet-Serret frame at each point.
+Setting the transformation matrix w_T_o from the Frenet-Serret (w) frame to the orignal frame (o), set in the CAD 
+"""
+
 
 def smooth_vectors(vectors, window_size=10, passes=1):
     """Apply a simple smoothing filter to vectors multiple times."""

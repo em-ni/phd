@@ -2,7 +2,7 @@
 Camera.RGB: 1
 Camera.ThDepth: 40.0
 Camera.bf: 40.0
-Camera.fps: 5
+Camera.fps: 15
 Camera.height: 360
 Camera.type: PinHole
 Camera.width: 640
@@ -19,7 +19,7 @@ File.version: '1.0'
 ORBextractor.iniThFAST: 1
 ORBextractor.minThFAST: 1
 ORBextractor.nFeatures: 2500
-ORBextractor.nLevels: 8
+ORBextractor.nLevels: 10
 ORBextractor.scaleFactor: 1.2
 Viewer.CameraLineWidth: 3.0
 Viewer.CameraSize: 0.08
