@@ -64,6 +64,9 @@ class MyApp(ShowBase):
         self.draw_circles_bool = self.app_config["DRAW"]["draw_circles_bool"]
         self.draw_centerline_bool = self.app_config["DRAW"]["draw_centerline_bool"]
         self.draw_frames_bool = self.app_config["DRAW"]["draw_frames_bool"]
+        self.draw_reference_frames_bool = self.app_config["DRAW"][
+            "draw_reference_frames_bool"
+        ]
 
         self.sim_server_bool = self.app_config["SLAM"]["sim_server_bool"]
 
@@ -136,7 +139,6 @@ class MyApp(ShowBase):
 
         # Setup
         self.setup_line(points)
-        self.draw_elements(points)
         self.points = points
 
         # Init transformation matrices
@@ -234,6 +236,9 @@ class MyApp(ShowBase):
         if self.record_mode == True:
             self.setup_video_recorder()
 
+        # Draw elements
+        self.draw_elements(points)
+
     ## SETUP METHODS
     def start_server(self, host="127.0.0.1", port=12345):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -298,7 +303,6 @@ class MyApp(ShowBase):
             # Draw some frames
             self.draw_FS_frames(
                 points,
-                num_points=100,
                 draw_tangent=True,
                 draw_normal=True,
                 draw_binormal=True,
@@ -308,9 +312,12 @@ class MyApp(ShowBase):
             # Drawing circles
             self.draw_circles_around_points(radius=0.2, num_segments=50)
 
-        if self.view_mode == "tp":
+        if self.view_mode == "tp" and self.draw_reference_frames_bool == "1":
             # Draw the origin frame
             self.draw_origin_frame()
+
+            # Draw the base frame
+            self.draw_base_frame()
 
         # Draw the robot tip
         self.draw_robot_tip()
@@ -511,7 +518,7 @@ Viewer.ViewpointZ: -1.8
         focal_point = self.robot_tip + tangent
 
         # Set the camera to look at the focal point with the binormal as the up vector
-        self.camera.lookAt(LVector3f(*focal_point), normal)  # type: ignore
+        self.camera.lookAt(LVector3f(*focal_point), -normal)  # type: ignore
 
         # Update the directional light's orientation to match the camera's orientation
         # if in first-person view mode
@@ -603,8 +610,6 @@ Viewer.ViewpointZ: -1.8
                 # Update the robot tip position
                 self.robot_tip = translation
 
-                # Update the visual representation
-                self.draw_robot_tip()
             except (SyntaxError, AttributeError) as e:
                 # Skip update if data is not valid
                 pass
@@ -740,47 +745,24 @@ Viewer.ViewpointZ: -1.8
     def draw_FS_frames(
         self,
         points,
-        num_points=10,
         draw_tangent=True,
         draw_normal=True,
         draw_binormal=True,
     ):
-
-        # Interpolate the line for smoothing
-        interpolated_points = interpolate_line(points)
-
-        # Ensure num_points is less than the length of interpolated_points
-        num_points = min(num_points, len(interpolated_points))
-
-        # Calculate step, ensuring it's not zero
-        step = max(1, len(interpolated_points) // num_points)
-
-        # Sample points along the line for drawing frames
-        sampled_points = interpolated_points[::step]
-
-        # Compute tangent vectors for the interpolated points
-        tangents = compute_tangent_vectors(interpolated_points)
-
-        # Compute the Frenet-Serret frame using the MRF algorithm
-        normals, binormals = compute_MRF(tangents)
-
-        # Replace zero norms with 1 to prevent division by zero
-        norms = np.linalg.norm(binormals, axis=1)
-        norms[norms == 0] = 1
-        binormals = binormals / norms[:, np.newaxis]
-
-        # Sample points along the line for drawing frames
-        step = len(interpolated_points) // num_points
-        sampled_points = interpolated_points[::step]
-
         # Draw the frames
-        for i, point in enumerate(sampled_points):
+        for i, point in enumerate(self.interpolated_points):
             if draw_tangent:
-                self.draw_vector(point, tangents[i], (1, 0, 0, 1))  # Red for tangent
+                self.draw_vector(
+                    point, self.tangents[i], (1, 0, 0, 1)
+                )  # Red for tangent
             if draw_normal:
-                self.draw_vector(point, normals[i], (0, 1, 0, 1))  # Green for normal
+                self.draw_vector(
+                    point, self.normals[i], (0, 1, 0, 1)
+                )  # Green for normal
             if draw_binormal:
-                self.draw_vector(point, binormals[i], (0, 0, 1, 1))  # Blue for binormal
+                self.draw_vector(
+                    point, self.binormals[i], (0, 0, 1, 1)
+                )  # Blue for binormal
 
     def draw_light_cone_geom(self):
         """
@@ -791,19 +773,10 @@ Viewer.ViewpointZ: -1.8
         if hasattr(self, "light_cone_geom_np") and self.light_cone_geom_np:
             self.light_cone_geom_np.removeNode()
 
-        # Find the index of the closest point to the robot tip
-        distances = np.linalg.norm(self.interpolated_points - self.robot_tip, axis=1)
-        closest_index = np.argmin(distances)
-
-        # Get the corresponding tangent, normal, and binormal vectors
-        tangent_vector = LVector3f(*self.tangents[closest_index])  # type: ignore
-
-        # Load or generate a cone model. For instance, a small .egg file
-        # or we can code a custom Geom. For simplicity, assume we have "cone.egg"
-        # that is shaped so its apex is at (0,0,0) and extends along +Z:
+        # Load cone model
         cone_model = self.loader.loadModel(
             "/home/emanuele/Desktop/github/navigation/data/icons/cone.obj"
-        )  # your own file
+        )
         cone_model.reparentTo(self.robot_tip_node)
 
         # Set size and color/transparency
@@ -811,28 +784,26 @@ Viewer.ViewpointZ: -1.8
         cone_model.setColor(1, 1, 0, 0.3)  # Slightly yellow, partial alpha
         cone_model.setTransparency(TransparencyAttrib.MAlpha)  # type: ignore
 
+        # Find the index of the closest point to the robot tip
+        distances = np.linalg.norm(self.interpolated_points - self.robot_tip, axis=1)
+        closest_index = np.argmin(distances)
+
+        # Get the corresponding tangent, normal, and binormal vectors
+        tangent_vector = LVector3f(*self.tangents[closest_index])  # type: ignore
+        normal_vector = LVector3f(*self.normals[closest_index])  # type: ignore
+
         # Orient the cone so that +Z aligns with the tangent and the origin of the cone is at the robot tip.
         # Create a transformation node to handle the orientation
         cone_np = self.render.attachNewNode("cone_transform")
 
-        # Position the cone at the origin
-        cone_np.setPos(LVector3f(*(np.zeros(3))))  # type: ignore
-
-        # Calculate the angle between the tangent and the Z axis
-        angle = tangent_vector.angleDeg(LVector3f(0, 0, 1))  # type: ignore
-
-        # Calculate the axis of rotation
-        axis = tangent_vector.cross(LVector3f(0, 0, 1))  # type: ignore
-        axis.normalize()
-
-        # TODO: fix this
-        # Use quaternion angle axis to rotate the cone
-        q = LQuaternionf()  # type: ignore
-        q.setFromAxisAngle(angle, axis)
-        cone_np.setQuat(q)  # type: ignore
-
-        # Move the cone to the robot tip
+        # Position the cone at the robot tip
         cone_np.setPos(LVector3f(*self.robot_tip))  # type: ignore
+
+        # Calculate focal point
+        focal_point = self.robot_tip + tangent_vector
+
+        # Set the HPR of the cone to align with the tangent vector
+        cone_np.lookAt(LVector3f(*focal_point), normal_vector)  # type: ignore
 
         # Parent the cone model to the transformation node
         cone_model.reparentTo(cone_np)
@@ -848,17 +819,17 @@ Viewer.ViewpointZ: -1.8
         # Draw the X axis in red
         frame.setColor(1, 0, 0, 1)  # Red color
         frame.moveTo(0, 0, 0)
-        frame.drawTo(1, 0, 0)
+        frame.drawTo(1 * 0.5, 0, 0)
 
         # Draw the Y axis in green
         frame.setColor(0, 1, 0, 1)  # Green color
         frame.moveTo(0, 0, 0)
-        frame.drawTo(0, 1, 0)
+        frame.drawTo(0, 1 * 0.5, 0)
 
         # Draw the Z axis in blue
         frame.setColor(0, 0, 1, 1)  # Blue color
         frame.moveTo(0, 0, 0)
-        frame.drawTo(0, 0, 1)
+        frame.drawTo(0, 0, 1 * 0.5)
 
         # Create a node to attach the frame to
         frame_node = self.render.attachNewNode("OriginFrame")
@@ -869,6 +840,48 @@ Viewer.ViewpointZ: -1.8
 
         # Set the scale of the frame
         frame_node.setScale(1)  # Scale to a reasonable size
+
+        # Return the node for later reference
+        return frame_node
+
+    def draw_base_frame(self):
+
+        w_T_o = self.w_T_o
+
+        # Draw w_T_o frame
+        frame = LineSegs()  # type: ignore
+        frame.setThickness(5.0)  # Set thickness
+
+        # Extract position and axes from w_T_o matrix
+        position = w_T_o[:3, 3]
+        x_axis = w_T_o[:3, 0] * 0.5
+        y_axis = w_T_o[:3, 1] * 0.5
+        z_axis = w_T_o[:3, 2] * 0.5
+
+        # Draw the X axis in red
+        frame.setColor(1, 0, 0, 1)  # Red
+        frame.moveTo(*position)
+        frame.drawTo(*(position + x_axis))
+
+        # Draw the Y axis in green
+        frame.setColor(0, 1, 0, 1)  # Green
+        frame.moveTo(*position)
+        frame.drawTo(*(position + y_axis))
+
+        # Draw the Z axis in blue
+        frame.setColor(0, 0, 1, 1)  # Blue
+        frame.moveTo(*position)
+        frame.drawTo(*(position + z_axis))
+
+        # Create a node to attach the frame
+        frame_node = self.render.attachNewNode("BaseFrame")
+
+        # Create the frame geometry and attach it
+        frame_geom = frame.create()
+        frame_node.attachNewNode(frame_geom)
+
+        # Set scale of the frame
+        frame_node.setScale(1)
 
         # Return the node for later reference
         return frame_node
@@ -891,8 +904,8 @@ Viewer.ViewpointZ: -1.8
         robot_tip_visual.reparentTo(robot_tip_node)
         self.robot_tip_node = robot_tip_node
 
-        # Draw the light cone geometry
-        self.draw_light_cone_geom()
+        # Draw the light cone geometry (TODO: fix this)
+        # self.draw_light_cone_geom()
 
     def draw_path(self, points, up_to_index):
         # Ensure the up_to_index is within bounds
@@ -1035,32 +1048,40 @@ Viewer.ViewpointZ: -1.8
 
         # If we recorded frames, let's encode them
         if self.record_mode and hasattr(self, "record_dir"):
+            # Extract centerline name from path
+            centerline_name = os.path.splitext(os.path.basename(self.path_name))[0]
+
             # Set the video directory
             video_dir = os.path.join(self.data_folder, "videos")
             os.makedirs(video_dir, exist_ok=True)
             timestamp = time.time()
-            video = os.path.join(video_dir, f"output_{timestamp}.mp4")
+            video = os.path.join(video_dir, f"output_{centerline_name}_{timestamp}.mp4")
 
             # Extract timestamps and CA values from filenames
             frames = sorted(os.listdir(self.record_dir))
+            frame_numbers = []
             timestamps = []
             ca_values = []
 
             for frame in frames:
                 if frame.endswith(".png"):
+                    # Extract frame number
+                    frame_num = int(frame.split("_")[1])
+                    frame_numbers.append(frame_num)
                     # Extract CA value from filename
                     ca_str = frame.split("_ca_")[1].split("_mm")[0]
                     ca_values.append(float(ca_str))
                     # Calculate timestamp based on frame number (at 15 fps)
-                    frame_num = int(frame.split("_")[1])
                     timestamps.append(frame_num / 15.0)  # 15 fps
 
             # Save timestamps and CA values to CSV
-            csv_file = os.path.join(video_dir, f"ca_data_{timestamp}.csv")
+            csv_file = os.path.join(
+                video_dir, f"ca_data_{centerline_name}_{timestamp}.csv"
+            )
             with open(csv_file, "w") as f:
-                f.write("timestamp,curvilinear_abscissa\n")
-                for t, ca in zip(timestamps, ca_values):
-                    f.write(f"{t:.3f},{ca:.3f}\n")
+                f.write("frame,timestamp,curvilinear_abscissa\n")
+                for frame, t, ca in zip(frame_numbers, timestamps, ca_values):
+                    f.write(f"{frame},{t:.3f},{ca:.3f}\n")
 
             print("[INFO] Converting images to video with ffmpeg...")
             cmd = [
@@ -1079,8 +1100,10 @@ Viewer.ViewpointZ: -1.8
                 video,
             ]
             subprocess.run(cmd, check=True)
-            print("[INFO] ffmpeg video saved as output.mp4")
-            print("[INFO] Curvilinear abscissa data saved to CSV")
+            print(f"[INFO] ffmpeg video saved as {os.path.basename(video)}")
+            print(
+                f"[INFO] Curvilinear abscissa data saved to {os.path.basename(csv_file)}"
+            )
 
             # Delete all the frames
             shutil.rmtree(self.record_dir)

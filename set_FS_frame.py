@@ -394,23 +394,27 @@ def parse_arguments():
 if __name__ == "__main__":
     args = parse_arguments()
 
-    # draw_FS_frames(path=args.i)
+    draw_only = True
 
-    # Check if input is a file or directory
-    if os.path.isfile(args.i) and args.i.endswith(".vtp"):
-        # Process single .vtp file
-        save_frames_single_branch(args.i)
-    elif os.path.isdir(args.i):
-        # Process all centerline_b*.vtp files in directory
-        vtp_files = [
-            os.path.join(args.i, f)
-            for f in os.listdir(args.i)
-            if f.startswith("b") and f.endswith(".vtp")
-        ]
-
-        save_frames_all_branches(vtp_files)
+    if draw_only:
+        draw_FS_frames(path=args.i)
 
     else:
-        print(
-            "Error: Input must be either a .vtp file or a directory containing .vtp files"
-        )
+        # Check if input is a file or directory
+        if os.path.isfile(args.i) and args.i.endswith(".vtp"):
+            # Process single .vtp file
+            save_frames_single_branch(args.i)
+        elif os.path.isdir(args.i):
+            # Process all centerline_b*.vtp files in directory
+            vtp_files = [
+                os.path.join(args.i, f)
+                for f in os.listdir(args.i)
+                if f.startswith("b") and f.endswith(".vtp")
+            ]
+
+            save_frames_all_branches(vtp_files)
+
+        else:
+            print(
+                "Error: Input must be either a .vtp file or a directory containing .vtp files"
+            )
