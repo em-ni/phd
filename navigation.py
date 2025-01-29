@@ -59,7 +59,6 @@ class MyApp(ShowBase):
         self.path_name = self.app_config["PATHS"]["path_name"]
         self.model_name = self.app_config["PATHS"]["model_name"]
         self.negative_model_name = self.app_config["PATHS"]["negative_model_name"]
-        self.centerline_frames = self.app_config["PATHS"]["centerline_frames"]
 
         self.draw_circles_bool = self.app_config["DRAW"]["draw_circles_bool"]
         self.draw_centerline_bool = self.app_config["DRAW"]["draw_centerline_bool"]
@@ -151,18 +150,18 @@ class MyApp(ShowBase):
             # Load the negative model to visualize the internal part
             """
             To create the negative solid using FreeCAD:
-            - oper the part menu
-            - create a sphere that can contain the model
+            - open the part menu
             - import the .obj file of the model
             - create shape from mesh for the imported model
             - make solid from the created shape
-            - usel boolean difference between the sphere and the solid
+            - create a sphere that can contain the model
+            - use boolean difference between the sphere and the solid
             - export the boolean cut as .obj
             """
 
             self.model = self.data_folder + self.negative_model_name
 
-            print("[INFO] initializing First Person View Mode...")
+            print("[INFO] Initializing First Person View Mode...")
             # Load the phantom model
             self.scene = self.loader.loadModel(self.model)
             self.scene.reparentTo(self.render)
@@ -444,27 +443,11 @@ Viewer.ViewpointZ: -1.8
 
         # Compute line length
         self.line_length = self.curvilinear_abscissa(self.end_point)
-        print("[INFO] Centerline length: ", self.line_length)
+        print("[INFO] Centerline length: ", self.line_length, "mm")
 
     def setup_w_T_o(self):
         """Load the transformation matrix from centerline_frames.txt"""
         w_T_o = np.eye(4)
-
-        # # Read the first line from centerline_frames.txt
-        # with open(self.data_folder + self.centerline_frames, "r") as f:
-        #     # Extract data from the first line
-        #     first_line = f.readline().strip()
-        #     data = first_line.split(",")
-        #     point = np.array([float(x) for x in data[0:3]])
-        #     tangent = np.array([float(x) for x in data[3:6]])
-        #     normal = np.array([float(x) for x in data[6:9]])
-        #     binormal = np.array([float(x) for x in data[9:12]])
-
-        #     # Create the transformation matrix
-        #     w_T_o[:3, 0] = tangent
-        #     w_T_o[:3, 1] = normal
-        #     w_T_o[:3, 2] = binormal
-        #     w_T_o[:3, 3] = point
 
         # Set the transformation matrix from the origin to the first point using self.tangents, self.normals, and self.binormals
         w_T_o[:3, 0] = self.tangents[0]
@@ -588,9 +571,7 @@ Viewer.ViewpointZ: -1.8
             current_point = self.interpolated_points[closest_index]
 
             # Compute the curvilinear abscissa
-            self.current_ca = 10 * self.curvilinear_abscissa(
-                current_point
-            )  # Convert to mm (the 0063 model is in cm I think)
+            self.current_ca = self.curvilinear_abscissa(current_point)
 
         else:
             # Update the robot tip position based on the transformation matrix

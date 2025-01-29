@@ -394,7 +394,7 @@ def parse_arguments():
 if __name__ == "__main__":
     args = parse_arguments()
 
-    draw_only = True
+    draw_only = False
 
     if draw_only:
         draw_FS_frames(path=args.i)
