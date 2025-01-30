@@ -28,10 +28,10 @@ How to prepare the files needed for the navigation simulation:
     - then select the start point(s) of the centerline pressing space
     - press q
 - get the negative solid for first person view navigation:
-    - open FreeCAD and select the part menu
-    - create a sphere that can contain the model
+    - open the part menu
     - import the .obj file of the model
     - create shape from mesh for the imported model
     - make solid from the created shape
-    - usel boolean difference between the sphere and the solid
+    - create a sphere that can contain the model
+    - use boolean difference between the sphere and the solid
     - export the boolean cut as .obj

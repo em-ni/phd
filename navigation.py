@@ -6,14 +6,27 @@ import sys
 import threading
 import time
 from direct.showbase.ShowBase import ShowBase  # type: ignore
+import configparser
+
+# Read width and height from config.ini
+cfg = configparser.ConfigParser()
+cfg.read("config.ini")
+width = int(cfg["CAMERA"]["width"])
+height = int(cfg["CAMERA"]["height"])
+
 from panda3d.core import *  # type: ignore
+
+# Set the window size and title before anything else
+loadPrcFileData("", f"win-size {width} {height}")  # type: ignore
+loadPrcFileData("", "window-title Bronchoscopy Simulation")  # type: ignore
+loadPrcFileData("", "load-file-type p3assimp")  # type: ignore
+
 from direct.task import Task  # type: ignore
 from direct.gui.DirectGui import DirectLabel  # type: ignore
 import pyvista as pv  # type: ignore
 import numpy as np  # type: ignore
 import socket
 import math
-import configparser
 from set_FS_frame import (
     interpolate_line,
     compute_tangent_vectors,
@@ -22,6 +35,7 @@ from set_FS_frame import (
 )
 
 # TODO: Check all the measurements units and make sure they are consistent
+# TODO: videos are not saved with the desired resolution
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Path Navigation Tool")
@@ -90,23 +104,24 @@ class MyApp(ShowBase):
         # Set background color
         self.setBackgroundColor(0, 0.168627, 0.211765, 1.0)
 
-        # Load arrow key icons with transparency
-        self.up_arrow = DirectLabel(
-            image="data/icons/up_white.png",
-            pos=(1.7, 0, -0.70),
-            scale=0.05,
-            relief=None,
-        )
-        self.down_arrow = DirectLabel(
-            image="data/icons/down_white.png",
-            pos=(1.7, 0, -0.85),
-            scale=0.05,
-            relief=None,
-        )
+        if self.record_mode == False:
+            # Load arrow key icons with transparency
+            self.up_arrow = DirectLabel(
+                image="data/icons/up_white.png",
+                pos=(1.7, 0, -0.70),
+                scale=0.05,
+                relief=None,
+            )
+            self.down_arrow = DirectLabel(
+                image="data/icons/down_white.png",
+                pos=(1.7, 0, -0.85),
+                scale=0.05,
+                relief=None,
+            )
 
-        # Enable transparency for these icons
-        self.up_arrow.setTransparency(TransparencyAttrib.MDual)  # type: ignore
-        self.down_arrow.setTransparency(TransparencyAttrib.MDual)  # type: ignore
+            # Enable transparency for these icons
+            self.up_arrow.setTransparency(TransparencyAttrib.MDual)  # type: ignore
+            self.down_arrow.setTransparency(TransparencyAttrib.MDual)  # type: ignore
 
         # Set antialiasing
         self.render.setAntialias(AntialiasAttrib.MAuto)  # type: ignore
@@ -116,7 +131,7 @@ class MyApp(ShowBase):
         self.blink_interval = 1  # in seconds
         self.robot_tip_visible = True  # Initial visibility status
 
-        # Load basic environment
+        # # Load basic environment
         # self.scene = self.loader.loadModel("models/environment")
         # self.scene.reparentTo(self.render)
 
@@ -133,9 +148,6 @@ class MyApp(ShowBase):
         # print number of points
         print("[INFO] Number of points in the centerline: ", len(points))
 
-        # Temporarily draw the horizontal line
-        # points = [(0, 0, 3), (1, 0, 3), (2, 0, 3), (3, 0, 3), (4, 0, 3), (5, 0, 3), (6, 0, 3), (7, 0, 3), (8, 0, 3), (9, 0, 3), (10, 0, 3)]
-
         # Setup
         self.setup_line(points)
         self.points = points
@@ -146,76 +158,10 @@ class MyApp(ShowBase):
 
         # Load the model
         if self.view_mode == "fp":
-
-            # Load the negative model to visualize the internal part
-            """
-            To create the negative solid using FreeCAD:
-            - open the part menu
-            - import the .obj file of the model
-            - create shape from mesh for the imported model
-            - make solid from the created shape
-            - create a sphere that can contain the model
-            - use boolean difference between the sphere and the solid
-            - export the boolean cut as .obj
-            """
-
-            self.model = self.data_folder + self.negative_model_name
-
-            print("[INFO] Initializing First Person View Mode...")
-            # Load the phantom model
-            self.scene = self.loader.loadModel(self.model)
-            self.scene.reparentTo(self.render)
-            self.scene.setTransparency(TransparencyAttrib.MDual)  # type: ignore
-            self.scene.setColorScale(1, 1, 1, 1)  # Set transparency level
-            self.scene.setTwoSided(True)
-
-            # Adjust material properties
-            myMaterial = Material()  # type: ignore
-            myMaterial.setShininess(80)  # Higher shininess for more specular highlight
-            myMaterial.setSpecular((0.9, 0.9, 0.9, 1))  # Brighter specular highlights
-            myMaterial.setAmbient((0.3, 0.3, 0.3, 1))  # Slightly brighter ambient color
-            myMaterial.setDiffuse(
-                (0.7, 0.2, 0.2, 1)
-            )  # Reddish diffuse color, adjust as needed
-            self.scene.setMaterial(myMaterial, 1)
-
-            # Add directional light (consider also using ambient light)
-            directionalLight = DirectionalLight("directionalLight")  # type: ignore
-            directionalLight.setColor((1, 0.9, 0.8, 1))  # Warm light color
-            directionalLightNP = self.render.attachNewNode(directionalLight)
-            directionalLightNP.setHpr(
-                45, -45, 0
-            )  # Adjust the light direction as needed
-            self.render.setLight(directionalLightNP)
-
-            # Add ambient light
-            ambientLight = AmbientLight("ambientLight")  # type: ignore
-            ambientLight.setColor((0.2, 0.2, 0.2, 1))
-            ambientLightNP = self.render.attachNewNode(ambientLight)
-            self.render.setLight(ambientLightNP)
-
-            # Store the directional light node as an instance variable for later updates
-            self.directionalLightNP = directionalLightNP
-
-            # Adjust clipping planes
-            self.camLens.setNearFar(0.1, 100)
+            self.setup_fp()
 
         elif self.view_mode == "tp":
-            print("[INFO] Initializinig Third Person View Mode...")
-
-            # Load the standard model to visualize the external part
-            self.model = self.data_folder + self.model_name
-
-            # Load the phantom model
-            self.scene = self.loader.loadModel(self.model)
-            self.scene.reparentTo(self.render)
-
-            # Set transparency level (0.5 for 50% transparency) to see the robot moving inside
-            self.scene.setTransparency(TransparencyAttrib.MDual)  # type: ignore
-            self.scene.setColorScale(1, 1, 1, 0.5)
-
-            # Initially draw the path up to the first point
-            self.draw_path(self.interpolated_points, 0)
+            self.setup_tp()
 
         print("[INFO] Initialization done\n")
 
@@ -388,11 +334,6 @@ Viewer.ViewpointZ: -1.8
         cx = float(self.app_config["CAMERA"]["cx"])
         cy = float(self.app_config["CAMERA"]["cy"])
 
-        # 2) Force window size and basic config
-        loadPrcFileData("", f"win-size {width} {height}")  # type: ignore
-        loadPrcFileData("", "window-title Panda3D Full Camera Control")  # type: ignore
-        loadPrcFileData("", "load-file-type p3assimp")  # type: ignore
-
         # 3) Grab PerspectiveLens
         self.camLens = self.cam.node().getLens()
 
@@ -444,6 +385,59 @@ Viewer.ViewpointZ: -1.8
         # Compute line length
         self.line_length = self.curvilinear_abscissa(self.end_point)
         print("[INFO] Centerline length: ", self.line_length, "mm")
+
+    def setup_fp(self):
+
+        print("[INFO] Initializing First Person View Mode...")
+        self.model = self.data_folder + self.negative_model_name
+
+        # Load the phantom model
+        self.scene = self.loader.loadModel(self.model)
+        self.scene.reparentTo(self.render)
+        self.scene.setTransparency(TransparencyAttrib.MDual)  # type: ignore
+        self.scene.setColorScale(1, 1, 1, 1)  # Set transparency level
+        self.scene.setTwoSided(True)
+
+        # Adjust material properties
+        myMaterial = Material()  # type: ignore
+        myMaterial.setShininess(80)  # Higher shininess for more specular highlight
+        myMaterial.setSpecular((0.9, 0.9, 0.9, 1))  # Brighter specular highlights
+        myMaterial.setAmbient((0.3, 0.3, 0.3, 1))  # Slightly brighter ambient color
+        myMaterial.setDiffuse((0.7, 0.2, 0.2, 1))  # Reddish diffuse color
+        self.scene.setMaterial(myMaterial, 1)
+
+        # Add directional light (consider also using ambient light)
+        directionalLight = DirectionalLight("directionalLight")  # type: ignore
+        directionalLight.setColor((1, 0.9, 0.8, 1))  # Warm light color
+        directionalLightNP = self.render.attachNewNode(directionalLight)
+        directionalLightNP.setHpr(45, -45, 0)  # Adjust the light direction as needed
+        self.render.setLight(directionalLightNP)
+
+        # Add ambient light
+        ambientLight = AmbientLight("ambientLight")  # type: ignore
+        ambientLight.setColor((0.2, 0.2, 0.2, 1))
+        ambientLightNP = self.render.attachNewNode(ambientLight)
+        self.render.setLight(ambientLightNP)
+
+        # Store the directional light node as an instance variable for later updates
+        self.directionalLightNP = directionalLightNP
+
+    def setup_tp(self):
+        print("[INFO] Initializinig Third Person View Mode...")
+
+        # Load the standard model to visualize the external part
+        self.model = self.data_folder + self.model_name
+
+        # Load the phantom model
+        self.scene = self.loader.loadModel(self.model)
+        self.scene.reparentTo(self.render)
+
+        # Set transparency level (0.5 for 50% transparency) to see the robot moving inside
+        self.scene.setTransparency(TransparencyAttrib.MDual)  # type: ignore
+        self.scene.setColorScale(1, 1, 1, 0.5)
+
+        # Initially draw the path up to the first point
+        self.draw_path(self.interpolated_points, 0)
 
     def setup_w_T_o(self):
         """Load the transformation matrix from centerline_frames.txt"""
@@ -602,15 +596,17 @@ Viewer.ViewpointZ: -1.8
         self.keyMap[controlName] = controlState
 
         if controlName == "robot_tip_forward":
-            if controlState:
-                self.highlight_arrow("up")
-            else:
-                self.unhighlight_arrow("up")
+            if self.record_mode == False:
+                if controlState:
+                    self.highlight_arrow("up")
+                else:
+                    self.unhighlight_arrow("up")
         elif controlName == "robot_tip_backward":
-            if controlState:
-                self.highlight_arrow("down")
-            else:
-                self.unhighlight_arrow("down")
+            if self.record_mode == False:
+                if controlState:
+                    self.highlight_arrow("down")
+                else:
+                    self.unhighlight_arrow("down")
 
     def update_scene(self, task):
         dt = globalClock.getDt()  # type: ignore
@@ -1036,7 +1032,7 @@ Viewer.ViewpointZ: -1.8
             video_dir = os.path.join(self.data_folder, "videos")
             os.makedirs(video_dir, exist_ok=True)
             timestamp = time.time()
-            video = os.path.join(video_dir, f"output_{centerline_name}_{timestamp}.mp4")
+            video = os.path.join(video_dir, f"record_{centerline_name}_{timestamp}.mp4")
 
             # Extract timestamps and CA values from filenames
             frames = sorted(os.listdir(self.record_dir))
