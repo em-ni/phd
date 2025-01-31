@@ -387,40 +387,53 @@ Viewer.ViewpointZ: -1.8
         print("[INFO] Centerline length: ", self.line_length, "mm")
 
     def setup_fp(self):
-
         print("[INFO] Initializing First Person View Mode...")
         self.model = self.data_folder + self.negative_model_name
 
-        # Load the phantom model
+        # Load the negative model
         self.scene = self.loader.loadModel(self.model)
         self.scene.reparentTo(self.render)
         self.scene.setTransparency(TransparencyAttrib.MDual)  # type: ignore
-        self.scene.setColorScale(1, 1, 1, 1)  # Set transparency level
+        self.scene.setColorScale(1, 1, 1, 1)
         self.scene.setTwoSided(True)
 
-        # Adjust material properties
+        # Adjust material
         myMaterial = Material()  # type: ignore
-        myMaterial.setShininess(80)  # Higher shininess for more specular highlight
-        myMaterial.setSpecular((0.9, 0.9, 0.9, 1))  # Brighter specular highlights
-        myMaterial.setAmbient((0.3, 0.3, 0.3, 1))  # Slightly brighter ambient color
-        myMaterial.setDiffuse((0.7, 0.2, 0.2, 1))  # Reddish diffuse color
+        myMaterial.setShininess(80)
+        myMaterial.setSpecular((0.9, 0.9, 0.9, 1))
+        myMaterial.setAmbient((0.3, 0.3, 0.3, 1))
+        myMaterial.setDiffuse((0.7, 0.2, 0.2, 1))
         self.scene.setMaterial(myMaterial, 1)
 
-        # Add directional light (consider also using ambient light)
-        directionalLight = DirectionalLight("directionalLight")  # type: ignore
-        directionalLight.setColor((1, 0.9, 0.8, 1))  # Warm light color
-        directionalLightNP = self.render.attachNewNode(directionalLight)
-        directionalLightNP.setHpr(45, -45, 0)  # Adjust the light direction as needed
-        self.render.setLight(directionalLightNP)
+        # (Optional) enable auto-shader
+        self.render.setShaderAuto()
 
-        # Add ambient light
+        # Add a brighter ambient light
         ambientLight = AmbientLight("ambientLight")  # type: ignore
-        ambientLight.setColor((0.2, 0.2, 0.2, 1))
+        ambientLight.setColor((0.5, 0.5, 0.5, 1))  # Brighter
         ambientLightNP = self.render.attachNewNode(ambientLight)
         self.render.setLight(ambientLightNP)
 
-        # Store the directional light node as an instance variable for later updates
+        # Add a directional light
+        directionalLight = DirectionalLight("directionalLight")  # type: ignore
+        directionalLight.setColor((1, 1, 1, 1))
+        directionalLightNP = self.render.attachNewNode(directionalLight)
+        directionalLightNP.setHpr(45, -45, 0)
+        self.render.setLight(directionalLightNP)
         self.directionalLightNP = directionalLightNP
+
+        # Add a point light that moves with the camera
+        pointLight = PointLight("pointLight")  # type: ignore
+        pointLight.setColor((1, 1, 1, 1))
+        # Tweak attenuation: constant=1, linear=0, quadratic=0.02
+        pointLight.setAttenuation((1, 0, 0.02))
+
+        self.pointLightNP = self.camera.attachNewNode(pointLight)
+        self.pointLightNP.setPos(0, 0, 0)  # Right at the camera
+        self.render.setLight(self.pointLightNP)
+
+        # Optionally store them so we can reference or tweak later
+        self.ambientLightNP = ambientLightNP
 
     def setup_tp(self):
         print("[INFO] Initializinig Third Person View Mode...")
