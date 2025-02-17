@@ -1032,11 +1032,10 @@ Viewer.ViewpointZ: -1.8
         Stops the main loop, optionally runs ffmpeg to encode video, and exits.
         """
         print("[INFO] Quitting the app now.")
-
         # Stop the Panda3D main loop
         self.taskMgr.stop()
 
-        # If we recorded frames, let's encode them
+        # If we recorded frames, let's encode them and generate CSV data
         if self.record_mode and hasattr(self, "record_dir"):
             # Extract centerline name from path
             centerline_name = os.path.splitext(os.path.basename(self.path_name))[0]
@@ -1047,56 +1046,71 @@ Viewer.ViewpointZ: -1.8
             timestamp = time.time()
             video = os.path.join(video_dir, f"record_{centerline_name}_{timestamp}.mp4")
 
-            # Extract timestamps and CA values from filenames
-            frames = sorted(os.listdir(self.record_dir))
+            # ==============================
+            # Generate CSV Data (for both platforms)
+            # ==============================
+            frames = sorted([f for f in os.listdir(self.record_dir) if f.endswith(".png")])
             frame_numbers = []
-            timestamps = []
+            timestamps_list = []
             ca_values = []
-
             for frame in frames:
-                if frame.endswith(".png"):
-                    # Extract frame number
+                try:
+                    # Assuming filename format: frame_00000_ca_XX.XX_mm.png
                     frame_num = int(frame.split("_")[1])
-                    frame_numbers.append(frame_num)
-                    # Extract CA value from filename
                     ca_str = frame.split("_ca_")[1].split("_mm")[0]
+                    frame_numbers.append(frame_num)
                     ca_values.append(float(ca_str))
-                    # Calculate timestamp based on frame number (at 15 fps)
-                    timestamps.append(frame_num / 15.0)  # 15 fps
-
-            # Save timestamps and CA values to CSV
-            csv_file = os.path.join(
-                video_dir, f"ca_data_{centerline_name}_{timestamp}.csv"
-            )
+                    timestamps_list.append(frame_num / 15.0)  # assuming 15 fps
+                except Exception as e:
+                    print(f"[WARNING] Could not parse frame '{frame}': {e}")
+            csv_file = os.path.join(video_dir, f"ca_data_{centerline_name}_{timestamp}.csv")
             with open(csv_file, "w") as f:
                 f.write("frame,timestamp,curvilinear_abscissa\n")
-                for frame, t, ca in zip(frame_numbers, timestamps, ca_values):
-                    f.write(f"{frame},{t:.3f},{ca:.3f}\n")
+                for frame_num, t, ca in zip(frame_numbers, timestamps_list, ca_values):
+                    f.write(f"{frame_num},{t:.3f},{ca:.3f}\n")
+            print(f"[INFO] Curvilinear abscissa data saved to {os.path.basename(csv_file)}")
 
-            print("[INFO] Converting images to video with ffmpeg...")
-            cmd = [
-                "ffmpeg",
-                "-y",  # overwrite output if exists
-                "-framerate",
-                "15",
-                "-pattern_type",
-                "glob",
-                "-i",
-                os.path.join(self.record_dir, "frame_*_ca_*_mm.png"),
-                "-c:v",
-                "libx264",
-                "-pix_fmt",
-                "yuv420p",
-                video,
-            ]
+            # ==============================
+            # Build ffmpeg command based on platform
+            # ==============================
+            if sys.platform.startswith('linux'):
+                # Ubuntu branch (unchanged)
+                print("[INFO] Converting images to video with ffmpeg...")
+                cmd = [
+                    "ffmpeg",
+                    "-y",  # overwrite output if exists
+                    "-framerate", "15",
+                    "-pattern_type", "glob",
+                    "-i", os.path.join(self.record_dir, "frame_*_ca_*_mm.png"),
+                    "-c:v", "libx264",
+                    "-pix_fmt", "yuv420p",
+                    video,
+                ]
+            elif sys.platform.startswith('win'):
+                # Windows branch: generate a file list so that all data in filenames is preserved
+                file_list_path = os.path.join(self.record_dir, "frames.txt")
+                with open(file_list_path, "w") as f:
+                    for frame in frames:
+                        full_path = os.path.join(self.record_dir, frame).replace("\\", "/")
+                        f.write("file '{}'\n".format(full_path))
+                cmd = [
+                    "ffmpeg",
+                    "-y",  # overwrite output if exists
+                    "-r", "15",  # input frame rate
+                    "-f", "concat",
+                    "-safe", "0",
+                    "-i", file_list_path,  # use the generated file list
+                    "-r", "15",  # output frame rate
+                    "-c:v", "libx264",
+                    "-pix_fmt", "yuv420p",
+                    video,
+                ]
+            # Run ffmpeg to generate the video
             subprocess.run(cmd, check=True)
             print(f"[INFO] ffmpeg video saved as {os.path.basename(video)}")
-            print(
-                f"[INFO] Curvilinear abscissa data saved to {os.path.basename(csv_file)}"
-            )
 
-            # Delete all the frames
-            shutil.rmtree(self.record_dir)
+            # Delete all the recorded frames and the temporary file list (if any)
+            # shutil.rmtree(self.record_dir)
 
         # Finally, exit the Python process
         self.userExit()
