@@ -27,6 +27,7 @@ import pyvista as pv  # type: ignore
 import numpy as np  # type: ignore
 import socket
 import math
+import cv2
 from set_FS_frame import (
     interpolate_line,
     compute_tangent_vectors,
@@ -73,6 +74,7 @@ class MyApp(ShowBase):
         self.path_name = self.app_config["PATHS"]["path_name"]
         self.model_name = self.app_config["PATHS"]["model_name"]
         self.negative_model_name = self.app_config["PATHS"]["negative_model_name"]
+        self.videos_dir = self.app_config["PATHS"]["record_dir"]
 
         self.draw_circles_bool = self.app_config["DRAW"]["draw_circles_bool"]
         self.draw_centerline_bool = self.app_config["DRAW"]["draw_centerline_bool"]
@@ -82,6 +84,8 @@ class MyApp(ShowBase):
         ]
 
         self.sim_server_bool = self.app_config["SLAM"]["sim_server_bool"]
+
+        self.depth_bool = self.app_config["CAMERA"]["depth_bool"]
 
         # Define path of the .vtp file
         self.path_path = self.data_folder + self.path_name
@@ -100,6 +104,36 @@ class MyApp(ShowBase):
 
         # Set up camera parameters
         self.setup_camera_params()
+
+        # --- Set up Depth Buffer & Camera for Depth Image ---
+        # Create window properties matching the main window's size.
+        winprops = WindowProperties.size(self.win.getXSize(), self.win.getYSize())
+        # Define framebuffer properties and request a depth channel.
+        fbprops = FrameBufferProperties()
+        fbprops.setDepthBits(1)
+        # Create an offscreen buffer for the depth image.
+        self.depthBuffer = self.graphicsEngine.makeOutput(
+            self.pipe, "depth buffer", -2,
+            fbprops, winprops,
+            GraphicsPipe.BFRefuseWindow,
+            self.win.getGsg(), self.win
+        )
+        # Create a texture to store depth values.
+        self.depthTex = Texture()
+        self.depthTex.setFormat(Texture.FDepthComponent)
+        # Attach the depth texture to the depth buffer.
+        self.depthBuffer.addRenderTexture(
+            self.depthTex,
+            GraphicsOutput.RTMCopyRam,
+            GraphicsOutput.RTPDepth
+        )
+        # Use the same lens as your main camera.
+        lens = self.cam.node().getLens()
+        # Create a camera that renders the scene into the depth buffer.
+        self.depthCam = self.makeCamera(self.depthBuffer, lens=lens, scene=self.render)
+        # Parent the depth camera to the main camera to follow its movement.
+        self.depthCam.reparentTo(self.cam)
+        # --- End of Depth Setup ---
 
         # Set background color
         self.setBackgroundColor(0, 0.168627, 0.211765, 1.0)
@@ -268,7 +302,7 @@ class MyApp(ShowBase):
         self.draw_robot_tip()
 
     def save_calibration_file(
-        self, width, height, fx, fy, cx, cy, filename="calibration_sim.yaml"
+        self, width, height, fx, fy, cx, cy, filename
     ):
         """
         Writes a YAML file in the same format as shown,
@@ -352,7 +386,12 @@ Viewer.ViewpointZ: -1.8
         self.camLens.setNearFar(0.1, 100.0)
 
         # 7) Save out the calibration_sim.yaml.
-        self.save_calibration_file(width, height, fx, fy, cx, cy)
+        if self.depth_bool == "1":
+            calibration_filename = "calibration_sim_rgbd.yaml"
+        else:
+            calibration_filename = "calibration_sim_mono.yaml"
+            
+        self.save_calibration_file(width, height, fx, fy, cx, cy, calibration_filename)
 
     def setup_key_controls(self):
         self.keyMap = {"robot_tip_forward": False, "robot_tip_backward": False}
@@ -988,133 +1027,181 @@ Viewer.ViewpointZ: -1.8
     # RECORD METHODS
     def setup_video_recorder(self):
         """
-        If recording is True, create a directory for frames,
-        and initialize the counter to 0.
+        Create a directory for recording and subdirectories for RGB and depth images.
+        Also prepare files for associations and CA data.
+        Everything will be saved under this record_dir.
         """
         self.record_frame_idx = 0
         if self.record_mode:
-            # Create (or reuse) a directory to store frames
-            self.record_dir = "recorded_frames"
+            # Use a persistent record directory.
+            self.record_dir = os.path.join(os.getcwd(), "recorded_frames")
             os.makedirs(self.record_dir, exist_ok=True)
-            print(f"[INFO] Recording frames to ./{self.record_dir}/")
+            # Subdirectories for rgb and depth images
+            self.rgb_dir = os.path.join(self.record_dir, "rgb")
+            self.depth_dir = os.path.join(self.record_dir, "depth")
+            os.makedirs(self.rgb_dir, exist_ok=True)
+            os.makedirs(self.depth_dir, exist_ok=True)
+            # Association file in TUM format (timestamps, rgb file, timestamps, depth file)
+            self.assoc_file = os.path.join(self.record_dir, "associations.txt")
+            with open(self.assoc_file, "w") as f:
+                f.write("")
+            # CSV file to store CA data (frame number, timestamp, CA)
+            self.ca_csv_file = os.path.join(self.record_dir, "ca_data.csv")
+            with open(self.ca_csv_file, "w") as f:
+                f.write("frame,timestamp,curvilinear_abscissa\n")
+            print(f"[INFO] Recording frames to {self.record_dir}")
         else:
             self.record_dir = None
 
     def record_frame(self):
         """
-        Capture the current window as an image and save it to a numbered PNG.
+        Capture the current window as two images (RGB and, if enabled, depth) and save them.
+        Update an association file (TUM format) and a CSV file with the current curvilinear abscissa (CA).
         """
         if not self.record_dir:
             return  # Not recording
 
-        # Grab a screenshot from the main window.
-        # getScreenshot() returns a PNMImage, which we can write to file.
-        screenshot = self.win.getScreenshot()
+        # Get a high-precision timestamp (adjust as needed)
+        timestamp = time.time()
+        timestamp_str = f"{timestamp:.6f}"
 
-        # Create a filename like: frame_00000_ca_XXX
+        # --- Save RGB Image ---
+        screenshot = self.win.getScreenshot()
+        rgb_data = screenshot.getRamImage()
+        if rgb_data is None:
+            print("RGB screenshot not ready!")
+            return
+        rgb = np.frombuffer(rgb_data, np.uint8)
+        rgb.shape = (screenshot.getYSize(), screenshot.getXSize(), screenshot.getNumComponents())
+        rgb = np.flipud(rgb)
+        # Remove alpha channel if present.
+        if rgb.shape[2] == 4:
+            rgb = rgb[:, :, :3]
+        rgb_filename = f"{timestamp_str}_ca_{self.current_ca:.2f}_mm.png" if hasattr(self, "current_ca") else f"{timestamp_str}.png"
+        rgb_filepath = os.path.join(self.rgb_dir, rgb_filename)
+        cv2.imwrite(rgb_filepath, rgb)
+
+        # --- Save Depth Image (if enabled) ---
+        depth_filename = ""
+        if self.depth_bool:
+            depth = self.get_depth_image()
+            if depth is not None:
+                depth_norm = cv2.normalize(depth, None, 0, 255, cv2.NORM_MINMAX)
+                depth_norm = depth_norm.astype(np.uint8)
+                if depth_norm.ndim == 2 or depth_norm.shape[2] == 1:
+                    depth_bgr = cv2.cvtColor(depth_norm, cv2.COLOR_GRAY2BGR)
+                else:
+                    depth_bgr = depth_norm
+                depth_filename = f"{timestamp_str}_ca_{self.current_ca:.2f}_mm.png" if hasattr(self, "current_ca") else f"{timestamp_str}.png"
+                depth_filepath = os.path.join(self.depth_dir, depth_filename)
+                cv2.imwrite(depth_filepath, depth_bgr)
+            else:
+                print("Depth image not ready; skipping depth for this frame.")
+
+        # --- Update Association File ---
+        with open(self.assoc_file, "a") as f:
+            if self.depth_bool and depth_filename:
+                f.write(f"{timestamp_str} rgb/{rgb_filename} {timestamp_str} depth/{depth_filename}\n")
+            else:
+                f.write(f"{timestamp_str} rgb/{rgb_filename}\n")
+
+        # --- Update CA CSV File ---
         if hasattr(self, "current_ca"):
-            filename = os.path.join(
-                self.record_dir,
-                f"frame_{self.record_frame_idx:05d}_ca_{self.current_ca:.2f}_mm.png",
-            )
-        else:
-            filename = os.path.join(
-                self.record_dir,
-                f"frame_{self.record_frame_idx:05d}_ca_0.0_mm.png",
-            )
-        screenshot.write(filename)
+            with open(self.ca_csv_file, "a") as f:
+                f.write(f"{self.record_frame_idx},{timestamp_str},{self.current_ca:.2f}\n")
 
         self.record_frame_idx += 1
 
     def quit_app(self):
         """
         Called when the user presses 'q'.
-        Stops the main loop, optionally runs ffmpeg to encode video, and exits.
+        Stops the main loop, runs ffmpeg to encode video (from the RGB images),
+        and then exits.
+        All output (RGB, depth, associations, CA data, and final video)
+        is saved under record_dir.
         """
         print("[INFO] Quitting the app now.")
         # Stop the Panda3D main loop
         self.taskMgr.stop()
 
-        # If we recorded frames, let's encode them and generate CSV data
+        # If we recorded frames, encode them and generate CSV data.
         if self.record_mode and hasattr(self, "record_dir"):
-            # Extract centerline name from path
+            # Extract centerline name from path (for naming purposes)
             centerline_name = os.path.splitext(os.path.basename(self.path_name))[0]
 
-            # Set the video directory
-            video_dir = os.path.join(self.data_folder, "videos")
-            os.makedirs(video_dir, exist_ok=True)
-            timestamp = time.time()
-            video = os.path.join(video_dir, f"record_{centerline_name}_{timestamp}.mp4")
+            # Final video will be saved in record_dir.
+            video_name = f"record_{centerline_name}_{time.time()}"
+            video = os.path.join(self.record_dir, f"{video_name}.mp4")
 
-            # ==============================
-            # Generate CSV Data (for both platforms)
-            # ==============================
-            frames = sorted([f for f in os.listdir(self.record_dir) if f.endswith(".png")])
-            frame_numbers = []
-            timestamps_list = []
-            ca_values = []
-            for frame in frames:
-                try:
-                    # Assuming filename format: frame_00000_ca_XX.XX_mm.png
-                    frame_num = int(frame.split("_")[1])
-                    ca_str = frame.split("_ca_")[1].split("_mm")[0]
-                    frame_numbers.append(frame_num)
-                    ca_values.append(float(ca_str))
-                    timestamps_list.append(frame_num / 15.0)  # assuming 15 fps
-                except Exception as e:
-                    print(f"[WARNING] Could not parse frame '{frame}': {e}")
-            csv_file = os.path.join(video_dir, f"ca_data_{centerline_name}_{timestamp}.csv")
-            with open(csv_file, "w") as f:
-                f.write("frame,timestamp,curvilinear_abscissa\n")
-                for frame_num, t, ca in zip(frame_numbers, timestamps_list, ca_values):
-                    f.write(f"{frame_num},{t:.3f},{ca:.3f}\n")
-            print(f"[INFO] Curvilinear abscissa data saved to {os.path.basename(csv_file)}")
-
-            # ==============================
-            # Build ffmpeg command based on platform
-            # ==============================
+            # Build ffmpeg command to generate a video from the RGB images.
+            # We assume a frame rate of 15 fps.
             if sys.platform.startswith('linux'):
-                # Ubuntu branch (unchanged)
-                print("[INFO] Converting images to video with ffmpeg...")
+                print("[INFO] Converting images to video with ffmpeg (Linux)...")
                 cmd = [
                     "ffmpeg",
-                    "-y",  # overwrite output if exists
+                    "-y",  # Overwrite if exists.
                     "-framerate", "15",
                     "-pattern_type", "glob",
-                    "-i", os.path.join(self.record_dir, "frame_*_ca_*_mm.png"),
+                    "-i", os.path.join(self.rgb_dir, "*.png"),
                     "-c:v", "libx264",
                     "-pix_fmt", "yuv420p",
                     video,
                 ]
             elif sys.platform.startswith('win'):
-                # Windows branch: generate a file list so that all data in filenames is preserved
+                print("[INFO] Converting images to video with ffmpeg (Windows)...")
                 file_list_path = os.path.join(self.record_dir, "frames.txt")
+                rgb_frames = sorted(os.listdir(self.rgb_dir))
                 with open(file_list_path, "w") as f:
-                    for frame in frames:
-                        full_path = os.path.join(self.record_dir, frame).replace("\\", "/")
-                        f.write("file '{}'\n".format(full_path))
+                    for frame in rgb_frames:
+                        full_path = os.path.join(self.rgb_dir, frame).replace("\\", "/")
+                        f.write(f"file '{full_path}'\n")
                 cmd = [
                     "ffmpeg",
-                    "-y",  # overwrite output if exists
-                    "-r", "15",  # input frame rate
+                    "-y",
+                    "-r", "15",
                     "-f", "concat",
                     "-safe", "0",
-                    "-i", file_list_path,  # use the generated file list
-                    "-r", "15",  # output frame rate
+                    "-i", file_list_path,
+                    "-r", "15",
                     "-c:v", "libx264",
                     "-pix_fmt", "yuv420p",
                     video,
                 ]
-            # Run ffmpeg to generate the video
             subprocess.run(cmd, check=True)
             print(f"[INFO] ffmpeg video saved as {os.path.basename(video)}")
 
-            # Delete all the recorded frames and the temporary file list (if any)
-            # shutil.rmtree(self.record_dir)
+            # Copy the content of record_dir into the data_folder + video without the .mp4
+            final_path = os.path.join(self.data_folder, self.videos_dir, video_name)
+            shutil.copytree(self.record_dir, final_path)
 
-        # Finally, exit the Python process
+            # Remove the temp folder
+            shutil.rmtree(self.record_dir)
+
+        # Finally, exit the Python process.
         self.userExit()
 
+    # UTILS
+    def get_depth_image(self):
+        """
+        Returns the current depth image as a NumPy array (float32, values between 0.0 and 1.0).
+        """
+        # Retrieve the raw depth data from the texture.
+        data = self.depthTex.getRamImage()
+        if data is None or len(data) == 0:
+            print("Depth image not ready yet!")
+            return None
+        # Convert the raw data to a NumPy array.
+        depth_image = np.frombuffer(data, dtype=np.float32)
+        # Reshape according to the texture's dimensions.
+        depth_image.shape = (
+            self.depthTex.getYSize(),
+            self.depthTex.getXSize(),
+            self.depthTex.getNumComponents()
+        )
+        # Flip vertically (Panda3D's origin is bottom-left).
+        depth_image = np.flipud(depth_image)
+        return depth_image
+    
 
 if __name__ == "__main__":
     app = MyApp()
