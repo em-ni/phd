@@ -3,7 +3,7 @@ Camera.RGB: 1
 Stereo.ThDepth: 40.0
 Stereo.b: 0.07732
 RGBD.DepthMapFactor: 5000.0
-Camera.bf: 40.0
+Camera.bf: 15.464
 Camera.fps: 15
 Camera.height: 720
 Camera.type: PinHole
