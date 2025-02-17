@@ -113,19 +113,21 @@ class MyApp(ShowBase):
         fbprops.setDepthBits(1)
         # Create an offscreen buffer for the depth image.
         self.depthBuffer = self.graphicsEngine.makeOutput(
-            self.pipe, "depth buffer", -2,
-            fbprops, winprops,
+            self.pipe,
+            "depth buffer",
+            -2,
+            fbprops,
+            winprops,
             GraphicsPipe.BFRefuseWindow,
-            self.win.getGsg(), self.win
+            self.win.getGsg(),
+            self.win,
         )
         # Create a texture to store depth values.
         self.depthTex = Texture()
         self.depthTex.setFormat(Texture.FDepthComponent)
         # Attach the depth texture to the depth buffer.
         self.depthBuffer.addRenderTexture(
-            self.depthTex,
-            GraphicsOutput.RTMCopyRam,
-            GraphicsOutput.RTPDepth
+            self.depthTex, GraphicsOutput.RTMCopyRam, GraphicsOutput.RTPDepth
         )
         # Use the same lens as your main camera.
         lens = self.cam.node().getLens()
@@ -301,9 +303,7 @@ class MyApp(ShowBase):
         # Draw the robot tip
         self.draw_robot_tip()
 
-    def save_calibration_file(
-        self, width, height, fx, fy, cx, cy, filename
-    ):
+    def save_calibration_file(self, width, height, fx, fy, cx, cy, filename):
         """
         Writes a YAML file in the same format as shown,
         but replaces the camera parameters with the ones in code.
@@ -317,9 +317,47 @@ class MyApp(ShowBase):
         p2 = 0.0
 
         # Construct the file content as a multi-line string
-        yaml_content = f"""%YAML:1.0
+        if self.depth_bool == "0":
+            yaml_content = f"""%YAML:1.0
 Camera.RGB: 1
 Camera.ThDepth: 40.0
+Camera.bf: 40.0
+Camera.fps: 15
+Camera.height: {height}
+Camera.type: PinHole
+Camera.width: {width}
+Camera1.cx: {cx}
+Camera1.cy: {cy}
+Camera1.fx: {fx}
+Camera1.fy: {fy}
+Camera1.k1: {k1}
+Camera1.k2: {k2}
+Camera1.k3: {k3}
+Camera1.p1: {p1}
+Camera1.p2: {p2}
+File.version: '1.0'
+ORBextractor.iniThFAST: 1
+ORBextractor.minThFAST: 1
+ORBextractor.nFeatures: 2500
+ORBextractor.nLevels: 10
+ORBextractor.scaleFactor: 1.2
+Viewer.CameraLineWidth: 3.0
+Viewer.CameraSize: 0.08
+Viewer.GraphLineWidth: 0.9
+Viewer.KeyFrameLineWidth: 1.0
+Viewer.KeyFrameSize: 0.05
+Viewer.PointSize: 2.0
+Viewer.ViewpointF: 500.0
+Viewer.ViewpointX: 0.0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -1.8
+"""
+        else:
+            yaml_content = f"""%YAML:1.0
+Camera.RGB: 1
+Stereo.ThDepth: 40.0
+Stereo.b: 0.07732
+RGBD.DepthMapFactor: 5000.0
 Camera.bf: 40.0
 Camera.fps: 15
 Camera.height: {height}
@@ -390,7 +428,7 @@ Viewer.ViewpointZ: -1.8
             calibration_filename = "calibration_sim_rgbd.yaml"
         else:
             calibration_filename = "calibration_sim_mono.yaml"
-            
+
         self.save_calibration_file(width, height, fx, fy, cx, cy, calibration_filename)
 
     def setup_key_controls(self):
@@ -1072,12 +1110,20 @@ Viewer.ViewpointZ: -1.8
             print("RGB screenshot not ready!")
             return
         rgb = np.frombuffer(rgb_data, np.uint8)
-        rgb.shape = (screenshot.getYSize(), screenshot.getXSize(), screenshot.getNumComponents())
+        rgb.shape = (
+            screenshot.getYSize(),
+            screenshot.getXSize(),
+            screenshot.getNumComponents(),
+        )
         rgb = np.flipud(rgb)
         # Remove alpha channel if present.
         if rgb.shape[2] == 4:
             rgb = rgb[:, :, :3]
-        rgb_filename = f"{timestamp_str}_ca_{self.current_ca:.2f}_mm.png" if hasattr(self, "current_ca") else f"{timestamp_str}.png"
+        rgb_filename = (
+            f"{timestamp_str}_ca_{self.current_ca:.2f}_mm.png"
+            if hasattr(self, "current_ca")
+            else f"{timestamp_str}.png"
+        )
         rgb_filepath = os.path.join(self.rgb_dir, rgb_filename)
         cv2.imwrite(rgb_filepath, rgb)
 
@@ -1092,7 +1138,11 @@ Viewer.ViewpointZ: -1.8
                     depth_bgr = cv2.cvtColor(depth_norm, cv2.COLOR_GRAY2BGR)
                 else:
                     depth_bgr = depth_norm
-                depth_filename = f"{timestamp_str}_ca_{self.current_ca:.2f}_mm.png" if hasattr(self, "current_ca") else f"{timestamp_str}.png"
+                depth_filename = (
+                    f"{timestamp_str}_ca_{self.current_ca:.2f}_mm.png"
+                    if hasattr(self, "current_ca")
+                    else f"{timestamp_str}.png"
+                )
                 depth_filepath = os.path.join(self.depth_dir, depth_filename)
                 cv2.imwrite(depth_filepath, depth_bgr)
             else:
@@ -1101,14 +1151,18 @@ Viewer.ViewpointZ: -1.8
         # --- Update Association File ---
         with open(self.assoc_file, "a") as f:
             if self.depth_bool and depth_filename:
-                f.write(f"{timestamp_str} rgb/{rgb_filename} {timestamp_str} depth/{depth_filename}\n")
+                f.write(
+                    f"{timestamp_str} rgb/{rgb_filename} {timestamp_str} depth/{depth_filename}\n"
+                )
             else:
                 f.write(f"{timestamp_str} rgb/{rgb_filename}\n")
 
         # --- Update CA CSV File ---
         if hasattr(self, "current_ca"):
             with open(self.ca_csv_file, "a") as f:
-                f.write(f"{self.record_frame_idx},{timestamp_str},{self.current_ca:.2f}\n")
+                f.write(
+                    f"{self.record_frame_idx},{timestamp_str},{self.current_ca:.2f}\n"
+                )
 
         self.record_frame_idx += 1
 
@@ -1135,19 +1189,24 @@ Viewer.ViewpointZ: -1.8
 
             # Build ffmpeg command to generate a video from the RGB images.
             # We assume a frame rate of 15 fps.
-            if sys.platform.startswith('linux'):
+            if sys.platform.startswith("linux"):
                 print("[INFO] Converting images to video with ffmpeg (Linux)...")
                 cmd = [
                     "ffmpeg",
                     "-y",  # Overwrite if exists.
-                    "-framerate", "15",
-                    "-pattern_type", "glob",
-                    "-i", os.path.join(self.rgb_dir, "*.png"),
-                    "-c:v", "libx264",
-                    "-pix_fmt", "yuv420p",
+                    "-framerate",
+                    "15",
+                    "-pattern_type",
+                    "glob",
+                    "-i",
+                    os.path.join(self.rgb_dir, "*.png"),
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
                     video,
                 ]
-            elif sys.platform.startswith('win'):
+            elif sys.platform.startswith("win"):
                 print("[INFO] Converting images to video with ffmpeg (Windows)...")
                 file_list_path = os.path.join(self.record_dir, "frames.txt")
                 rgb_frames = sorted(os.listdir(self.rgb_dir))
@@ -1158,13 +1217,20 @@ Viewer.ViewpointZ: -1.8
                 cmd = [
                     "ffmpeg",
                     "-y",
-                    "-r", "15",
-                    "-f", "concat",
-                    "-safe", "0",
-                    "-i", file_list_path,
-                    "-r", "15",
-                    "-c:v", "libx264",
-                    "-pix_fmt", "yuv420p",
+                    "-r",
+                    "15",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    file_list_path,
+                    "-r",
+                    "15",
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
                     video,
                 ]
             subprocess.run(cmd, check=True)
@@ -1196,12 +1262,12 @@ Viewer.ViewpointZ: -1.8
         depth_image.shape = (
             self.depthTex.getYSize(),
             self.depthTex.getXSize(),
-            self.depthTex.getNumComponents()
+            self.depthTex.getNumComponents(),
         )
         # Flip vertically (Panda3D's origin is bottom-left).
         depth_image = np.flipud(depth_image)
         return depth_image
-    
+
 
 if __name__ == "__main__":
     app = MyApp()
