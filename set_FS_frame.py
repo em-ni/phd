@@ -340,7 +340,7 @@ def save_frames_single_branch(input_path):
             print(f"Processing branch {i} with {len(points)} points")
 
             # Convert from mm to m
-            points = points / 1000
+            # points = points / 1000
 
             if len(points) < 2:
                 print(f"Skipping branch {i} due to insufficient points.")
