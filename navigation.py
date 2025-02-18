@@ -7,6 +7,8 @@ import threading
 import time
 from direct.showbase.ShowBase import ShowBase  # type: ignore
 import configparser
+from scipy.spatial.transform import Rotation
+
 
 # Read width and height from config.ini
 cfg = configparser.ConfigParser()
@@ -33,10 +35,11 @@ from set_FS_frame import (
     compute_tangent_vectors,
     compute_MRF,
     smooth_vectors,
+    save_frames_single_branch,
 )
 
 # TODO: Check all the measurements units and make sure they are consistent
-# TODO: videos are not saved with the desired resolution
+# TODO: Check convert_fs_to_tum function
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Path Navigation Tool")
@@ -107,9 +110,9 @@ class MyApp(ShowBase):
 
         # --- Set up Depth Buffer & Camera for Depth Image ---
         # Create window properties matching the main window's size.
-        winprops = WindowProperties.size(self.win.getXSize(), self.win.getYSize())
+        winprops = WindowProperties.size(self.win.getXSize(), self.win.getYSize())  # type: ignore
         # Define framebuffer properties and request a depth channel.
-        fbprops = FrameBufferProperties()
+        fbprops = FrameBufferProperties()  # type: ignore
         fbprops.setDepthBits(1)
         # Create an offscreen buffer for the depth image.
         self.depthBuffer = self.graphicsEngine.makeOutput(
@@ -123,8 +126,8 @@ class MyApp(ShowBase):
             self.win,
         )
         # Create a texture to store depth values.
-        self.depthTex = Texture()
-        self.depthTex.setFormat(Texture.FDepthComponent)
+        self.depthTex = Texture()  # type: ignore
+        self.depthTex.setFormat(Texture.FDepthComponent)  # type: ignore
         # Attach the depth texture to the depth buffer.
         self.depthBuffer.addRenderTexture(
             self.depthTex, GraphicsOutput.RTMCopyRam, GraphicsOutput.RTPDepth
@@ -1139,12 +1142,18 @@ Viewer.ViewpointZ: -1.8
         if self.depth_bool:
             depth = self.get_depth_image()  # normalized, from 0 to 1
             if depth is not None:
-                near_plane = float(self.app_config["CAMERA"]["np"])  # in meters, e.g., 0.1
-                far_plane  = float(self.app_config["CAMERA"]["fp"])  # in meters, e.g., 100.0
+                near_plane = float(
+                    self.app_config["CAMERA"]["np"]
+                )  # in meters, e.g., 0.1
+                far_plane = float(
+                    self.app_config["CAMERA"]["fp"]
+                )  # in meters, e.g., 100.0
 
                 # Linearize the depth (result in meters)
                 depth_linear = (2.0 * near_plane * far_plane) / (
-                    far_plane + near_plane - (2.0 * depth - 1.0) * (far_plane - near_plane)
+                    far_plane
+                    + near_plane
+                    - (2.0 * depth - 1.0) * (far_plane - near_plane)
                 )
                 # (Do not divide by 1000.0 if near and far are in meters.)
 
@@ -1152,31 +1161,55 @@ Viewer.ViewpointZ: -1.8
                 depth_map_factor = float(self.app_config["CAMERA"]["depth_map_factor"])
                 raw_depth = (depth_linear * depth_map_factor).astype(np.uint16)
                 # Save the raw depth image (you might choose a different filename convention)
-                depth_filename = f"{timestamp_str}_raw_ca_{self.current_ca:.2f}_mm.png" if hasattr(self, "current_ca") else f"{timestamp_str}_raw.png"
+                depth_filename = (
+                    f"{timestamp_str}_raw_ca_{self.current_ca:.2f}_mm.png"
+                    if hasattr(self, "current_ca")
+                    else f"{timestamp_str}_raw.png"
+                )
                 depth_filepath = os.path.join(self.depth_dir, depth_filename)
                 cv2.imwrite(depth_filepath, raw_depth)
 
                 # For visualization: create a color version with grid overlay.
-                vis_depth = cv2.normalize(depth_linear, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                vis_depth = cv2.normalize(
+                    depth_linear, None, 0, 255, cv2.NORM_MINMAX
+                ).astype(np.uint8)
                 vis_depth_color = cv2.cvtColor(vis_depth, cv2.COLOR_GRAY2BGR)
                 block_size = 50
                 h, w = vis_depth_color.shape[:2]
                 for y in range(0, h, block_size):
                     for x in range(0, w, block_size):
-                        block = depth_linear[y:min(y+block_size, h), x:min(x+block_size, w)]
+                        block = depth_linear[
+                            y : min(y + block_size, h), x : min(x + block_size, w)
+                        ]
                         avg_depth = np.mean(block)
                         text = f"{avg_depth:.2f}"
-                        cv2.putText(vis_depth_color, text, (x+5, y+20),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
-                        cv2.rectangle(vis_depth_color, (x, y), (min(x+block_size, w), min(y+block_size, h)),
-                                    (255, 0, 0), 1)
+                        cv2.putText(
+                            vis_depth_color,
+                            text,
+                            (x + 5, y + 20),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5,
+                            (0, 255, 0),
+                            1,
+                            cv2.LINE_AA,
+                        )
+                        cv2.rectangle(
+                            vis_depth_color,
+                            (x, y),
+                            (min(x + block_size, w), min(y + block_size, h)),
+                            (255, 0, 0),
+                            1,
+                        )
                 # Save visualization (if desired)
-                vis_filename = f"{timestamp_str}_vis_ca_{self.current_ca:.2f}_mm.png" if hasattr(self, "current_ca") else f"{timestamp_str}_vis.png"
+                vis_filename = (
+                    f"{timestamp_str}_vis_ca_{self.current_ca:.2f}_mm.png"
+                    if hasattr(self, "current_ca")
+                    else f"{timestamp_str}_vis.png"
+                )
                 vis_filepath = os.path.join(self.depth_dir, vis_filename)
                 cv2.imwrite(vis_filepath, vis_depth_color)
 
                 # Update association file using the raw depth image filename.
-
 
         else:
             print("Depth image not ready; skipping depth for this frame.")
@@ -1203,7 +1236,7 @@ Viewer.ViewpointZ: -1.8
         """
         Called when the user presses 'q'.
         Stops the main loop, runs ffmpeg to encode video from the RGB images and (if enabled) from the depth visualization images,
-        copies all output (RGB, depth, associations, CA data, and final videos) under record_dir to a permanent folder, 
+        copies all output (RGB, depth, associations, CA data, and final videos) under record_dir to a permanent folder,
         and then exits.
         """
         print("[INFO] Quitting the app now.")
@@ -1214,7 +1247,7 @@ Viewer.ViewpointZ: -1.8
             # Extract centerline name from path (for naming purposes).
             centerline_name = os.path.splitext(os.path.basename(self.path_name))[0]
 
-            # --- Build RGB Video ---
+            # Build RGB Video
             rgb_video_name = f"record_rgb_{centerline_name}_{time.time()}"
             rgb_video = os.path.join(self.record_dir, f"{rgb_video_name}.mp4")
             if sys.platform.startswith("linux"):
@@ -1222,11 +1255,16 @@ Viewer.ViewpointZ: -1.8
                 cmd_rgb = [
                     "ffmpeg",
                     "-y",  # Overwrite if exists.
-                    "-framerate", "15",
-                    "-pattern_type", "glob",
-                    "-i", os.path.join(self.rgb_dir, "*.png"),
-                    "-c:v", "libx264",
-                    "-pix_fmt", "yuv420p",
+                    "-framerate",
+                    "15",
+                    "-pattern_type",
+                    "glob",
+                    "-i",
+                    os.path.join(self.rgb_dir, "*.png"),
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
                     rgb_video,
                 ]
             elif sys.platform.startswith("win"):
@@ -1240,51 +1278,73 @@ Viewer.ViewpointZ: -1.8
                 cmd_rgb = [
                     "ffmpeg",
                     "-y",
-                    "-r", "15",
-                    "-f", "concat",
-                    "-safe", "0",
-                    "-i", file_list_path,
-                    "-r", "15",
-                    "-c:v", "libx264",
-                    "-pix_fmt", "yuv420p",
+                    "-r",
+                    "15",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    file_list_path,
+                    "-r",
+                    "15",
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
                     rgb_video,
                 ]
             subprocess.run(cmd_rgb, check=True)
             print(f"[INFO] RGB video saved as {os.path.basename(rgb_video)}")
 
-            # --- Build Depth Video (if enabled) ---
+            # Build Depth Video (if enabled)
             if self.depth_bool:
                 depth_video_name = f"record_depth_{centerline_name}_{time.time()}"
                 depth_video = os.path.join(self.record_dir, f"{depth_video_name}.mp4")
                 if sys.platform.startswith("linux"):
-                    print("[INFO] Converting depth images to video with ffmpeg (Linux)...")
+                    print(
+                        "[INFO] Converting depth images to video with ffmpeg (Linux)..."
+                    )
                     file_list_path = os.path.join(self.record_dir, "depth_frames.txt")
                     depth_frames = sorted(os.listdir(self.depth_dir))
                     with open(file_list_path, "w") as f:
                         for frame in depth_frames:
                             # Skip frames with 'raw' in their name
                             if "raw" not in frame:
-                                full_path = os.path.join(self.depth_dir, frame).replace("\\", "/")
+                                full_path = os.path.join(self.depth_dir, frame).replace(
+                                    "\\", "/"
+                                )
                                 f.write(f"file '{full_path}'\n")
                     cmd_depth = [
                         "ffmpeg",
                         "-y",  # Overwrite if exists.
-                        "-r", "15",
-                        "-f", "concat",
-                        "-safe", "0",
-                        "-i", file_list_path,
-                        "-r", "15",
-                        "-c:v", "libx264",
-                        "-pix_fmt", "yuv420p",
+                        "-r",
+                        "15",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        file_list_path,
+                        "-r",
+                        "15",
+                        "-c:v",
+                        "libx264",
+                        "-pix_fmt",
+                        "yuv420p",
                         depth_video,
                     ]
                 elif sys.platform.startswith("win"):
-                    print("[INFO] Converting depth images to video with ffmpeg (Windows)...")
+                    print(
+                        "[INFO] Converting depth images to video with ffmpeg (Windows)..."
+                    )
                     file_list_path = os.path.join(self.record_dir, "depth_frames.txt")
                     depth_frames = sorted(os.listdir(self.depth_dir))
                     with open(file_list_path, "w") as f:
                         for frame in depth_frames:
-                            full_path = os.path.join(self.depth_dir, frame).replace("\\", "/")
+                            full_path = os.path.join(self.depth_dir, frame).replace(
+                                "\\", "/"
+                            )
                             # Skip raw depth images (only visualization images).
                             if "raw" not in frame:
                                 f.write(f"file '{full_path}'\n")
@@ -1292,21 +1352,42 @@ Viewer.ViewpointZ: -1.8
                     cmd_depth = [
                         "ffmpeg",
                         "-y",
-                        "-r", "15",
-                        "-f", "concat",
-                        "-safe", "0",
-                        "-i", file_list_path,
-                        "-r", "15",
-                        "-c:v", "libx264",
-                        "-pix_fmt", "yuv420p",
+                        "-r",
+                        "15",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        file_list_path,
+                        "-r",
+                        "15",
+                        "-c:v",
+                        "libx264",
+                        "-pix_fmt",
+                        "yuv420p",
                         depth_video,
                     ]
                 subprocess.run(cmd_depth, check=True)
                 print(f"[INFO] Depth video saved as {os.path.basename(depth_video)}")
 
-            # --- Copy Everything to Permanent Storage ---
+            # Save trajectory in TUM format
+            vtp_trajectory = os.path.join(self.data_folder, self.path_name)
+            save_frames_single_branch(vtp_trajectory)
+            fs_trajectory = vtp_trajectory.replace(".vtp", ".txt")
+            gt_file = os.path.join(self.record_dir, "gt", "gt.txt")
+            # If it doesnt exist, create the gt folder
+            os.makedirs(os.path.join(self.record_dir, "gt"), exist_ok=True)
+            self.convert_fs_to_tum(fs_trajectory, gt_file)
+            print(f"[INFO] Trajectory saved as {os.path.basename(gt_file)}")
+
+            # Copy Everything to Permanent Storage
             # Use self.videos_dir from config to determine final destination.
-            final_path = os.path.join(self.data_folder, self.videos_dir, f"record_{centerline_name}_{time.time()}")
+            final_path = os.path.join(
+                self.data_folder,
+                self.videos_dir,
+                f"record_{centerline_name}_{time.time()}",
+            )
             shutil.copytree(self.record_dir, final_path)
             print(f"[INFO] All recorded data copied to {final_path}")
 
@@ -1316,6 +1397,90 @@ Viewer.ViewpointZ: -1.8
         self.userExit()
 
     # UTILS
+    def convert_fs_to_tum(self, input_file, output_file):
+        """
+        Convert Frenet-Serret frames (px, py, pz, Tx, Ty, Tz, Nx, Ny, Nz, Bx, By, Bz)
+        into TUM format:
+
+            timestamp tx ty tz qx qy qz qw
+
+        The rotation columns (Tx,Nx,Bx; Ty,Ny,By; Tz,Nz,Bz) are interpreted as a
+        right-handed rotation matrix from local -> world.
+        """
+
+        with open(input_file, "r") as fin, open(output_file, "w") as fout:
+            lines = fin.readlines()
+            first = True
+            o_T_w = None
+
+            for i, line in enumerate(lines):
+                # Each line has 12 floats: px, py, pz, Tx, Ty, Tz, Nx, Ny, Nz, Bx, By, Bz
+                vals = line.strip().split(",")
+                if len(vals) != 12:
+                    continue
+
+                # Parse floats
+                x, y, z = map(float, vals[0:3])
+                # x = x / 1000.0
+                # y = y / 1000.0
+                # z = z / 1000.0
+                tx, ty, tz = map(float, vals[3:6])
+                nx, ny, nz = map(float, vals[6:9])
+                bx, by, bz = map(float, vals[9:12])
+
+                # Build rotation matrix as in file: t forward, n down, b left
+                rot_matrix = np.array([[tx, nx, bx], [ty, ny, by], [tz, nz, bz]])
+
+                # Check determinant and adjust if necessary
+                if np.linalg.det(rot_matrix) < 0:
+                    print("Determinant is negative. Adjusting rotation matrix.")
+                    rot_matrix[:, 2] *= -1.0
+
+                # Verify orthogonality
+                RtR = rot_matrix.T @ rot_matrix
+                I = np.eye(3)
+                error = RtR - I
+                max_error = np.abs(error).max()
+                if max_error > 1e-6:
+                    print(
+                        f"Rotation matrix not orthogonal enough. Max error: {max_error}"
+                    )
+                    continue
+
+                # Handle first frame
+                if first:
+                    o_T_w = np.eye(4)
+                    o_T_w[:3, :3] = rot_matrix
+                    o_T_w[:3, 3] = [x, y, z]
+                    first = False
+
+                # Build o_T_ci
+                o_T_ci = np.eye(4)
+                o_T_ci[:3, :3] = rot_matrix
+                o_T_ci[:3, 3] = [x, y, z]
+
+                # Compute w_T_ci = (o_T_w)^-1 * o_T_ci
+                o_T_w_inv = np.linalg.inv(o_T_w)
+                w_T_ci = o_T_w_inv @ o_T_ci
+
+                # Rotate 90 degrees around n axis
+                Ry = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
+                Ry_inv = Ry.T
+
+                # Apply rotation correction
+                R_new = Ry_inv @ w_T_ci[:3, :3] @ Ry
+                t_new = w_T_ci[:3, 3]
+
+                # Convert to quaternion
+                rot = Rotation.from_matrix(R_new.astype(np.float64))
+                qx, qy, qz, qw = rot.as_quat()
+
+                # Write TUM format: timestamp tx ty tz qx qy qz qw
+                timestamp = float(i)
+                fout.write(
+                    f"{timestamp:.6f} {t_new[0]:.6f} {t_new[1]:.6f} {t_new[2]:.6f} {qx:.6f} {qy:.6f} {qz:.6f} {qw:.6f}\n"
+                )
+
     def get_depth_image(self):
         """
         Returns the current depth image as a NumPy array (float32, values between 0.0 and 1.0).
