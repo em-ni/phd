@@ -106,7 +106,10 @@ class MyApp(ShowBase):
         self.accept("q", self.quit_app)
 
         # Set up camera parameters
-        self.setup_camera_params()
+        if self.live_mode == "fp":
+            self.setup_camera_params()
+
+        self.connected = False
 
         # --- Set up Depth Buffer & Camera for Depth Image ---
         # Create window properties matching the main window's size.
@@ -192,8 +195,14 @@ class MyApp(ShowBase):
         self.points = points
 
         # Init transformation matrices
-        self.c_T_w = np.eye(4)
-        self.w_T_o = self.setup_w_T_o()
+        self.w_T_c = np.eye(4)
+        self.o_T_fs = np.eye(4)
+
+        R_n = Rotation.from_euler("y", 90, degrees=True).as_matrix()
+        self.fsi_T_ci = np.eye(4)
+        self.fsi_T_ci[:3, :3] = R_n
+
+        self.o_T_w = self.setup_o_T_w()
 
         # Load the model
         if self.view_mode == "fp":
@@ -239,40 +248,28 @@ class MyApp(ShowBase):
                         if not data:
                             break
                         # Parse the received data and update the transformation matrix
-                        self.c_T_w = data.decode()
+                        w_T_c_string = data.decode()
+                        lines = w_T_c_string.splitlines()
+
+                        # Convert each line into a list of floats
+                        matrix = [list(map(float, line.split())) for line in lines]
+                        # Convert the list of lists into a NumPy array
+                        self.w_T_c = np.array(matrix)
+                        self.connected = True
+                        print(f"Received: {self.w_T_c}")
+                        time.sleep(1)
                     print("Connection closed")
 
     def sim_server(self, host="127.0.0.1", port=12345):
         time.sleep(1)  # Give the server time to start
+        print("Starting sim_server...")
         try:
             # Create a socket and connect to the server
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((host, port))
 
             while True:
-                # Create a mock transformation matrix
-                mock_c_T_o = np.eye(4)
-                mock_c_T_w = np.eye(4)
 
-                # Take the last frame of the centerline as the translation
-                mock_c_T_o[:3, 3] = self.interpolated_points[-1]
-                mock_c_T_o[:3, 0] = self.tangents[-1]
-                mock_c_T_o[:3, 1] = self.normals[-1]
-                mock_c_T_o[:3, 2] = self.binormals[-1]
-
-                # Get the transformation matrix from the origin to the first point
-                w_T_o_matrix = self.w_T_o
-                o_T_w_matrix = np.linalg.inv(w_T_o_matrix)
-
-                # Compute the transformation matrix from the camera to the world
-                mock_c_T_w = np.dot(mock_c_T_o, o_T_w_matrix)
-
-                # Add some random noise to the translation
-                mock_c_T_w[:3, 3] += np.random.normal(0, 0.05, 3)
-
-                # Convert to string and send
-                data = str(mock_c_T_w.tolist())
-                s.sendall(data.encode())
                 time.sleep(0.1)  # Add small delay between sends
 
         except ConnectionRefusedError:
@@ -539,19 +536,20 @@ Viewer.ViewpointZ: -1.8
         # Initially draw the path up to the first point
         self.draw_path(self.interpolated_points, 0)
 
-    def setup_w_T_o(self):
-        """Load the transformation matrix from centerline_frames.txt"""
-        w_T_o = np.eye(4)
+    def setup_o_T_w(self):
+        """The first point of the centerline (i = 0) corresponds to the transformation from the world frame to the origin frame
+        o_T_w = o_T_fs0 * fs0_T_c0"""
+        o_T_fs0 = np.eye(4)
 
         # Set the transformation matrix from the origin to the first point using self.tangents, self.normals, and self.binormals
-        w_T_o[:3, 0] = self.tangents[0]
-        w_T_o[:3, 1] = self.normals[0]
-        w_T_o[:3, 2] = self.binormals[0]
-        w_T_o[:3, 3] = self.interpolated_points[0]
+        o_T_fs0[:3, 0] = self.tangents[0]
+        o_T_fs0[:3, 1] = self.normals[0]
+        o_T_fs0[:3, 2] = self.binormals[0]
+        o_T_fs0[:3, 3] = self.interpolated_points[0]
 
-        # print(f"Transformation matrix w_T_o: \n{w_T_o}")
+        o_T_c0 = np.dot(o_T_fs0, self.fsi_T_ci)
 
-        return w_T_o
+        return o_T_c0
 
     ## LINE UTILS
     def curvilinear_abscissa(self, point):
@@ -669,25 +667,31 @@ Viewer.ViewpointZ: -1.8
 
         else:
             # Update the robot tip position based on the transformation matrix
-            try:
-                # Convert string to numpy array and multiply matrices
-                c_T_w_matrix = np.array(eval(self.c_T_w))
-                w_T_o_matrix = self.w_T_o
+            if self.connected == True:
+                try:
+                    """ "
+                    To draw get o_T_fs as
+                    o_T_fs = o_T_w * w_T_c * c_T_fs
+                    """
+                    # Convert string to numpy array and multiply matrices
+                    w_T_c_matrix = self.w_T_c
+                    o_T_w_matrix = self.o_T_w
+                    fs_T_c_matrix = self.fsi_T_ci
+                    c_T_fs_matrix = np.linalg.inv(fs_T_c_matrix)
 
-                w_T_c_matrix = np.linalg.inv(c_T_w_matrix)
-                o_T_w_matrix = np.linalg.inv(w_T_o_matrix)
+                    # Compute the robot tip position
+                    o_T_c_matrix = np.dot(o_T_w_matrix, w_T_c_matrix)
+                    o_T_fs_matrix = np.dot(o_T_c_matrix, c_T_fs_matrix)
+                    self.o_T_fs = o_T_fs_matrix
+                    translation = o_T_fs_matrix[:3, 3]
 
-                c_T_o_matrix = np.dot(c_T_w_matrix, w_T_o_matrix)
-                o_T_c_matrix = np.dot(o_T_w_matrix, w_T_c_matrix)
+                    # Update the robot tip position
+                    self.robot_tip = translation
+                    print(f"Robot tip position: {self.robot_tip}")
 
-                translation = c_T_o_matrix[:3, 3]
-
-                # Update the robot tip position
-                self.robot_tip = translation
-
-            except (SyntaxError, AttributeError) as e:
-                # Skip update if data is not valid
-                pass
+                except (SyntaxError, AttributeError) as e:
+                    print(f"Error in update_robot_tip_position: {e}")
+                    pass
 
         # Update the visual representation
         self.draw_robot_tip()
@@ -760,8 +764,8 @@ Viewer.ViewpointZ: -1.8
         time.sleep(2)
         while True:
             if self.live_mode == True:
-                if hasattr(self, "c_T_w"):
-                    print(f"\rReceived: {self.c_T_w}\033[F", end="", flush=True)
+                if hasattr(self, "c_T_w") and not np.array_equal(self.w_T_c, np.eye(4)):
+                    print(f"\rReceived: {self.w_T_c}\033[F", end="", flush=True)
             else:
                 if hasattr(self, "current_ca"):
                     print(
@@ -850,43 +854,87 @@ Viewer.ViewpointZ: -1.8
         if hasattr(self, "light_cone_geom_np") and self.light_cone_geom_np:
             self.light_cone_geom_np.removeNode()
 
-        # Load cone model
-        cone_model = self.loader.loadModel(
-            "/home/emanuele/Desktop/github/navigation/data/icons/cone.obj"
-        )
-        cone_model.reparentTo(self.robot_tip_node)
+        if self.live_mode == False:
+            # Load cone model
+            cone_model = self.loader.loadModel(
+                "/home/emanuele/Desktop/github/navigation/data/icons/cone.obj"
+            )
+            cone_model.reparentTo(self.robot_tip_node)
 
-        # Set size and color/transparency
-        cone_model.setScale(0.1)
-        cone_model.setColor(1, 1, 0, 0.3)  # Slightly yellow, partial alpha
-        cone_model.setTransparency(TransparencyAttrib.MAlpha)  # type: ignore
+            # Set size and color/transparency
+            cone_model.setScale(10)
+            cone_model.setColor(1, 1, 0, 0.3)  # Slightly yellow, partial alpha
+            cone_model.setTransparency(TransparencyAttrib.MAlpha)  # type: ignore
 
-        # Find the index of the closest point to the robot tip
-        distances = np.linalg.norm(self.interpolated_points - self.robot_tip, axis=1)
-        closest_index = np.argmin(distances)
+            # Find the index of the closest point to the robot tip
+            distances = np.linalg.norm(
+                self.interpolated_points - self.robot_tip, axis=1
+            )
+            closest_index = np.argmin(distances)
 
-        # Get the corresponding tangent, normal, and binormal vectors
-        tangent_vector = LVector3f(*self.tangents[closest_index])  # type: ignore
-        normal_vector = LVector3f(*self.normals[closest_index])  # type: ignore
+            # Get the corresponding tangent, normal, and binormal vectors
+            tangent_vector = LVector3f(*self.tangents[closest_index])  # type: ignore
+            normal_vector = LVector3f(*self.normals[closest_index])  # type: ignore
 
-        # Orient the cone so that +Z aligns with the tangent and the origin of the cone is at the robot tip.
-        # Create a transformation node to handle the orientation
-        cone_np = self.render.attachNewNode("cone_transform")
+            # Orient the cone so that +Z aligns with the tangent and the origin of the cone is at the robot tip.
+            # Create a transformation node to handle the orientation
+            cone_np = self.render.attachNewNode("cone_transform")
 
-        # Position the cone at the robot tip
-        cone_np.setPos(LVector3f(*self.robot_tip))  # type: ignore
+            # Position the cone at the robot tip
+            cone_np.setPos(LVector3f(*self.robot_tip))  # type: ignore
 
-        # Calculate focal point
-        focal_point = self.robot_tip + tangent_vector
+            # Calculate focal point
+            focal_point = self.robot_tip + tangent_vector
 
-        # Set the HPR of the cone to align with the tangent vector
-        cone_np.lookAt(LVector3f(*focal_point), normal_vector)  # type: ignore
+            # Set the HPR of the cone to align with the tangent vector
+            cone_np.lookAt(LVector3f(*focal_point), normal_vector)  # type: ignore
 
-        # Parent the cone model to the transformation node
-        cone_model.reparentTo(cone_np)
+            # Parent the cone model to the transformation node
+            cone_model.reparentTo(cone_np)
 
-        # Store for later (if we want to remove it next frame)
-        self.light_cone_geom_np = cone_np
+            # Store for later (if we want to remove it next frame)
+            self.light_cone_geom_np = cone_np
+
+        else:
+            # Load cone model
+            cone_model = self.loader.loadModel(
+                "/home/emanuele/Desktop/github/navigation/data/icons/cone.obj"
+            )
+            cone_model.reparentTo(self.robot_tip_node)
+            if not cone_model:
+                print("Error loading cone model")
+
+            # Set size and color/transparency
+            cone_model.setScale(0.5)
+            cone_model.setColor(1, 1, 0, 0.3)  # Slightly yellow, partial alpha
+            cone_model.setTransparency(TransparencyAttrib.MAlpha)  # type: ignore
+
+            # Use the self.o_T_fs matrix to draw the cone
+            # Compute the tangent vector from o_T_fs (if available)
+            if hasattr(self, "o_T_fs"):
+                tangent_vector = LVector3f(*self.o_T_fs[:3, 0])  # type: ignore
+                normal_vector = LVector3f(*self.o_T_fs[:3, 1])  # type: ignore
+            else:
+                tangent_vector = LVector3f(1, 0, 0)  # type: ignore # Fallback
+                normal_vector = LVector3f(0, 1, 0)  # type: ignore # Fallback
+
+            # Create a transformation node to handle the orientation
+            cone_np = self.render.attachNewNode("cone_transform")
+
+            # Position the cone at the robot tip
+            cone_np.setPos(LVector3f(*self.robot_tip))  # type: ignore
+
+            # Calculate focal point
+            focal_point = self.robot_tip + tangent_vector
+
+            # Set the HPR of the cone to align with the tangent vector
+            cone_np.lookAt(LVector3f(*focal_point), normal_vector)  # type: ignore
+
+            # Parent the cone model to the transformation node
+            cone_model.reparentTo(cone_np)
+
+            # Store for later (if we want to remove it next frame)
+            self.light_cone_geom_np = cone_np
 
     def draw_origin_frame(self):
         # Create a LineSegs object to draw the frame
@@ -923,7 +971,7 @@ Viewer.ViewpointZ: -1.8
 
     def draw_base_frame(self):
 
-        w_T_o = self.w_T_o
+        w_T_o = np.linalg.inv(self.o_T_w)
 
         # Draw w_T_o frame
         frame = LineSegs()  # type: ignore
@@ -972,7 +1020,7 @@ Viewer.ViewpointZ: -1.8
             "models/smiley"
         )  # Ensure this is a valid model path
 
-        robot_tip_visual.setScale(0.1)  # Scale to appropriate size
+        robot_tip_visual.setScale(1)  # Scale to appropriate size
         robot_tip_visual.setColor(0, 1, 0, 1)  # Set color to green
         robot_tip_visual.setPos(LVector3f(*self.robot_tip))  # type: ignore
 
@@ -982,7 +1030,7 @@ Viewer.ViewpointZ: -1.8
         self.robot_tip_node = robot_tip_node
 
         # Draw the light cone geometry (TODO: fix this)
-        # self.draw_light_cone_geom()
+        self.draw_light_cone_geom()
 
     def draw_path(self, points, up_to_index):
         # Ensure the up_to_index is within bounds
