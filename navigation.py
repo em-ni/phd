@@ -106,7 +106,7 @@ class MyApp(ShowBase):
         self.accept("q", self.quit_app)
 
         # Set up camera parameters
-        if self.live_mode == "fp":
+        if self.view_mode == "fp":
             self.setup_camera_params()
 
         self.connected = False
@@ -402,6 +402,7 @@ Viewer.ViewpointZ: -1.8
         print(f"[INFO] Saved camera calibration to {filename}")
 
     def setup_camera_params(self):
+        print("[INFO] Setting up camera parameters for first-person view mode")
         # 1) Camera parameters
         # Read camera parameters from config.ini
         width = int(self.app_config["CAMERA"]["width"])
