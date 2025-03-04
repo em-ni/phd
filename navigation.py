@@ -40,6 +40,7 @@ from set_FS_frame import (
 )
 
 # TODO: Check all the measurements units and make sure they are consistent
+# TODO: Minimize the rotation and translation from frames of different branches
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Path Navigation Tool")
@@ -78,6 +79,7 @@ class MyApp(ShowBase):
         self.model_name = self.app_config["PATHS"]["model_name"]
         self.negative_model_name = self.app_config["PATHS"]["negative_model_name"]
         self.videos_dir = self.app_config["PATHS"]["record_dir"]
+        self.all_branches_bool = self.app_config["PATHS"]["all_branches_bool"]
 
         self.draw_circles_bool = self.app_config["DRAW"]["draw_circles_bool"]
         self.draw_centerline_bool = self.app_config["DRAW"]["draw_centerline_bool"]
@@ -184,15 +186,31 @@ class MyApp(ShowBase):
         # Task for updating the scene
         self.taskMgr.add(self.update_scene, "updateScene")
 
-        # Get centerline points from the .vtp
-        points = self.get_vtp_line_points()
+        if self.all_branches_bool == "1":
+            # Crate a trajectory traversing all the branches in the folder forward and backward
+            print(
+                "[INFO] all_branches_bool is True: Building final path from all branches..."
+            )
+            fs_frames, points = self.build_all_branches_path()
 
-        # print number of points
-        print("[INFO] Number of points in the centerline: ", len(points))
+            if not fs_frames:
+                print("[ERROR] No branches found. Exiting...")
+                sys.exit(1)
 
-        # Setup
-        self.setup_line(points)
-        self.points = points
+            self.setup_line_all_branches(fs_frames)
+            print("[INFO] Final path built successfully\n")
+            self.points = points
+
+        else:
+            # Get centerline points from the .vtp
+            points = self.get_vtp_line_points()
+
+            # print number of points
+            print("[INFO] Number of points in the centerline: ", len(points))
+
+            # Setup
+            self.setup_line(points)
+            self.points = points
 
         # Init transformation matrices
         self.w_T_c = np.eye(4)
@@ -471,6 +489,31 @@ Viewer.ViewpointZ: -1.8
         self.line_length = self.curvilinear_abscissa(self.end_point)
         print("[INFO] Centerline length: ", self.line_length, "mm")
 
+    def setup_line_all_branches(self, fs_frames):
+        # Extract translation and axes from each FS frame:
+        self.interpolated_points = np.array([fs[:3, 3] for fs in fs_frames])
+        self.tangents = np.array([fs[:3, 0] for fs in fs_frames])
+        self.normals = np.array([fs[:3, 1] for fs in fs_frames])
+        self.binormals = np.array([fs[:3, 2] for fs in fs_frames])
+
+        # Set first and end point
+        self.start_point = self.interpolated_points[0]
+        self.end_point = self.interpolated_points[-1]
+
+        # Initialize the robot tip
+        self.robot_tip = self.interpolated_points[
+            0
+        ]  # Setting the first point as the start
+        self.robot_tip_node = None
+
+        # Compute line length
+        self.line_length = self.curvilinear_abscissa(self.end_point)
+        print("[INFO] Centerline length: ", self.line_length, "mm")
+
+        # Set current index to 0
+        self.current_index = 0
+        self.next_index = 1
+
     def setup_fp(self):
         print("[INFO] Initializing First Person View Mode...")
         self.model = self.data_folder + self.negative_model_name
@@ -553,6 +596,73 @@ Viewer.ViewpointZ: -1.8
         return o_T_c0
 
     ## LINE UTILS
+    def build_all_branches_path(self):
+        """
+        Reads multiple branch VTP files (listed in the config entry 'branch_files' under [BRANCHES]),
+        computes the FS frame for every point in each branch, and stacks them together
+        by first appending the branch (forward) and then appending the same branch in reverse (back).
+        Returns a list of 4x4 FS frame matrices.
+        """
+        # Get the full path to the centerline folder
+        centerline_folder_name = self.app_config["PATHS"]["all_branches_folder"]
+        centerline_folder_path = os.path.join(self.data_folder, centerline_folder_name)
+        print(f"[INFO] Looking for .vtp files in: {centerline_folder_path}")
+
+        # Find all .vtp files in the folder
+        branch_files = []
+        for file in os.listdir(centerline_folder_path):
+            if file.endswith(".vtp"):
+                full_path = os.path.join(centerline_folder_name, file)
+                branch_files.append(full_path)
+
+        if not branch_files:
+            print("[ERROR] No .vtp files found in the specified folder")
+            return []
+
+        print(f"[INFO] Found {len(branch_files)} branch files: {branch_files}")
+
+        final_frames = []
+        all_points = []  # Initialize a list to collect all points
+
+        for branch_file in branch_files:
+            branch_file = branch_file.strip()
+            branch_path = os.path.join(self.data_folder, branch_file)
+            print(f"[INFO] Processing branch file: {branch_path}")
+            branch_model = pv.read(branch_path)
+            branch_points = [tuple(point) for point in branch_model.points]
+
+            # Interpolate the branch points
+            interp_points = interpolate_line(branch_points, num_points=1000)
+            branch_tangents = compute_tangent_vectors(interp_points)
+            branch_tangents = smooth_vectors(branch_tangents, 10, 10)
+            branch_normals, branch_binormals = compute_MRF(branch_tangents)
+
+            # FORWARD TRAVEL: Build FS frames for each point along the branch
+            for i, pt in enumerate(interp_points):
+                fs_frame = np.eye(4)
+                fs_frame[:3, 0] = branch_tangents[i]
+                fs_frame[:3, 1] = branch_normals[i]
+                fs_frame[:3, 2] = branch_binormals[i]
+                fs_frame[:3, 3] = pt
+                final_frames.append(fs_frame)
+                all_points.append(pt)  # Add point to all_points list
+
+            # RETURN TRAVEL: Append the same points in reverse order.
+            # (Optionally, you might want to invert the tangent to reflect the return motion.)
+            # Skip the last point of the forward travel when creating the return path
+            for i, pt in enumerate(interp_points[-2::-1]):
+                fs_frame = np.eye(4)
+                # Adjust the index calculation since we're starting from second-to-last point
+                idx = len(interp_points) - 2 - i
+                fs_frame[:3, 0] = -branch_tangents[idx]  # Invert tangent for return
+                fs_frame[:3, 1] = branch_normals[idx]
+                fs_frame[:3, 2] = branch_binormals[idx]
+                fs_frame[:3, 3] = pt
+                final_frames.append(fs_frame)
+                all_points.append(pt)  # Add point to all_points list
+
+        return final_frames, all_points
+
     def curvilinear_abscissa(self, point):
         # Find the closest point to the given point
         distances = np.linalg.norm(self.interpolated_points - point, axis=1)
@@ -577,6 +687,40 @@ Viewer.ViewpointZ: -1.8
         return points
 
     ## UPDATE METHODS
+    def auto_update_tip_position(self, dt):
+        """
+        Automatically updates the robot tip position along the centerline
+        To be used when all_branches_bool is set to True
+        """
+        # Check if the robot tip is at the last point
+        if self.current_index >= len(self.interpolated_points) - 1:
+            print("[INFO] Robot tip reached the end of the path")
+            return  # Stop moving
+
+        # Define the speed of movement along the line
+        movement_speed = 5000  # 5  # Adjust as needed
+
+        # Do not use distances, simply move ot the next point in the list
+        direction = (
+            self.interpolated_points[self.next_index]
+            - self.interpolated_points[self.current_index]
+        )
+        distance_to_next_point = np.linalg.norm(direction)
+        direction = direction / distance_to_next_point  # Normalize the direction vector
+
+        # Calculate the movement step
+        step_size = movement_speed * dt
+        if step_size > distance_to_next_point:
+            step_size = distance_to_next_point
+
+        # Update the position
+        new_position = self.robot_tip + direction * step_size
+        self.robot_tip = new_position
+
+        # Update the current and next indices
+        self.current_index = self.next_index
+        self.next_index += 1
+
     def update_camera_to_robot_tip(self):
         # Find the index of the closest point to the robot tip
         distances = np.linalg.norm(self.interpolated_points - self.robot_tip, axis=1)
@@ -608,91 +752,94 @@ Viewer.ViewpointZ: -1.8
         )
 
     def update_robot_tip_position(self, dt, forward=True):
-        if self.live_mode == False:
-            # Define the speed of movement along the line
-            movement_speed = 5  # Adjust as needed
-
-            # Calculate distances from self.robot_tip to each point in self.interpolated_points
-            distances = np.linalg.norm(
-                self.interpolated_points - self.robot_tip, axis=1
-            )
-            current_index = np.argmin(distances)
-
-            if forward:
-                # Check if the robot tip is at the last point
-                if current_index >= len(self.interpolated_points) - 1:
-                    return  # Stop moving forward
-                next_index = current_index + 1
-            else:
-                # Check if the robot tip is at the first point
-                if current_index == 0:
-                    return  # Stop moving backward
-                next_index = current_index - 1
-
-            # Calculate the direction and distance to the next point
-            direction = (
-                self.interpolated_points[next_index]
-                - self.interpolated_points[current_index]
-            )
-            distance_to_next_point = np.linalg.norm(direction)
-            direction = (
-                direction / distance_to_next_point
-            )  # Normalize the direction vector
-
-            # Calculate the movement step
-            step_size = movement_speed * dt
-            if step_size > distance_to_next_point:
-                step_size = (
-                    distance_to_next_point  # Limit step to not overshoot the next point
-                )
-
-            # Update the position
-            new_position = self.robot_tip + direction * step_size
-            self.robot_tip = new_position
-
-            # Find the index of the closest point to the robot tip
-            distances = np.linalg.norm(
-                self.interpolated_points - self.robot_tip, axis=1
-            )
-            closest_index = np.argmin(distances)
-
-            if self.view_mode == "tp":
-                # Redraw the path up to the robot tip
-                self.draw_path(self.interpolated_points, closest_index)
-
-            # Get the current point on the centerline using the closest_index
-            current_point = self.interpolated_points[closest_index]
-
-            # Compute the curvilinear abscissa
-            self.current_ca = self.curvilinear_abscissa(current_point)
-
+        if self.all_branches_bool == "1":
+            self.auto_update_tip_position(dt)
         else:
-            # Update the robot tip position based on the transformation matrix
-            if self.connected == True:
-                try:
-                    """ "
-                    To draw get o_T_fs as
-                    o_T_fs = o_T_w * w_T_c * c_T_fs
-                    """
-                    # Convert string to numpy array and multiply matrices
-                    w_T_c_matrix = self.w_T_c
-                    o_T_w_matrix = self.o_T_w
-                    fs_T_c_matrix = self.fsi_T_ci
-                    c_T_fs_matrix = np.linalg.inv(fs_T_c_matrix)
+            if self.live_mode == False:
+                # Define the speed of movement along the line
+                movement_speed = 5  # Adjust as needed
 
-                    # Compute the robot tip position
-                    o_T_c_matrix = np.dot(o_T_w_matrix, w_T_c_matrix)
-                    o_T_fs_matrix = np.dot(o_T_c_matrix, c_T_fs_matrix)
-                    self.o_T_fs = o_T_fs_matrix
-                    translation = o_T_fs_matrix[:3, 3]
+                # Calculate distances from self.robot_tip to each point in self.interpolated_points
+                distances = np.linalg.norm(
+                    self.interpolated_points - self.robot_tip, axis=1
+                )
+                current_index = np.argmin(distances)
 
-                    # Update the robot tip position
-                    self.robot_tip = translation
-                    print(f"Robot tip position: {self.robot_tip}")
+                if forward:
+                    # Check if the robot tip is at the last point
+                    if current_index >= len(self.interpolated_points) - 1:
+                        print("[INFO] Robot tip reached the end of the path")
+                        return  # Stop moving forward
+                    next_index = current_index + 1
+                else:
+                    # Check if the robot tip is at the first point
+                    if current_index == 0:
+                        print("[INFO] Robot tip reached the start of the path")
+                        return  # Stop moving backward
+                    next_index = current_index - 1
 
-                except (SyntaxError, AttributeError) as e:
-                    print(f"Error in update_robot_tip_position: {e}")
-                    pass
+                # Calculate the direction and distance to the next point
+                direction = (
+                    self.interpolated_points[next_index]
+                    - self.interpolated_points[current_index]
+                )
+                distance_to_next_point = np.linalg.norm(direction)
+                direction = (
+                    direction / distance_to_next_point
+                )  # Normalize the direction vector
+
+                # Calculate the movement step
+                step_size = movement_speed * dt
+                if step_size > distance_to_next_point:
+                    step_size = distance_to_next_point  # Limit step to not overshoot the next point
+
+                # Update the position
+                new_position = self.robot_tip + direction * step_size
+                self.robot_tip = new_position
+
+                # Find the index of the closest point to the robot tip
+                distances = np.linalg.norm(
+                    self.interpolated_points - self.robot_tip, axis=1
+                )
+                closest_index = np.argmin(distances)
+
+                if self.view_mode == "tp":
+                    # Redraw the path up to the robot tip
+                    self.draw_path(self.interpolated_points, closest_index)
+
+                # Get the current point on the centerline using the closest_index
+                current_point = self.interpolated_points[closest_index]
+
+                # Compute the curvilinear abscissa
+                self.current_ca = self.curvilinear_abscissa(current_point)
+
+            else:
+                # Update the robot tip position based on the transformation matrix
+                if self.connected == True:
+                    try:
+                        """ "
+                        To draw get o_T_fs as
+                        o_T_fs = o_T_w * w_T_c * c_T_fs
+                        """
+                        # Convert string to numpy array and multiply matrices
+                        w_T_c_matrix = self.w_T_c
+                        o_T_w_matrix = self.o_T_w
+                        fs_T_c_matrix = self.fsi_T_ci
+                        c_T_fs_matrix = np.linalg.inv(fs_T_c_matrix)
+
+                        # Compute the robot tip position
+                        o_T_c_matrix = np.dot(o_T_w_matrix, w_T_c_matrix)
+                        o_T_fs_matrix = np.dot(o_T_c_matrix, c_T_fs_matrix)
+                        self.o_T_fs = o_T_fs_matrix
+                        translation = o_T_fs_matrix[:3, 3]
+
+                        # Update the robot tip position
+                        self.robot_tip = translation
+                        print(f"Robot tip position: {self.robot_tip}")
+
+                    except (SyntaxError, AttributeError) as e:
+                        print(f"Error in update_robot_tip_position: {e}")
+                        pass
 
         # Update the visual representation
         self.draw_robot_tip()
@@ -1031,7 +1178,7 @@ Viewer.ViewpointZ: -1.8
         self.robot_tip_node = robot_tip_node
 
         # Draw the light cone geometry (TODO: fix this)
-        self.draw_light_cone_geom()
+        # self.draw_light_cone_geom()
 
     def draw_path(self, points, up_to_index):
         # Ensure the up_to_index is within bounds
