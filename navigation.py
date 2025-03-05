@@ -7,8 +7,10 @@ import threading
 import time
 from direct.showbase.ShowBase import ShowBase  # type: ignore
 import configparser
-from scipy.spatial.transform import Rotation
-
+from scipy.spatial.transform import Rotation, Slerp
+import numpy as np
+from scipy.spatial import cKDTree
+import heapq
 
 # Read width and height from config.ini
 cfg = configparser.ConfigParser()
@@ -37,6 +39,7 @@ from set_FS_frame import (
     smooth_vectors,
     save_frames_single_branch,
     convert_fs_to_tum,
+    interpolate_fs_frames,
 )
 
 # TODO: Check all the measurements units and make sure they are consistent
@@ -63,6 +66,12 @@ parser.add_argument(
     default=False,
     help="Set record mode: True (record) or False (no record)",
 )
+parser.add_argument(
+    "-autopilot",
+    action="store_true",
+    help="Enable continuous forward motion (autopilot)",
+)
+
 
 args = parser.parse_args()
 
@@ -91,6 +100,7 @@ class MyApp(ShowBase):
         self.sim_server_bool = self.app_config["SLAM"]["sim_server_bool"]
 
         self.depth_bool = self.app_config["CAMERA"]["depth_bool"]
+        self.save_vis_depth = self.app_config["CAMERA"]["save_vis_depth_bool"]
 
         # Define path of the .vtp file
         self.path_path = self.data_folder + self.path_name
@@ -99,10 +109,18 @@ class MyApp(ShowBase):
         self.view_mode = args.view
         self.live_mode = args.live
         self.record_mode = args.record
+        self.autopilot = args.autopilot
         print("\nCommand line arguments:")
-        print(f"-View mode: {self.view_mode}")
-        print(f"-Live mode: {self.live_mode}")
-        print(f"-Record mode: {self.record_mode}\n")
+        print(f"-View: {self.view_mode}")
+        print(f"-Live: {self.live_mode}")
+        print(f"-Record: {self.record_mode}")
+        print(f"-Autopilot: {self.autopilot}\n")
+
+        if self.live_mode and self.autopilot:
+            print(
+                "[WARNING] Autopilot cannot be used in live mode. Disabling autopilot."
+            )
+            self.autopilot = False
 
         # Quit app on "q"
         self.accept("q", self.quit_app)
@@ -143,6 +161,9 @@ class MyApp(ShowBase):
         self.depthCam = self.makeCamera(self.depthBuffer, lens=lens, scene=self.render)
         # Parent the depth camera to the main camera to follow its movement.
         self.depthCam.reparentTo(self.cam)
+
+        print(f"[INFO] Save depth map: {self.depth_bool}")
+        print(f"[INFO] Save visual depth map: {self.save_vis_depth}")
         # --- End of Depth Setup ---
 
         # Set background color
@@ -188,9 +209,7 @@ class MyApp(ShowBase):
 
         if self.all_branches_bool == "1":
             # Crate a trajectory traversing all the branches in the folder forward and backward
-            print(
-                "[INFO] all_branches_bool is True: Building final path from all branches..."
-            )
+            print("[INFO] Building final path combining all branches...")
             fs_frames, points = self.build_all_branches_path()
 
             if not fs_frames:
@@ -198,7 +217,7 @@ class MyApp(ShowBase):
                 sys.exit(1)
 
             self.setup_line_all_branches(fs_frames)
-            print("[INFO] Final path built successfully\n")
+            print("[INFO] Final path built successfully")
             self.points = points
 
         else:
@@ -229,7 +248,12 @@ class MyApp(ShowBase):
         elif self.view_mode == "tp":
             self.setup_tp()
 
-        print("[INFO] Initialization done\n")
+        print("[INFO] Initialization done")
+
+        if self.autopilot:
+            print(
+                "[INFO] Autopilot enabled. Starting continuous forward motion for full lungs inspection..."
+            )
 
         if self.live_mode == True:
 
@@ -506,8 +530,12 @@ Viewer.ViewpointZ: -1.8
         ]  # Setting the first point as the start
         self.robot_tip_node = None
 
-        # Compute line length
-        self.line_length = self.curvilinear_abscissa(self.end_point)
+        # Compute total line length without the curvilinear abscissa function but adding all the distances between consecutive points from the first to the last
+        self.line_length = 0
+        for i in range(len(self.interpolated_points) - 1):
+            segment = self.interpolated_points[i + 1] - self.interpolated_points[i]
+            self.line_length += np.linalg.norm(segment)
+
         print("[INFO] Centerline length: ", self.line_length, "mm")
 
         # Set current index to 0
@@ -629,7 +657,15 @@ Viewer.ViewpointZ: -1.8
             branch_path = os.path.join(self.data_folder, branch_file)
             print(f"[INFO] Processing branch file: {branch_path}")
             branch_model = pv.read(branch_path)
-            branch_points = [tuple(point) for point in branch_model.points]
+            # Discard the first n_d points of each branch
+            n_d = 0
+            if len(branch_model.points) > n_d:
+                branch_points = [tuple(point) for point in branch_model.points[n_d:]]
+            else:
+                print(
+                    f"[WARNING] Branch has fewer than {n_d} points ({len(branch_model.points)}). Skipping branch."
+                )
+                continue
 
             # Interpolate the branch points
             interp_points = interpolate_line(branch_points, num_points=1000)
@@ -644,37 +680,120 @@ Viewer.ViewpointZ: -1.8
                 fs_frame[:3, 1] = branch_normals[i]
                 fs_frame[:3, 2] = branch_binormals[i]
                 fs_frame[:3, 3] = pt
-                final_frames.append(fs_frame)
-                all_points.append(pt)  # Add point to all_points list
+
+                if len(final_frames) > 0 and i == 0:
+                    # Interpolate the first frame with the last frame added to the final_frames list
+                    # This is to glue the branches together smoothly
+                    extra_frames = interpolate_fs_frames(
+                        final_frames[-1], fs_frame, num_points=10
+                    )
+                    final_frames.extend(extra_frames)
+                    all_points.extend([f[:3, 3] for f in extra_frames])
+                else:
+                    final_frames.append(fs_frame)
+                    all_points.append(pt)
 
             # RETURN TRAVEL: Append the same points in reverse order.
-            # (Optionally, you might want to invert the tangent to reflect the return motion.)
             # Skip the last point of the forward travel when creating the return path
             for i, pt in enumerate(interp_points[-2::-1]):
                 fs_frame = np.eye(4)
                 # Adjust the index calculation since we're starting from second-to-last point
                 idx = len(interp_points) - 2 - i
-                fs_frame[:3, 0] = -branch_tangents[idx]  # Invert tangent for return
+                fs_frame[:3, 0] = branch_tangents[idx]  # Invert tangent for return
                 fs_frame[:3, 1] = branch_normals[idx]
                 fs_frame[:3, 2] = branch_binormals[idx]
                 fs_frame[:3, 3] = pt
                 final_frames.append(fs_frame)
                 all_points.append(pt)  # Add point to all_points list
 
+        # Reduce the total number of points
+        print(f"[INFO] Initial number of points: {len(final_frames)}")
+        divide_factor = 4
+        final_frames = final_frames[::divide_factor]
+        all_points = all_points[::divide_factor]
+        print(f"[INFO] Reduced number of points: {len(final_frames)}")
         return final_frames, all_points
 
-    def curvilinear_abscissa(self, point):
-        # Find the closest point to the given point
-        distances = np.linalg.norm(self.interpolated_points - point, axis=1)
-        closest_index = np.argmin(distances)
+    def curvilinear_abscissa(self, current_point):
+        if self.all_branches_bool == "1" and self.record_mode == True:
+            """
+            Compute the curvilinear abscissa (distance) from the current_point to the first point
+            by finding the shortest path along the graph of points. The graph is built by connecting
+            points that are within a threshold distance of each other (to avoid jumping between branches).
+            It's very slow so it's only used in record mode when data is being saved.
 
-        # Calculate cumulative distance from start to the closest point
-        total_distance = 0
-        for i in range(closest_index):
-            segment = self.interpolated_points[i + 1] - self.interpolated_points[i]
-            total_distance += np.linalg.norm(segment)
+            Parameters:
+            current_point: (3,) array_like representing the current robot tip position.
 
-        return total_distance
+            Returns:
+            The shortest-path distance from the current_point to the first point in self.interpolated_points.
+            """
+            # return 0.0
+            points = self.interpolated_points  # assumed shape (N, 3)
+            n = len(points)
+            if n < 2:
+                return 0.0
+
+            # Compute a threshold distance based on the average distance between consecutive points.
+            diffs = points[1:] - points[:-1]
+            mean_distance = np.mean(np.linalg.norm(diffs, axis=1))
+            threshold = (
+                2 * mean_distance
+            )  # factor can be tuned; it prevents jumps between distant branches
+
+            # Build a KD-tree for efficient neighbor search.
+            tree = cKDTree(points)
+
+            # Build a graph (as an adjacency list) connecting each point to its neighbors within threshold.
+            graph = {i: [] for i in range(n)}
+            for i in range(n):
+                # Find all neighbor indices within the threshold radius.
+                neighbors = tree.query_ball_point(points[i], r=threshold)
+                for j in neighbors:
+                    if j == i:
+                        continue
+                    # Use the Euclidean distance as the edge weight.
+                    dist_ij = np.linalg.norm(points[i] - points[j])
+                    graph[i].append((j, dist_ij))
+
+            # Identify the node corresponding to the current point.
+            current_index = np.argmin(np.linalg.norm(points - current_point, axis=1))
+            target_index = 0  # we want the distance to the first point
+
+            # Run Dijkstra's algorithm from current_index to target_index.
+            distances = {i: float("inf") for i in range(n)}
+            distances[current_index] = 0.0
+            pq = [(0.0, current_index)]
+            while pq:
+                d, i = heapq.heappop(pq)
+                if i == target_index:
+                    break
+                if d > distances[i]:
+                    continue
+                for neighbor, weight in graph[i]:
+                    new_dist = d + weight
+                    if new_dist < distances[neighbor]:
+                        distances[neighbor] = new_dist
+                        heapq.heappush(pq, (new_dist, neighbor))
+
+            return distances[target_index]
+
+        else:
+            """
+            Simpler and faster method to compute the curvilinear abscissa (distance) from the current_point to the first point.
+            This works only for single branches and does not consider the possibility of multiple branches with forward and return paths.
+            """
+            # Find the closest point to the given point
+            distances = np.linalg.norm(self.interpolated_points - current_point, axis=1)
+            closest_index = np.argmin(distances)
+
+            # Calculate cumulative distance from start to the closest point
+            total_distance = 0
+            for i in range(closest_index):
+                segment = self.interpolated_points[i + 1] - self.interpolated_points[i]
+                total_distance += np.linalg.norm(segment)
+
+            return total_distance
 
     def get_vtp_line_points(self):
         # Load the .vtp file
@@ -687,40 +806,6 @@ Viewer.ViewpointZ: -1.8
         return points
 
     ## UPDATE METHODS
-    def auto_update_tip_position(self, dt):
-        """
-        Automatically updates the robot tip position along the centerline
-        To be used when all_branches_bool is set to True
-        """
-        # Check if the robot tip is at the last point
-        if self.current_index >= len(self.interpolated_points) - 1:
-            print("[INFO] Robot tip reached the end of the path")
-            return  # Stop moving
-
-        # Define the speed of movement along the line
-        movement_speed = 5000  # 5  # Adjust as needed
-
-        # Do not use distances, simply move ot the next point in the list
-        direction = (
-            self.interpolated_points[self.next_index]
-            - self.interpolated_points[self.current_index]
-        )
-        distance_to_next_point = np.linalg.norm(direction)
-        direction = direction / distance_to_next_point  # Normalize the direction vector
-
-        # Calculate the movement step
-        step_size = movement_speed * dt
-        if step_size > distance_to_next_point:
-            step_size = distance_to_next_point
-
-        # Update the position
-        new_position = self.robot_tip + direction * step_size
-        self.robot_tip = new_position
-
-        # Update the current and next indices
-        self.current_index = self.next_index
-        self.next_index += 1
-
     def update_camera_to_robot_tip(self):
         # Find the index of the closest point to the robot tip
         distances = np.linalg.norm(self.interpolated_points - self.robot_tip, axis=1)
@@ -752,97 +837,188 @@ Viewer.ViewpointZ: -1.8
         )
 
     def update_robot_tip_position(self, dt, forward=True):
-        if self.all_branches_bool == "1":
-            self.auto_update_tip_position(dt)
-        else:
-            if self.live_mode == False:
-                # Define the speed of movement along the line
-                movement_speed = 5  # Adjust as needed
 
-                # Calculate distances from self.robot_tip to each point in self.interpolated_points
-                distances = np.linalg.norm(
-                    self.interpolated_points - self.robot_tip, axis=1
-                )
-                current_index = np.argmin(distances)
+        if self.live_mode == False:
+            # Define the speed of movement along the line
+            movement_speed = 5  # Adjust as needed
 
-                if forward:
-                    # Check if the robot tip is at the last point
-                    if current_index >= len(self.interpolated_points) - 1:
-                        print("[INFO] Robot tip reached the end of the path")
-                        return  # Stop moving forward
-                    next_index = current_index + 1
-                else:
-                    # Check if the robot tip is at the first point
-                    if current_index == 0:
-                        print("[INFO] Robot tip reached the start of the path")
-                        return  # Stop moving backward
-                    next_index = current_index - 1
+            # Calculate distances from self.robot_tip to each point in self.interpolated_points
+            distances = np.linalg.norm(
+                self.interpolated_points - self.robot_tip, axis=1
+            )
+            current_index = np.argmin(distances)
 
-                # Calculate the direction and distance to the next point
-                direction = (
-                    self.interpolated_points[next_index]
-                    - self.interpolated_points[current_index]
-                )
-                distance_to_next_point = np.linalg.norm(direction)
-                direction = (
-                    direction / distance_to_next_point
-                )  # Normalize the direction vector
-
-                # Calculate the movement step
-                step_size = movement_speed * dt
-                if step_size > distance_to_next_point:
-                    step_size = distance_to_next_point  # Limit step to not overshoot the next point
-
-                # Update the position
-                new_position = self.robot_tip + direction * step_size
-                self.robot_tip = new_position
-
-                # Find the index of the closest point to the robot tip
-                distances = np.linalg.norm(
-                    self.interpolated_points - self.robot_tip, axis=1
-                )
-                closest_index = np.argmin(distances)
-
-                if self.view_mode == "tp":
-                    # Redraw the path up to the robot tip
-                    self.draw_path(self.interpolated_points, closest_index)
-
-                # Get the current point on the centerline using the closest_index
-                current_point = self.interpolated_points[closest_index]
-
-                # Compute the curvilinear abscissa
-                self.current_ca = self.curvilinear_abscissa(current_point)
-
+            if forward:
+                # Check if the robot tip is at the last point
+                if current_index >= len(self.interpolated_points) - 1:
+                    print("[INFO] Robot tip reached the end of the path")
+                    return  # Stop moving forward
+                next_index = current_index + 1
             else:
-                # Update the robot tip position based on the transformation matrix
-                if self.connected == True:
-                    try:
-                        """ "
-                        To draw get o_T_fs as
-                        o_T_fs = o_T_w * w_T_c * c_T_fs
-                        """
-                        # Convert string to numpy array and multiply matrices
-                        w_T_c_matrix = self.w_T_c
-                        o_T_w_matrix = self.o_T_w
-                        fs_T_c_matrix = self.fsi_T_ci
-                        c_T_fs_matrix = np.linalg.inv(fs_T_c_matrix)
+                # Check if the robot tip is at the first point
+                if current_index == 0:
+                    print("[INFO] Robot tip reached the start of the path")
+                    return  # Stop moving backward
+                next_index = current_index - 1
 
-                        # Compute the robot tip position
-                        o_T_c_matrix = np.dot(o_T_w_matrix, w_T_c_matrix)
-                        o_T_fs_matrix = np.dot(o_T_c_matrix, c_T_fs_matrix)
-                        self.o_T_fs = o_T_fs_matrix
-                        translation = o_T_fs_matrix[:3, 3]
+            # Calculate the direction and distance to the next point
+            direction = (
+                self.interpolated_points[next_index]
+                - self.interpolated_points[current_index]
+            )
+            distance_to_next_point = np.linalg.norm(direction)
+            direction = (
+                direction / distance_to_next_point
+            )  # Normalize the direction vector
 
-                        # Update the robot tip position
-                        self.robot_tip = translation
-                        print(f"Robot tip position: {self.robot_tip}")
+            # Calculate the movement step
+            step_size = movement_speed * dt
+            if step_size > distance_to_next_point:
+                step_size = (
+                    distance_to_next_point  # Limit step to not overshoot the next point
+                )
 
-                    except (SyntaxError, AttributeError) as e:
-                        print(f"Error in update_robot_tip_position: {e}")
-                        pass
+            # Update the position
+            new_position = self.robot_tip + direction * step_size
+            self.robot_tip = new_position
+
+            # Find the index of the closest point to the robot tip
+            distances = np.linalg.norm(
+                self.interpolated_points - self.robot_tip, axis=1
+            )
+            closest_index = np.argmin(distances)
+
+            if self.view_mode == "tp":
+                # Redraw the path up to the robot tip
+                self.draw_path(self.interpolated_points, closest_index)
+
+            # Get the current point on the centerline using the closest_index
+            current_point = self.interpolated_points[closest_index]
+
+            # Compute the curvilinear abscissa
+            self.current_ca = self.curvilinear_abscissa(current_point)
+
+        else:
+            # Update the robot tip position based on the transformation matrix
+            if self.connected == True:
+                try:
+                    """ "
+                    To draw get o_T_fs as
+                    o_T_fs = o_T_w * w_T_c * c_T_fs
+                    """
+                    # Convert string to numpy array and multiply matrices
+                    w_T_c_matrix = self.w_T_c
+                    o_T_w_matrix = self.o_T_w
+                    fs_T_c_matrix = self.fsi_T_ci
+                    c_T_fs_matrix = np.linalg.inv(fs_T_c_matrix)
+
+                    # Compute the robot tip position
+                    o_T_c_matrix = np.dot(o_T_w_matrix, w_T_c_matrix)
+                    o_T_fs_matrix = np.dot(o_T_c_matrix, c_T_fs_matrix)
+                    self.o_T_fs = o_T_fs_matrix
+                    translation = o_T_fs_matrix[:3, 3]
+
+                    # Update the robot tip position
+                    self.robot_tip = translation
+                    print(f"Robot tip position: {self.robot_tip}")
+
+                except (SyntaxError, AttributeError) as e:
+                    print(f"Error in update_robot_tip_position: {e}")
+                    pass
 
         # Update the visual representation
         self.draw_robot_tip()
+
+    def update_tip_position_all_branches(self, dt, forward):
+        """
+        Automatically updates the robot tip position along the centerline for the
+        all_branches_bool mode. If the translation difference is near zero (i.e. the
+        two FS frames share the same position but differ in orientation), then
+        perform an orientation interpolation via SLERP.
+        TODO: it can probably be deleted and merged inside update_robot_tip_position
+        """
+
+        # Determine the next index based on the direction.
+        if forward:
+            if self.current_index >= len(self.interpolated_points) - 1:
+                print("[INFO] Robot tip reached the end of the path")
+                if self.autopilot:
+                    # Deactivate autopilot mode
+                    self.autopilot = False
+                    print("[INFO] Autopilot mode deactivated")
+                    print("[INFO] Exiting application...")
+                    self.quit_app()
+                return  # Stop moving forward
+            next_index = self.current_index + 1
+        else:
+            if self.current_index <= 0:
+                print("[INFO] Robot tip reached the start of the path")
+                return  # Stop moving backward
+            next_index = self.current_index - 1
+
+        # Compute translation difference between current and next FS frames.
+        current_pos = self.interpolated_points[self.current_index]
+        next_pos = self.interpolated_points[next_index]
+        delta_pos = next_pos - current_pos
+        dist = np.linalg.norm(delta_pos)
+
+        # If translation difference is significant, use normal update.
+        if dist > 1e-5:
+            # Normal update: move toward next point along the translation.
+            direction = delta_pos / dist  # Safe normalization
+            # Define a movement step (you can adjust movement_speed as needed)
+            movement_speed = 5000  # units per second
+            step = movement_speed * dt
+            # Don't overshoot the next point.
+            if step > dist:
+                step = dist
+            new_pos = self.robot_tip + direction * step
+            self.robot_tip = new_pos
+
+            # When we've nearly reached the next point, snap to it and reset interpolation.
+            if np.linalg.norm(new_pos - next_pos) < 1e-3:
+                self.robot_tip = next_pos
+                self.interp_alpha = 0.0  # reset orientation interpolation
+                self.current_index = next_index
+        else:
+            print(
+                "[INFO] Translation difference is near zero. Update only tip orientation."
+            )
+            # Orientation interpolation via SLERP
+            R_current = self.get_rotation_from_index(self.current_index)
+            R_next = self.get_rotation_from_index(next_index)
+
+            # Create Slerp instance with key times and rotations
+            key_times = [0, 1]  # Start and end times
+            rotations = Rotation.from_matrix([R_current, R_next])
+            slerp = Slerp(key_times, rotations)
+
+            # Use the instance to interpolate at a specific time
+            R_interp = slerp([self.interp_alpha])[0].as_matrix()
+
+            self.interp_alpha += 0.1
+            if self.interp_alpha >= 1.0:
+                self.interp_alpha = 0.0
+                self.current_index = next_index
+
+            # Update the robot tip position
+            self.robot_tip = self.interpolated_points[self.current_index]
+
+        if self.view_mode == "tp":
+            # Redraw the path up to the robot tip
+            self.draw_path(self.interpolated_points, self.current_index)
+
+        # Compute the curvilinear abscissa
+        current_point = self.interpolated_points[self.current_index]
+        self.current_ca = self.curvilinear_abscissa(current_point)
+
+        # Update next index based on the new current_index.
+        if forward:
+            self.next_index = min(
+                self.current_index + 1, len(self.interpolated_points) - 1
+            )
+        else:
+            self.next_index = max(self.current_index - 1, 0)
 
     def update_key_map(self, controlName, controlState):
         self.keyMap[controlName] = controlState
@@ -865,10 +1041,22 @@ Viewer.ViewpointZ: -1.8
 
         # Update the robot tip position
         if self.live_mode == False:
-            if self.keyMap["robot_tip_forward"]:
-                self.update_robot_tip_position(dt, forward=True)
-            if self.keyMap["robot_tip_backward"]:
-                self.update_robot_tip_position(dt, forward=False)
+            if self.autopilot:
+                if self.all_branches_bool == "1":
+                    self.update_tip_position_all_branches(dt, forward=True)
+                else:
+                    self.update_robot_tip_position(dt, forward=True)
+            else:
+                if self.keyMap["robot_tip_forward"]:
+                    if self.all_branches_bool == "1":
+                        self.update_tip_position_all_branches(dt, forward=True)
+                    else:
+                        self.update_robot_tip_position(dt, forward=True)
+                if self.keyMap["robot_tip_backward"]:
+                    if self.all_branches_bool == "1":
+                        self.update_tip_position_all_branches(dt, forward=True)
+                    else:
+                        self.update_robot_tip_position(dt, forward=True)
         else:
             self.update_robot_tip_position(dt)
 
@@ -915,12 +1103,19 @@ Viewer.ViewpointZ: -1.8
                 if hasattr(self, "c_T_w") and not np.array_equal(self.w_T_c, np.eye(4)):
                     print(f"\rReceived: {self.w_T_c}\033[F", end="", flush=True)
             else:
-                if hasattr(self, "current_ca"):
+                if self.autopilot:
                     print(
-                        f"\rCurrent curvilinear abscissa: {self.current_ca:.2f} mm",
+                        f"\rCurrent index: {self.current_index} / {len(self.interpolated_points)}",
                         end="",
                         flush=True,
                     )
+                else:
+                    if hasattr(self, "current_ca") and self.all_branches_bool == "0":
+                        print(
+                            f"\rCurrent curvilinear abscissa: {self.current_ca:.2f} mm",
+                            end="",
+                            flush=True,
+                        )
             # Add small delay to prevent high CPU usage
             time.sleep(0.25)
 
@@ -1335,7 +1530,7 @@ Viewer.ViewpointZ: -1.8
 
         # --- Save Depth Image (if enabled) ---
         depth_filename = ""
-        if self.depth_bool:
+        if self.depth_bool == "1":
             depth = self.get_depth_image()  # normalized, from 0 to 1
             if depth is not None:
                 near_plane = float(
@@ -1366,44 +1561,45 @@ Viewer.ViewpointZ: -1.8
                 cv2.imwrite(depth_filepath, raw_depth)
 
                 # For visualization: create a color version with grid overlay.
-                vis_depth = cv2.normalize(
-                    depth_linear, None, 0, 255, cv2.NORM_MINMAX
-                ).astype(np.uint8)
-                vis_depth_color = cv2.cvtColor(vis_depth, cv2.COLOR_GRAY2BGR)
-                block_size = 50
-                h, w = vis_depth_color.shape[:2]
-                for y in range(0, h, block_size):
-                    for x in range(0, w, block_size):
-                        block = depth_linear[
-                            y : min(y + block_size, h), x : min(x + block_size, w)
-                        ]
-                        avg_depth = np.mean(block)
-                        text = f"{avg_depth:.2f}"
-                        cv2.putText(
-                            vis_depth_color,
-                            text,
-                            (x + 5, y + 20),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.5,
-                            (0, 255, 0),
-                            1,
-                            cv2.LINE_AA,
-                        )
-                        cv2.rectangle(
-                            vis_depth_color,
-                            (x, y),
-                            (min(x + block_size, w), min(y + block_size, h)),
-                            (255, 0, 0),
-                            1,
-                        )
-                # Save visualization (if desired)
-                vis_filename = (
-                    f"{timestamp_str}_vis_ca_{self.current_ca:.2f}_mm.png"
-                    if hasattr(self, "current_ca")
-                    else f"{timestamp_str}_vis.png"
-                )
-                vis_filepath = os.path.join(self.depth_dir, vis_filename)
-                cv2.imwrite(vis_filepath, vis_depth_color)
+                if self.save_vis_depth == "1":
+                    vis_depth = cv2.normalize(
+                        depth_linear, None, 0, 255, cv2.NORM_MINMAX
+                    ).astype(np.uint8)
+                    vis_depth_color = cv2.cvtColor(vis_depth, cv2.COLOR_GRAY2BGR)
+                    block_size = 50
+                    h, w = vis_depth_color.shape[:2]
+                    for y in range(0, h, block_size):
+                        for x in range(0, w, block_size):
+                            block = depth_linear[
+                                y : min(y + block_size, h), x : min(x + block_size, w)
+                            ]
+                            avg_depth = np.mean(block)
+                            text = f"{avg_depth:.2f}"
+                            cv2.putText(
+                                vis_depth_color,
+                                text,
+                                (x + 5, y + 20),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.5,
+                                (0, 255, 0),
+                                1,
+                                cv2.LINE_AA,
+                            )
+                            cv2.rectangle(
+                                vis_depth_color,
+                                (x, y),
+                                (min(x + block_size, w), min(y + block_size, h)),
+                                (255, 0, 0),
+                                1,
+                            )
+                    # Save visualization (if desired)
+                    vis_filename = (
+                        f"{timestamp_str}_vis_ca_{self.current_ca:.2f}_mm.png"
+                        if hasattr(self, "current_ca")
+                        else f"{timestamp_str}_vis.png"
+                    )
+                    vis_filepath = os.path.join(self.depth_dir, vis_filename)
+                    cv2.imwrite(vis_filepath, vis_depth_color)
 
                 # Update association file using the raw depth image filename.
 
@@ -1412,7 +1608,7 @@ Viewer.ViewpointZ: -1.8
 
         # --- Update Association File ---
         with open(self.assoc_file, "a") as f:
-            if self.depth_bool and depth_filename:
+            if self.depth_bool == "1" and depth_filename:
                 f.write(
                     f"{timestamp_str} rgb/{rgb_filename} {timestamp_str} depth/{depth_filename}\n"
                 )
@@ -1441,7 +1637,10 @@ Viewer.ViewpointZ: -1.8
 
         if self.record_mode and hasattr(self, "record_dir"):
             # Extract centerline name from path (for naming purposes).
-            centerline_name = os.path.splitext(os.path.basename(self.path_name))[0]
+            if self.all_branches_bool == "1":
+                centerline_name = "ball"
+            else:
+                centerline_name = os.path.splitext(os.path.basename(self.path_name))[0]
 
             # Build RGB Video
             rgb_video_name = f"record_rgb_{centerline_name}_{time.time()}"
@@ -1494,7 +1693,7 @@ Viewer.ViewpointZ: -1.8
             print(f"[INFO] RGB video saved as {os.path.basename(rgb_video)}")
 
             # Build Depth Video (if enabled)
-            if self.depth_bool:
+            if self.depth_bool == "1" and self.save_vis_depth == "1":
                 depth_video_name = f"record_depth_{centerline_name}_{time.time()}"
                 depth_video = os.path.join(self.record_dir, f"{depth_video_name}.mp4")
                 if sys.platform.startswith("linux"):
@@ -1582,6 +1781,9 @@ Viewer.ViewpointZ: -1.8
 
             # Copy Everything to Permanent Storage
             # Use self.videos_dir from config to determine final destination.
+            print(
+                "[INFO] Copying all recorded data from temp folder to permanent storage..."
+            )
             final_path = os.path.join(
                 self.data_folder,
                 self.videos_dir,
@@ -1617,6 +1819,17 @@ Viewer.ViewpointZ: -1.8
         depth_image = np.flipud(depth_image)
 
         return depth_image
+
+    def get_rotation_from_index(self, index):
+        """
+        Returns a 3x3 rotation matrix from the FS frame at the given index.
+        The rotation is built from the tangent, normal, and binormal vectors.
+        """
+        R = np.eye(3)
+        R[:, 0] = self.tangents[index]
+        R[:, 1] = self.normals[index]
+        R[:, 2] = self.binormals[index]
+        return R
 
 
 if __name__ == "__main__":

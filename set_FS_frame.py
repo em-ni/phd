@@ -5,7 +5,7 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 from scipy.interpolate import interp1d
 import numpy as np
-from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Rotation, Slerp
 
 """
 This script reads a centerline .vtp file and computes the Frenet-Serret frame at each point.
@@ -56,6 +56,32 @@ def preprocess_points(points, epsilon=1e-5):
         if np.linalg.norm(point - unique_points[-1]) > epsilon:
             unique_points.append(point)
     return np.array(unique_points)
+
+
+def interpolate_fs_frames(fs1, fs2, num_points=10):
+    """
+    Interpolates between two FS frames by linearly interpolating the translations and spherically interpolating the rotations.
+    """
+    R1, t1 = fs1[:3, :3], fs1[:3, 3]
+    R2, t2 = fs2[:3, :3], fs2[:3, 3]
+
+    # Linear interpolation of translations:
+    translations = np.linspace(t1, t2, num_points)
+
+    # Spherical linear interpolation (slerp) for rotations:
+    key_times = [0, 1]
+    rotations = Rotation.from_matrix([R1, R2])
+    slerp = Slerp(key_times, rotations)
+    interp_times = np.linspace(0, 1, num_points)
+    interp_rotations = slerp(interp_times).as_matrix()
+
+    fs_frames = []
+    for i in range(num_points):
+        fs = np.eye(4)
+        fs[:3, :3] = interp_rotations[i]
+        fs[:3, 3] = translations[i]
+        fs_frames.append(fs)
+    return fs_frames
 
 
 def interpolate_line(points, num_points=None):
