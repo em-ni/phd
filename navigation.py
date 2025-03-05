@@ -216,7 +216,7 @@ class MyApp(ShowBase):
                 print("[ERROR] No branches found. Exiting...")
                 sys.exit(1)
 
-            self.setup_line_all_branches(fs_frames)
+            self.setup_line_multibranch(fs_frames)
             print("[INFO] Final path built successfully")
             self.points = points
 
@@ -513,7 +513,7 @@ Viewer.ViewpointZ: -1.8
         self.line_length = self.curvilinear_abscissa(self.end_point)
         print("[INFO] Centerline length: ", self.line_length, "mm")
 
-    def setup_line_all_branches(self, fs_frames):
+    def setup_line_multibranch(self, fs_frames):
         # Extract translation and axes from each FS frame:
         self.interpolated_points = np.array([fs[:3, 3] for fs in fs_frames])
         self.tangents = np.array([fs[:3, 0] for fs in fs_frames])
@@ -1767,8 +1767,13 @@ Viewer.ViewpointZ: -1.8
                 print(f"[INFO] Depth video saved as {os.path.basename(depth_video)}")
 
             # Save trajectory in TUM format
-            vtp_trajectory = os.path.join(self.data_folder, self.path_name)
-            fs_trajectory = save_frames_single_branch(vtp_trajectory)
+            # TODO: save trajectory in case of all branches used
+            if self.all_branches_bool == "1":
+                fs_trajectory = self.save_fs_frames_multibranch()
+            else:
+                vtp_trajectory = os.path.join(self.data_folder, self.path_name)
+                fs_trajectory = save_frames_single_branch(vtp_trajectory)
+
             gt_file_wTc = os.path.join(self.record_dir, "gt", "gt_wTc.txt")
             gt_file_cTw = os.path.join(self.record_dir, "gt", "gt_cTw.txt")
 
@@ -1830,6 +1835,32 @@ Viewer.ViewpointZ: -1.8
         R[:, 1] = self.normals[index]
         R[:, 2] = self.binormals[index]
         return R
+
+    def save_fs_frames_multibranch(self, file_name="ball_fs.txt"):
+        """
+        Save the FS frames in a format that can be read by the app.
+        """
+        # Save the FS frames in a format that can be read by the app.
+
+        fs_frames_path = os.path.join(self.data_folder, "centerlines", file_name)
+        # For each point, save the coordinates and the respective FS frame
+        with open(fs_frames_path, "w") as file:
+            for idx in range(len(self.interpolated_points)):
+                point = self.interpolated_points[idx]
+                tangent = self.tangents[idx]
+                normal = self.normals[idx]
+                binormal = self.binormals[idx]
+
+                # Write to file
+                file.write(
+                    f"{point[0]}, {point[1]}, {point[2]}, "
+                    f"{tangent[0]}, {tangent[1]}, {tangent[2]}, "
+                    f"{normal[0]}, {normal[1]}, {normal[2]}, "
+                    f"{binormal[0]}, {binormal[1]}, {binormal[2]}\n"
+                )
+
+        print(f"[INFO] FS frames saved as {fs_frames_path}")
+        return fs_frames_path
 
 
 if __name__ == "__main__":
