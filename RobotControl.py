@@ -123,6 +123,7 @@ class RobotControl:
             stderr=subprocess.PIPE,
             text=True,
         )
+        print("Subprocess read_sensors started")
 
         # Non-blocking way to get output from the subprocess
         self.read_output_thread = threading.Thread(target=self.read_process_output)
@@ -372,7 +373,7 @@ class RobotControl:
 
         # Try to start and stop again before closing to avoid the double start problem
         self.sensor_process = subprocess.Popen(
-            ["daq/cpp/build/read_sensors"],
+            ["sensors/daq/cpp/build/read_sensors"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
