@@ -1,24 +1,3 @@
-"""
-motor_1 = Couple12.M1
-motor_2 = Couple12.M2
-motor_3 = Couple34.M1
-motor_4 = Couple34.M2
-
-up = motor_1
-down = motor_3
-right = motor_2
-left = motor_4
-
-down-up range
-motor_3      -   motor_1
-[-3000000,0) U [0,3000000]
-
-left-right range
-motor_4      -   motor_2
-[-4000000,0) U [0,4000000]
-4000000      - 0 - 4000000
-"""
-
 import collections
 import json
 import socket

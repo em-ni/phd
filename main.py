@@ -1,4 +1,4 @@
-from KeyboardController import KeyboardController
+from src.KeyboardController import KeyboardController
 
 couple12_port = "/dev/ttyACM0"
 couple34_port = "/dev/ttyACM1"

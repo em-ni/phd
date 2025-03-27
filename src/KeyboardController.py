@@ -1,5 +1,5 @@
 from pynput import keyboard
-from RobotControl import RobotControl
+from src.RobotControl import RobotControl
 
 
 class KeyboardController:

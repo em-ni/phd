@@ -1,7 +1,10 @@
+import os
 import tty
 import sys
 import termios
 import time
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from roboclaw_python.roboclaw_3 import Roboclaw
 
 # Save the original terminal settings for later restoration
