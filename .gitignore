@@ -1,1 +1,4 @@
 vision/data_collection/data/labelImg
+vision/object_detection_YOLOv3/PASCAL_VOC
+vision/yolo*.pt
+vision/runs
