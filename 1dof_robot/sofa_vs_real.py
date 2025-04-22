@@ -3,10 +3,10 @@ from sklearn.metrics import mean_squared_error
 from math import sqrt
 
 # Load the CSV files
-df_free_motion = pd.read_csv('data/free_motion/cv_output.csv')
-df_force_small_bending = pd.read_csv('data/force_small_bending/cv_output.csv')
-df_sofa_free_motion = pd.read_csv('data/sofa_free_motion/cv_output.csv')
-df_sofa_force_small_bending = pd.read_csv('data/sofa_force_small_bending/cv_output.csv')
+df_free_motion = pd.read_csv('L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/cv_output.csv')
+df_force_small_bending = pd.read_csv('L_10cm_OD_1.5mm/characterization_and_scale_force/force_small_bending/cv_output.csv')
+df_sofa_free_motion = pd.read_csv('L_10cm_OD_1.5mm/characterization_and_scale_force/sofa_free_motion/cv_output.csv')
+df_sofa_force_small_bending = pd.read_csv('L_10cm_OD_1.5mm/characterization_and_scale_force/sofa_force_small_bending/cv_output.csv')
 
 # Extract the required columns
 variable_free_motion = df_free_motion.iloc[:, 2]  # third column of free_motion

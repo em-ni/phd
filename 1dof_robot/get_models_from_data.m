@@ -8,7 +8,7 @@ close all;
 L = 8.5*1e-3; % [m]
 
 % Get data from csv file
-data = load("data/free_motion/cv_output.csv");
+data = load("L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/cv_output.csv");
 pressure_bar = data(:,1); % [Bar]  divide by 10 to get MPa
 pressure_mpa = pressure_bar / 10; % [MPa]
 pressure = pressure_mpa * 1e6; % [Pa]
@@ -40,7 +40,7 @@ mdl = fitlm(pressure_fit, curvature_fit);
 disp(mdl);
 
 % Save linear model
-save("data/free_motion/linear_model_p_vs_k.mat", "mdl");
+save("L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/linear_model_p_vs_k.mat", "mdl");
 
 % Get linear model parameters
 k_data = mdl.Coefficients.Estimate(2);
@@ -78,7 +78,7 @@ mdl = fitlm(pressure_fit, epsilon_fit);
 disp(mdl);
 
 % Save linear model
-save("data/free_motion/linear_model_p_vs_epsilon.mat", "mdl");
+save("L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/linear_model_p_vs_epsilon.mat", "mdl");
 
 % Get linear model parameters
 epsilon_data = mdl.Coefficients.Estimate(2);

@@ -3,7 +3,7 @@ function f_epsilon = force_model_epsilon(L, L0, p)
     epsilon = (L - L0) / L0;
 
     % Get linear model from data processing
-    load("data/free_motion/linear_model_p_vs_epsilon.mat", "mdl");
+    load("L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/linear_model_p_vs_epsilon.mat", "mdl");
     epsilon_data = mdl.Coefficients.Estimate(2);
     epsilon_intercept = mdl.Coefficients.Estimate(1);
 

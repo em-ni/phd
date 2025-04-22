@@ -11,9 +11,9 @@ experiment_name = 'sofa_free_motion'
 
 # Path to the directory containing images
 if experiment_name == 'sofa_free_motion':
-    image_files = glob.glob('data/sofa_free_motion/crop/*')
+    image_files = glob.glob('L_10cm_OD_1.5mm/characterization_and_scale_force/sofa_free_motion/crop/*')
 elif experiment_name == 'sofa_force_small_bending':
-    image_files = glob.glob('data/sofa_force_small_bending/crop/*')
+    image_files = glob.glob('L_10cm_OD_1.5mm/characterization_and_scale_force/sofa_force_small_bending/crop/*')
 
 # Flag variable to track the first iteration
 first_iteration = True  
@@ -119,7 +119,7 @@ for image_file in image_files:
             arc_length = compute_arc_length(x_c, y_c, radius, x_base, y_base, x_tip, y_tip)
 
             # Define the path to the CSV file
-            csv_path = f'data/{experiment_name}/cv_output.csv'  
+            csv_path = f'L_10cm_OD_1.5mm/characterization_and_scale_force/{experiment_name}/cv_output.csv'  
 
             if first_iteration:
                 # Delete previously written CSV file if it exists
