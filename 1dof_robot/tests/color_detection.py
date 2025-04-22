@@ -47,9 +47,9 @@ def main(image_path):
     cv2.imshow('Blue color detection', result_blue)
     
     # Save the result images
-    #cv2.imwrite('tests\\yellow_detection_result.png', result_yellow)
-    cv2.imwrite('tests\\red_detection_result.png', result_red)
-    cv2.imwrite('tests\\blue_detection_result.png', result_blue)
+    #cv2.imwrite('yellow_detection_result.png', result_yellow)
+    cv2.imwrite('red_detection_result.png', result_red)
+    cv2.imwrite('blue_detection_result.png', result_blue)
     
     # Wait for the ESC key (27) to close the windows
     while True:

@@ -151,7 +151,7 @@ end
 % Save the best result in a .mat file
 k_opt = sorted_results(1,5);
 epsilon_opt = sorted_results(1,6);
-save('L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/optimization_results.mat', 'epsilon_opt', 'k_opt');
+save('data/L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/optimization_results.mat', 'epsilon_opt', 'k_opt');
 
 % Define semiaxes
 a = sorted_results(1,1); % semiaxis along x for outer ellipse

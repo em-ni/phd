@@ -15,7 +15,7 @@ def main(image_path):
     cv2.imshow('Edge detection using green background', result)
     
     # Save the result image
-    cv2.imwrite('tests\\edge_detection_result.png', result)
+    cv2.imwrite('edge_detection_result.png', result)
     
     # Wait for the ESC key (27) to close the window
     while True:
