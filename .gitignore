@@ -6,3 +6,4 @@ vision/object_detection_YOLOv3/ignore
 vision/yolo*.pt
 vision/runs
 slam/ORB_SLAM3/em/run/datasets
+slam/ORB_SLAM3/build
