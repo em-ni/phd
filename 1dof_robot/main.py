@@ -12,11 +12,11 @@ experiment_name = 'force_large_bending'
 
 # Path to the directory containing images
 if experiment_name == 'free_motion':
-    image_files = glob.glob('data/free_motion/crop/*')
+    image_files = glob.glob('L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/crop/*')
 elif experiment_name == 'force_large_bending':
-    image_files = glob.glob('data/force_large_bending/crop/*')
+    image_files = glob.glob('L_10cm_OD_1.5mm/characterization_and_scale_force/force_large_bending/crop/*')
 elif experiment_name == 'force_small_bending':
-    image_files = glob.glob('data/force_small_bending/crop/*')
+    image_files = glob.glob('L_10cm_OD_1.5mm/characterization_and_scale_force/force_small_bending/crop/*')
 
 # Flag variable to track the first iteration
 first_iteration = True  
@@ -149,7 +149,7 @@ for image_file in image_files:
             pressure, force = parse_filename(image_file)
 
             # Define the path to the CSV file
-            csv_path = f'data/{experiment_name}/cv_output.csv'  
+            csv_path = f'L_10cm_OD_1.5mm/characterization_and_scale_force/{experiment_name}/cv_output.csv'  
 
             if first_iteration:
                 # Delete previously written CSV file if it exists
