@@ -7,8 +7,8 @@ L = 8*1e-3; % [m]
 
 % Get data from large bending experiment
 % Pressure [Bar], Force [g], Radius [px], Curvature [1/px], Arc Length [px], x_tip [px], y_tip [px], x_base [px], y_base [px]
-data = load("L_10cm_OD_1.5mm/characterization_and_scale_force/force_small_bending/cv_output.csv");
-% data = load("L_10cm_OD_1.5mm/characterization_and_scale_force/force_large_bending/cv_output.csv");
+data = load("data/L_10cm_OD_1.5mm/characterization_and_scale_force/force_small_bending/cv_output.csv");
+% data = load("data/L_10cm_OD_1.5mm/characterization_and_scale_force/force_large_bending/cv_output.csv");
 
 % [Bar] to [Pa]
 pressure_bar = data(:,1); % [Bar]

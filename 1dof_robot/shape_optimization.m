@@ -47,11 +47,11 @@ k_parallel = @(a, ai, bi, h) calculate_k(a, ai, bi, h, Ac, Ah, Es, Ec, Eh, Rc, R
 epsilon_parallel = @(a, ai, bi, h) calculate_epsilon(a, ai, bi, Ac, Ah, Es, Ec, Eh, Rci, Rh, P, 0);
 
 % Get linear model from data_processing
-load("L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/linear_model_p_vs_k.mat", "mdl");
+load("data/L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/linear_model_p_vs_k.mat", "mdl");
 k_data = mdl.Coefficients.Estimate(2);
 k_intercept = mdl.Coefficients.Estimate(1);
 disp(mdl);
-load("L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/linear_model_p_vs_epsilon.mat", "mdl");
+load("data/L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/linear_model_p_vs_epsilon.mat", "mdl");
 epsilon_data = mdl.Coefficients.Estimate(2);
 epsilon_intercept = mdl.Coefficients.Estimate(1);
 disp(mdl);

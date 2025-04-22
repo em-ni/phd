@@ -1,7 +1,7 @@
 function [f_x, f_y] = force_model(L, k, p)
 
     % Get linear model from data_processing
-    load("L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/linear_model_p_vs_k.mat", "mdl");
+    load("data/L_10cm_OD_1.5mm/characterization_and_scale_force/free_motion/linear_model_p_vs_k.mat", "mdl");
     k_data = mdl.Coefficients.Estimate(2);
     k_intercept = mdl.Coefficients.Estimate(1);
 

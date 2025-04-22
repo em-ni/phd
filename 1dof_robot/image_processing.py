@@ -3,7 +3,7 @@ import numpy as np
 import glob
 from sklearn.cluster import KMeans
 from scipy import optimize
-from utils import *  
+from functions.utils import *  
 import os
 
 # experiment_name = 'free_motion'
