@@ -1,6 +1,7 @@
 vision/data_collection/data/labelImg
+vision/data/formatted_bronchoscopy.zip 
 vision/object_detection_YOLOv3/PASCAL_VOC
-vision/object_detection_YOLOv3/checkpoints*.pth
+vision/object_detection_YOLOv3/checkpoints*.pth*
 vision/object_detection_YOLOv3/ignore
 vision/yolo*.pt
 vision/runs
