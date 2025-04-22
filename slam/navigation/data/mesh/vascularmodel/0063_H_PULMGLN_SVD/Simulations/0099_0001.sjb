@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<format version="1.0" />
+<mitk_job model_name="0099_0001" mesh_name="0099_0001" status="Simulation failed">
+    <job>
+        <basic_props>
+            <prop key="Fluid Density" value="1.06" />
+            <prop key="Fluid Viscosity" value="0.04" />
+            <prop key="IC File" value="mesh-complete/initial.vtu" />
+            <prop key="Initial Pressure" value="0" />
+            <prop key="Initial Velocities" value="0.0001 0.0001 0.0001" />
+        </basic_props>
+        <cap_props>
+            <cap name="Left_PA_1_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="1910.8081151 8.922091698e-06 15172.6000661" />
+            </cap>
+            <cap name="Left_PA_2_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="3034.4390399 4.109721335e-06 27495.9677704" />
+            </cap>
+            <cap name="Left_PA_3_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="1857.7536255 7.91365798e-06 15238.9189964" />
+            </cap>
+            <cap name="Left_PA_4_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="3411.267521 4.099330728e-06 27780.7276941" />
+            </cap>
+            <cap name="Left_PA_5_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="2700.7732591 4.881044603e-06 21891.6745816" />
+            </cap>
+            <cap name="Left_PA_6_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="2665.7892201 4.428838556e-06 24842.8630097" />
+            </cap>
+            <cap name="Left_PA_7_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="4256.6765121 3.148510081e-06 33848.0652922" />
+            </cap>
+            <cap name="Left_PA_8_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="3399.7306344 4.653725033e-06 23934.4604345" />
+            </cap>
+            <cap name="Left_PA_9_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="4644.4172952 3.237267834e-06 34375.1733783" />
+            </cap>
+            <cap name="LPA_main_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="1745.6698736 7.663529481e-06 16384.4891543" />
+            </cap>
+            <cap name="Right_PA_1_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="694.0825585 7.768785785e-05 2127.4324607" />
+            </cap>
+            <cap name="Right_PA_2_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="660.7495515 5.4602275401e-05 3044.3697883" />
+            </cap>
+            <cap name="Right_PA_3_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="766.9746802 3.1670918822e-05 4406.9659039" />
+            </cap>
+            <cap name="Right_PA_4_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="906.7183219 2.9076658411e-05 5283.9444578" />
+            </cap>
+            <cap name="Right_PA_5_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="868.7091475 3.5337233743e-05 4704.875237" />
+            </cap>
+            <cap name="Right_PA_6_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="1170.9149305 2.1771887221e-05 6044.9261894" />
+            </cap>
+            <cap name="Right_PA_7_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="1143.7209369 2.2158999774e-05 5889.4856821" />
+            </cap>
+            <cap name="Right_PA_8_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="828.7577157 3.5967893902e-05 4617.7142662" />
+            </cap>
+            <cap name="Right_PA_10_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="877.934794 3.2183716841e-05 4967.5920575" />
+            </cap>
+            <cap name="Right_PA_11_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="925.2940724 2.8431156622e-05 5491.5410672" />
+            </cap>
+            <cap name="RPA_main_Final">
+                <prop key="BC Type" value="RCR" />
+                <prop key="C Values" value="" />
+                <prop key="Pressure" value="0.0" />
+                <prop key="R Values" value="" />
+                <prop key="Values" value="1341.5911811 2.0107752384e-05 6787.4227044" />
+            </cap>
+            <cap name="inflow">
+                <prop key="Analytic Shape" value="womersley" />
+                <prop key="BC Type" value="Prescribed Velocities" />
+                <prop key="Flip Normal" value="False" />
+                <prop key="Flow Rate" value="0.0 -6.857709758168693&#x0A;0.007 -7.204251445021155&#x0A;0.0141 -7.62215344336485&#x0A;0.0211 -8.097803534413439&#x0A;0.0282 -8.648100955488875&#x0A;0.0352 -9.265837884400277&#x0A;0.0423 -9.977232736891587&#x0A;0.0493 -10.769910402670902&#x0A;0.0564 -11.668161212520653&#x0A;0.0634 -12.65062535662949&#x0A;0.0705 -13.720657861685117&#x0A;0.0775 -14.838741298567468&#x0A;0.0846 -16.01847968630806&#x0A;0.0916 -17.206362392123395&#x0A;0.0987 -18.41819053613175&#x0A;0.1057 -19.602682750340037&#x0A;0.1127 -20.7634986285908&#x0A;0.1198 -21.902216556281683&#x0A;0.1268 -22.974152772272884&#x0A;0.1339 -23.993044112343792&#x0A;0.1409 -24.912803424386844&#x0A;0.148 -25.737343426061518&#x0A;0.155 -26.421575243237648&#x0A;0.1621 -26.961884203422777&#x0A;0.1691 -27.32667196139616&#x0A;0.1762 -27.50781072591345&#x0A;0.1832 -27.49858869444168&#x0A;0.1903 -27.30281928620212&#x0A;0.1973 -26.938749972212293&#x0A;0.2043 -26.423711460393534&#x0A;0.2114 -25.771312493175532&#x0A;0.2184 -25.024032845723596&#x0A;0.2255 -24.184542709919203&#x0A;0.2325 -23.29509487023676&#x0A;0.2396 -22.34621260897052&#x0A;0.2466 -21.374535293558278&#x0A;0.2537 -20.361528135619626&#x0A;0.2607 -19.335307338880078&#x0A;0.2678 -18.290729866652512&#x0A;0.2748 -17.26257416211895&#x0A;0.2819 -16.236679550689537&#x0A;0.2889 -15.260762867876785&#x0A;0.296 -14.325783981810313&#x0A;0.303 -13.47607042478798&#x0A;0.31 -12.710599956781014&#x0A;0.3171 -12.028340204786799&#x0A;0.3241 -11.448338400738617&#x0A;0.3312 -10.948911068005584&#x0A;0.3382 -10.533791703377105&#x0A;0.3453 -10.180282904330015&#x0A;0.3523 -9.888624430135156&#x0A;0.3594 -9.6456558105223&#x0A;0.3664 -9.457351956711358&#x0A;0.3735 -9.326891527487033&#x0A;0.3805 -9.265309138642634&#x0A;0.3876 -9.279864691063278&#x0A;0.3946 -9.375576084094233&#x0A;0.4016 -9.551304069778803&#x0A;0.4087 -9.802386215088847&#x0A;0.4157 -10.105961574936606&#x0A;0.4228 -10.44923096320983&#x0A;0.4298 -10.800937852766918&#x0A;0.4369 -11.152162243281163&#x0A;0.4439 -11.482419184760888&#x0A;0.451 -11.799558336807577&#x0A;0.458 -12.105372289837739&#x0A;0.4651 -12.419707532749277&#x0A;0.4721 -12.753066924934188&#x0A;0.4792 -13.128966152748047&#x0A;0.4862 -13.540963389225386&#x0A;0.4933 -13.99237018332565&#x0A;0.5003 -14.447661762282229&#x0A;0.5073 -14.879421065351089&#x0A;0.5144 -15.251292284346341&#x0A;0.5214 -15.511992039957889&#x0A;0.5285 -15.634204725954001&#x0A;0.5355 -15.593993399140976&#x0A;0.5426 -15.386283572784606&#x0A;0.5496 -15.030071661198821&#x0A;0.5567 -14.543216332026438&#x0A;0.5637 -13.970781721264876&#x0A;0.5708 -13.343156048521301&#x0A;0.5778 -12.707477115402591&#x0A;0.5849 -12.06918760138917&#x0A;0.5919 -11.458870447065207&#x0A;0.5989 -10.868875109418594&#x0A;0.606 -10.28664230525276&#x0A;0.613 -9.72086771364511&#x0A;0.6201 -9.151634093766074&#x0A;0.6271 -8.596846989687608&#x0A;0.6342 -8.052128688162854&#x0A;0.6412 -7.550662086265542&#x0A;0.6483 -7.1019958694542655&#x0A;0.6553 -6.73965732576059&#x0A;0.6624 -6.478576486147421&#x0A;0.6694 -6.335413773866717&#x0A;0.6765 -6.309214500104225&#x0A;0.6835 -6.39532512131327&#x0A;0.6906 -6.584641332803974&#x0A;0.6976 -6.857709758168693" />
+                <prop key="Fourier Modes" value="51" />
+                <prop key="Original File" value="inflow.flow" />
+                <prop key="Period" value="0.6976" />
+                <prop key="Point Number" value="100" />
+            </cap>
+        </cap_props>
+        <wall_props>
+            <prop key="Type" value="rigid" />
+        </wall_props>
+        <var_props />
+        <solver_props>
+            <prop key="Backflow Stabilization Coefficient" value="0.2" />
+            <prop key="Flow Advection Form" value="Convective" />
+            <prop key="Force Calculation Method" value="Velocity Based" />
+            <prop key="Maximum Number of Iterations for svLS Continuity Loop" value="400" />
+            <prop key="Maximum Number of Iterations for svLS Momentum Loop" value="10" />
+            <prop key="Maximum Number of Iterations for svLS NS Solver" value="10" />
+            <prop key="Minimum Required Iterations" value="3" />
+            <prop key="Number of Krylov Vectors per GMRES Sweep" value="300" />
+            <prop key="Number of Solves per Left-hand-side Formation" value="1" />
+            <prop key="Number of Timesteps" value="2050" />
+            <prop key="Number of Timesteps between Restarts" value="1" />
+            <prop key="Output Surface Stress" value="True" />
+            <prop key="Pressure Coupling" value="Implicit" />
+            <prop key="Print Average Solution" value="True" />
+            <prop key="Print Error Indicators" value="False" />
+            <prop key="Quadrature Rule on Boundary" value="3" />
+            <prop key="Quadrature Rule on Interior" value="2" />
+            <prop key="Residual Control" value="True" />
+            <prop key="Residual Criteria" value="0.01" />
+            <prop key="Residual Tolerance" value="1.0e12" />
+            <prop key="Step Construction" value="5" />
+            <prop key="Time Integration Rho Infinity" value="0.5" />
+            <prop key="Time Integration Rule" value="Second Order" />
+            <prop key="Time Step Size" value="0.0006976" />
+            <prop key="Tolerance on Continuity Equations" value="0.01" />
+            <prop key="Tolerance on Momentum Equations" value="0.01" />
+            <prop key="Tolerance on svLS NS Solver" value="0.01" />
+            <prop key="svLS Type" value="NS" />
+        </solver_props>
+        <run_props>
+            <prop key="Number of Processes" value="8" />
+        </run_props>
+    </job>
+</mitk_job>
