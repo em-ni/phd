@@ -7,3 +7,4 @@ vision/yolo*.pt
 vision/runs
 slam/ORB_SLAM3/em/run/datasets
 slam/ORB_SLAM3/build
+slam/ORB_SLAM3/Vocabulary/ORBvoc.txt
