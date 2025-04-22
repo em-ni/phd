@@ -1,0 +1,6 @@
+# node_modules
+sensors/data_visualization/node_modules/
+
+# pycache
+__pycache__/
+roboclaw_python/__pycache__/
