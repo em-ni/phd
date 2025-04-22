@@ -42,7 +42,13 @@ void setup() {
 }
 
 void loop() {   
-
+//  int pin0 = analogRead(A0);
+//  int pin1 = analogRead(A1);
+//  Serial.print("A0: ");
+//  Serial.println(pin0);
+//  Serial.print("A1: ");
+//  Serial.println(pin1);
+  
   // If Serial is triggered get Serial signal in temporary variable
   char temp;
   if (Serial.available() > 0) {
