@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./sofa/build/v23.12/lib/python3/site-packages"
+    ]
+}

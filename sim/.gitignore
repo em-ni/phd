@@ -1,0 +1,28 @@
+# Ignore build files
+sofa/build/v22.12/*
+sofa/build/v23.12/*
+
+# Ignore cloned plugins
+sofa/ext_plugin_repo/BeamAdapter
+sofa/ext_plugin_repo/Cosserat
+sofa/ext_plugin_repo/ModelOrderReduction
+sofa/ext_plugin_repo/SofaMAMMOBOT
+sofa/ext_plugin_repo/SoftRobots
+sofa/ext_plugin_repo/SPLIB
+sofa/ext_plugin_repo/STLIB
+sofa/ext_plugin_repo/SofaPython3
+sofa/SofaGym
+
+# Ignore cloned src
+sofa/src
+
+# Ignore trash from onedrive
+sofa/trash
+
+# Ignore big files
+script/tests/mesh_sofa/*
+script/data/mesh/*
+script/external_examples/mesh_sofa/
+
+# Ignore cache
+script/__pycache__/
