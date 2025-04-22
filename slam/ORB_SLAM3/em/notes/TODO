@@ -1,0 +1,62 @@
+# TODO List
+
+RGB-D:
+- config.ini
+- centerline optimization
+
+Mono:
+- Add centerline optimization (done)
+    - Check measurements units of centerline and SLAM (everything should be in meters now)
+    - Saved the centerline in the map somehow (saved in atlas)
+    - Set the n-th point of the centerline as the origin of the map not the first point (n=100?)
+    - Find solution for when the curvilinear abscissa is should be 'negative' (e.g. when the robot is going backwards wrt to the refernce centerline)
+    - Add new term to const function both in FullBA and PoseOptimization (https://chatgpt.com/share/6732a60f-2c3c-8013-987e-9622d8f38f22)
+        - during optimization get the estimated frame for each key frame (in case of full BA) or for the current frame (in case of PoseOptimization) (done)
+        - add the error term between the frame pose and the estimated frame (done)
+
+- Consider when centerline is made of multiple segments (done)
+    - New way to compute FS frame (done in navigation)
+    - New way to store the centerline frames in file (vector of vectors of matrices, each branch is a vector of matrices)
+    - New way to handle the centerline in the map (same as above)
+    - New way to select the candidate frame (compute the ca for each branch and select the one closet to the previous frame. Check if this makes sense)
+
+- Save the reference frames directly inverted (done)
+    - the optimized pose is Tcw, but the frames are Twci, so now they are inverted in the code to get Tciw
+    - the problem is if the references are saved as Tiw, the computation of the curvilinear abscissa doesnt work anymore
+    - so for now I keep the matrix inversion in the code (done)
+
+- Fuse SLAM output with encoder measurements
+    - Simulated or recorded data (done)
+    - Realtime data (TODO)
+
+- Possible problem is when track is lost and new map is created it starts from the first ref frame in place of when it left off
+    - No this wasnt the problem. The problem was the scale of the SLAM world and the centerline world. 
+    - As a monocular SLAM system, the scale is arbitrary everytime it starts but the reference centerline was always in meters.
+    - Add the scale constraint to the optimization:
+        - When optimizing, constraint the relative distance between two keyframes to be close to the distance measured by the encoder.
+        - When getting the frame, also get the encoder data associated with it, and pass it through TrackMonocular->GrabImageMonocular
+        - Modify the Frame class to store the encoder data associated with it
+        - Modify the KeyFrame class to get the encoder data of the frame
+        - Modify the all the BA to add the encoder data to the optimization (done)
+
+- Trajectory saving and evaluation (done to be checked)
+
+- Visualization in pangolin is shit
+
+- Modify relocalization with centerline info
+    - not sure if needed because it uses PoseOptimization which already uses centerline info
+    - for now I added RelocalizationFromEncoder
+
+- Test on bronchoscopy dataset (done)
+    - Almost never worked (probably due to wrong calibration file see bronchoscopy_dataset.yaml)
+
+- Add post-optimization processing. Idea: the final pose will be given by the intersection between the line (between the candidate frame and the optimal pose) and the sphere centred in the candidate frame and with radius the maximum diameter of the branch
+
+- Rebuild ORB vocabulary
+
+- Try ORB extraction on GPU
+
+- Try to include the knowledge of the actuators input to estimate the location (maybe with a NN, it could take as input x5 encoders, previous poses, centerline, and output the current pose)    
+    - prob in another paper... it looks like a completly different approach
+
+- Move everything to ROS

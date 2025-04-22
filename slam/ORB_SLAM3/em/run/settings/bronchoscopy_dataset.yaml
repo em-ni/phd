@@ -1,0 +1,49 @@
+%YAML:1.0
+Camera.RGB: 0
+Camera.ThDepth: 40.0
+Camera.bf: 40.0
+Camera.fps: 15
+Camera.height: 480
+Camera.type: PinHole
+Camera.width: 480
+
+# bronchoscopy.yaml
+# Camera1.cx: 252.560061902772
+# Camera1.cy: 233.658637132913
+# Camera1.fx: 447.679079249249
+# Camera1.fy: 448.768431364843
+
+# lung.yaml
+Camera1.fx: 435.9655
+Camera1.fy: 436.0708
+Camera1.cx: 217.1750
+Camera1.cy: 239.9629
+
+# new_lung.yaml (same as bronchoscopy.yaml and it doesn't work)
+# Camera1.fx: 447.679079249249
+# Camera1.fy: 448.768431364843
+# Camera1.cx: 252.560061902772
+# Camera1.cy: 233.658637132913
+
+Camera1.k1: 0.0237323472870419
+Camera1.k2: -0.320432607152857
+Camera1.k3: 0.0
+Camera1.p1: 0.0
+Camera1.p2: 0.0
+File.version: '1.0'
+ORBextractor.iniThFAST: 1
+ORBextractor.minThFAST: 1
+ORBextractor.nFeatures: 2500
+ORBextractor.nLevels: 8
+ORBextractor.scaleFactor: 1.2
+Viewer.CameraLineWidth: 3.0
+Viewer.CameraSize: 0.08
+Viewer.GraphLineWidth: 0.9
+Viewer.KeyFrameLineWidth: 1.0
+Viewer.KeyFrameSize: 0.05
+Viewer.PointSize: 1.0
+Viewer.ViewpointF: 500.0
+Viewer.ViewpointX: 0.0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -1.8
+

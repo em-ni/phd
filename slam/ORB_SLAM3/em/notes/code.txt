@@ -1,0 +1,108 @@
+mono_realtime main:
+// Initialize the SLAM system. It launches the Local Mapping, Loop Closing and Viewer threads.
+ORB_SLAM3::System SLAM(argv[1], argv[2], ORB_SLAM3::System::MONOCULAR, true);
+
+// Proccess the given monocular frame and optionally imu data
+// Input images: RGB (CV_8UC3) or grayscale (CV_8U). RGB is converted to grayscale.
+// Returns the camera pose (empty if tracking fails).
+Tcw = SLAM.TrackMonocular(frame, tframe);
+
+    // Preprocess the input and call Track(). Extract features and performs stereo matching.
+    Tcw = mpTracker->GrabImageMonocular(imToFeed,timestamp,filename);
+        
+        // Initializes the member variables of the Frame object, extracts ORB features from the input image, 
+        // and performs additional computations and assignments based on the extracted features and provided data.
+        mCurrentFrame = Frame(mImGray,timestamp,mpORBextractorLeft,mpORBVocabulary,mpCamera,mDistCoef,mbf,mThDepth);
+
+        // Main tracking function.
+        Track()
+
+            // Get current map or create a new one if it doesn't exist.
+            Map* pCurrentMap = mpAtlas->GetCurrentMap();
+
+            // Get and set map change
+            int nCurMapChangeIndex = pCurrentMap->GetMapChangeIndex();
+            int nMapChangeIndex = pCurrentMap->GetLastMapChange();
+            pCurrentMap->SetLastMapChange(nCurMapChangeIndex);
+    
+            // If tracking state mState is NOT_INITIALIZED, initialize 
+            // ----- IV. AUTOMATIC MAP INITIALIZATION starts here -----
+            MonocularInitialization();
+
+                // If not ready to initialize we need to set the reference frame, which is set if enough keypoints are detected
+                // else (once the reference frame is set) find orb matches between the reference frame and the current frame
+                int nmatches = matcher.SearchForInitialization(mInitialFrame,mCurrentFrame,mvbPrevMatched,mvIniMatches,100);
+
+                // If the number of matches is not enough, return and reset the reference frame
+                // otherwise try to triangulate the matches and set the two frame poses
+                if(mpCamera->ReconstructWithTwoViews(mInitialFrame.mvKeysUn,mCurrentFrame.mvKeysUn,mvIniMatches,Tcw,mvIniP3D,vbTriangulated))
+                mInitialFrame.SetPose(Sophus::SE3f());
+                mCurrentFrame.SetPose(Tcw);
+
+                // Create the initial map with the two frame poses and the triangulated points
+                CreateInitialMapMonocular();
+
+                    // For both frames (inital and current) create a keyframe and add it to the map
+                    ... = new KeyFrame(...);
+                    mpAtlas->AddKeyFrame(...);
+
+                    // For each match, create a new map point and associate it to the keyframes
+                    ... = new MapPoint(...);
+                    // Remember each map point contains (its 3D position, viewing direction, orb descriptor, max and min distance at which it can be observed)
+                    // After all these are computed and set, add the map point to the map
+                    mpAtlas->AddMapPoint(pMP);
+
+                    // Update connections for both frames: for all map points in the keyframe check in which other keyframes they are observed and increase the counter for those keyframes
+                    ...->UpdateConnections(); 
+
+                    // Perform full bundle adjustment
+                    Optimizer::GlobalBundleAdjustment(mpAtlas->GetCurrentMap(),20);
+
+                        // Get all keyframes and map points in the map and compute the BA
+                        vector<KeyFrame*> vpKFs = pMap->GetAllKeyFrames();
+                        vector<MapPoint*> vpMPs = pMap->GetAllMapPoints();
+                        BundleAdjustemnt(vpKFs,vpMPs,nIterations, ...);
+
+                    // ----- IV. AUTOMATIC MAP INITIALIZATION ends here -----
+
+
+            // else (if initialized) get the initial camera pose estimation using motion model or relocalization
+            // if  tracking and local mapping (mbOnlyTracking == false)
+            //  if mState == ok either track with reference key frame or with motion model
+            bOK = TrackReferenceKeyFrame(); / bOK = TrackWithMotionModel();
+
+            //  if mState == RECENTLY_LOST do relocalisation
+            bOK = Relocalization();
+
+            //  if mState == LOST do 
+            // based on the number of key frames in the map either reset the map or create map in atlas
+            mpSystem->ResetActiveMap(); / CreateMapInAtlas();
+
+            // if only tracking (mbOnlyTracking == true)
+            // In case of performing only localization, mbVO is true when there are no matches to
+            // points in the map. Still tracking will continue if there are enough matches with temporal points.
+            // In that case we are doing visual odometry. The system will try to do relocalization to recover
+            // "zero-drift" localization to the map.
+            // if mbVO == false, based on mbVelocity (In last frame we tracked enough MapPoints in the map)
+            bOK = TrackWithMotionModel(); / bOK = TrackReferenceKeyFrame();
+
+            // if mbVO == true, it means in last frame we tracked mainly "visual odometry" points.
+            // We compute two camera poses, one from motion model and one doing relocalization.
+            // If relocalization is sucessfull we choose that solution, otherwise we retain
+            // the "visual odometry" solution.
+            bOKMM = TrackWithMotionModel();
+            bOKReloc = Relocalization();
+
+            // If we have an initial estimation of the camera pose and matching. Track the local map.
+            bOK = TrackLocalMap();
+
+            // Update the drawer with the current camera pose and the local map.
+            mpFrameDrawer->Update(this);
+
+            // Add a new keyframe if needed
+            if(bNeedKF && (bOK)) CreateNewKeyFrame();
+
+            // If the tracking is lost, either reset the active map or create a new map in the atlas based on the number of keyframes in the map
+            mpSystem->ResetActiveMap(); / CreateMapInAtlas();
+
+            // Finally store frame pose info to retrieve the complete camera trajectory afterwards
