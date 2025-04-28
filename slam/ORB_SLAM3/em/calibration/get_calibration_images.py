@@ -5,20 +5,21 @@ import time
 # Camera name
 # camera_name = 'Misumi_200x200p'
 # camera_name = "Misumi_400x380p"
-camera_name = "videoscope_1280x720p"
+# camera_name = "videoscope_1280x720p"
+camera_name = "olympusBronchoscope_640x480p"
+
+# Camera settings
+camera_index = 2
+# camera_index = "rtsp://:@192.168.1.1:8554/session0.mpg"
+capture_interval = 0.2  # Time in seconds between captures
+setting_time = 5  # Time in seconds to adjust camera settings
+total_images = 20  # Total number of images to capture
 
 # Settings
 save_dir = "calibration_images_" + camera_name
 
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
-
-# Camera settings
-# camera_index = 3  # Change if you have multiple cameras
-camera_index = "rtsp://:@192.168.1.1:8554/session0.mpg"
-capture_interval = 0.2  # Time in seconds between captures
-setting_time = 10  # Time in seconds to adjust camera settings
-total_images = 100  # Total number of images to capture
 
 # Ask user for input source
 source = input(

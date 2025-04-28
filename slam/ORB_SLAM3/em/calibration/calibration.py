@@ -6,7 +6,8 @@ import yaml
 # camera_name = 'Misumi_200x200p'
 # camera_name = "Misumi_400x380p"
 # camera_name = "videoscope_1280x720p"
-camera_name = "videoscope_940x970p"
+# camera_name = "videoscope_940x970p"
+camera_name = "olympusBronchoscope_640x480p"
 
 # Define the chessboard size
 chessboard_size = (9, 6)
@@ -15,7 +16,7 @@ frame_size = (
     int(camera_name.split("_")[1].split("x")[0]),
     int(camera_name.split("_")[1].split("x")[1].split("p")[0]),
 )
-FPS = 60
+FPS = 30
 # Termination criteria
 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -34,7 +35,7 @@ last = 15
 
 # Capture images of the calibration pattern
 images = [
-    cv2.imread(f"{folder_name}/image_{i}.png") for i in range(first, last + 1)
+    cv2.imread(f"{folder_name}/image_{i}.jpg") for i in range(first, last + 1)
 ]  # Assuming 20 images
 
 for img in images:
