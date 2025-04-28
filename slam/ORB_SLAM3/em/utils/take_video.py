@@ -1,7 +1,8 @@
 import cv2
 
 # Set up the camera source. Adjust the RTSP URL as needed.
-camera_index = "rtsp://:@192.168.1.1:8554/session0.mpg"
+# camera_index = "rtsp://:@192.168.1.1:8554/session0.mpg"
+camera_index = 2
 cap = cv2.VideoCapture(camera_index)
 
 # Attempt to use the original video's frame rate and resolution
@@ -11,6 +12,7 @@ fps = cap.get(cv2.CAP_PROP_FPS)  # Capture the original fps from the stream
 
 # If there's an error capturing the correct fps (e.g., returns zero), set a default fps
 if fps <= 0:
+    print("Warning: Unable to retrieve FPS from the camera stream. Using default FPS.")
     fps = (
         59.94  # Default fps, you can adjust this based on your camera's specifications
     )
