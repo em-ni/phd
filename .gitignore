@@ -5,6 +5,10 @@ vision/object_detection_YOLOv3/checkpoints.pth.tar
 vision/object_detection_YOLOv3/ignore
 vision/yolo*.pt
 vision/runs
+
 slam/ORB_SLAM3/em/run/datasets
 slam/ORB_SLAM3/build
+slam/ORB_SLAM3/Thirdparty/DBoW2/build
+slam/ORB_SLAM3/Thirdparty/g2o/build
+slam/ORB_SLAM3/Thirdparty/Sophus/build
 slam/ORB_SLAM3/Vocabulary/ORBvoc.txt
