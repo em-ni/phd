@@ -1,9 +1,10 @@
 %YAML:1.0
 Camera.RGB: 1
-Stereo.ThDepth: 40.0
-Stereo.b: 0.07732
+Stereo.ThDepth: 50.0
+Stereo.b: 0.01
 RGBD.DepthMapFactor: 5000.0
-Camera.bf: 40.0
+
+Camera.bf: 3.995168239472134
 Camera.fps: 30
 Camera.height: 480
 Camera.type: PinHole
@@ -18,11 +19,13 @@ Camera1.k3: 0.0
 Camera1.p1: -0.0059479315521826885
 Camera1.p2: 0.003092689881046328
 File.version: '1.0'
+
 ORBextractor.iniThFAST: 1
 ORBextractor.minThFAST: 1
-ORBextractor.nFeatures: 500
-ORBextractor.nLevels: 8
+ORBextractor.nFeatures: 3000
+ORBextractor.nLevels: 10
 ORBextractor.scaleFactor: 1.2
+
 Viewer.CameraLineWidth: 3.0
 Viewer.CameraSize: 0.08
 Viewer.GraphLineWidth: 0.9

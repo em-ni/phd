@@ -1,8 +1,8 @@
 CMakeFiles/g2o.dir/g2o/core/marginal_covariance_cholesky.cpp.o: \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/marginal_covariance_cholesky.cpp \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/marginal_covariance_cholesky.cpp \
  /usr/include/stdc-predef.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/marginal_covariance_cholesky.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/optimizable_graph.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/marginal_covariance_cholesky.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/optimizable_graph.h \
  /usr/include/c++/11/set /usr/include/c++/11/bits/stl_tree.h \
  /usr/include/c++/11/bits/stl_algobase.h \
  /usr/include/x86_64-linux-gnu/c++/11/bits/c++config.h \
@@ -183,10 +183,10 @@ CMakeFiles/g2o.dir/g2o/core/marginal_covariance_cholesky.cpp.o: \
  /usr/include/c++/11/tr1/poly_hermite.tcc \
  /usr/include/c++/11/tr1/poly_laguerre.tcc \
  /usr/include/c++/11/tr1/riemann_zeta.tcc \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/openmp_mutex.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/../../config.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/openmp_mutex.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/../../config.h \
  /usr/include/c++/11/cassert /usr/include/assert.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/hyper_graph.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/hyper_graph.h \
  /usr/include/c++/11/map /usr/include/c++/11/bits/stl_map.h \
  /usr/include/c++/11/tuple /usr/include/c++/11/utility \
  /usr/include/c++/11/bits/stl_relops.h /usr/include/c++/11/array \
@@ -203,9 +203,9 @@ CMakeFiles/g2o.dir/g2o/core/marginal_covariance_cholesky.cpp.o: \
  /usr/include/c++/11/tr1/hashtable.h \
  /usr/include/c++/11/tr1/hashtable_policy.h \
  /usr/include/c++/11/tr1/unordered_map.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/parameter.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/parameter_container.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/jacobian_workspace.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/parameter.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/parameter_container.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/jacobian_workspace.h \
  /usr/include/eigen3/Eigen/Core \
  /usr/include/eigen3/Eigen/src/Core/util/DisableStupidWarnings.h \
  /usr/include/eigen3/Eigen/src/Core/util/Macros.h \
@@ -457,8 +457,8 @@ CMakeFiles/g2o.dir/g2o/core/marginal_covariance_cholesky.cpp.o: \
  /usr/include/eigen3/Eigen/StdVector /usr/include/eigen3/Eigen/Core \
  /usr/include/eigen3/Eigen/src/StlSupport/StdVector.h \
  /usr/include/eigen3/Eigen/src/StlSupport/details.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/../stuff/macros.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/sparse_block_matrix.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/../stuff/macros.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/sparse_block_matrix.h \
  /usr/include/c++/11/fstream /usr/include/c++/11/bits/codecvt.h \
  /usr/include/x86_64-linux-gnu/c++/11/bits/basic_file.h \
  /usr/include/x86_64-linux-gnu/c++/11/bits/c++io.h \
@@ -471,7 +471,7 @@ CMakeFiles/g2o.dir/g2o/core/marginal_covariance_cholesky.cpp.o: \
  /usr/include/c++/11/bits/locale_conv.h \
  /usr/include/c++/11/bits/unique_ptr.h \
  /usr/include/c++/11/bits/quoted_string.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/sparse_block_matrix_ccs.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/matrix_operations.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/matrix_structure.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/sparse_block_matrix.hpp
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/sparse_block_matrix_ccs.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/matrix_operations.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/matrix_structure.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/sparse_block_matrix.hpp

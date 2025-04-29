@@ -1,7 +1,7 @@
 CMakeFiles/g2o.dir/g2o/stuff/property.cpp.o: \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/stuff/property.cpp \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/stuff/property.cpp \
  /usr/include/stdc-predef.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/stuff/property.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/stuff/property.h \
  /usr/include/c++/11/string \
  /usr/include/x86_64-linux-gnu/c++/11/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/11/bits/os_defines.h \
@@ -165,10 +165,10 @@ CMakeFiles/g2o.dir/g2o/stuff/property.cpp.o: \
  /usr/include/c++/11/bits/ostream.tcc \
  /usr/include/c++/11/bits/istream.tcc \
  /usr/include/c++/11/bits/sstream.tcc \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/stuff/string_tools.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/stuff/string_tools.h \
  /usr/include/c++/11/vector /usr/include/c++/11/bits/stl_uninitialized.h \
  /usr/include/c++/11/bits/stl_vector.h \
  /usr/include/c++/11/bits/stl_bvector.h \
  /usr/include/c++/11/bits/vector.tcc \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/stuff/macros.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/stuff/macros.h \
  /usr/include/c++/11/iostream

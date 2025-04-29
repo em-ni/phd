@@ -87,17 +87,17 @@ calibration_data = {
     # Indicates whether the camera outputs RGB color images (1 for true, 0 for false).
     "Camera.RGB": 1,
     # Represents the baseline times focal length, used in stereo cameras for depth perception.
-    "Camera.bf": 40.0,
+    "Camera.bf": "SET"
     # Is the depth threshold, which might be used to determine how far objects can be from the camera to be considered for processing
     "Camera.ThDepth": 40.0,
     # The number of features to be extracted by the ORB algorithm.
     # More features allow for more detailed image analysis but require more processing power.
-    "ORBextractor.nFeatures": 500,
+    "ORBextractor.nFeatures": 2500,
     # The scale factor between levels in the image pyramid used by ORB for feature detection.
     # Smaller values mean more levels and finer details.
     "ORBextractor.scaleFactor": 1.2,
     # The number of levels in the pyramid. More levels allow the detector to find features at multiple scales.
-    "ORBextractor.nLevels": 8,
+    "ORBextractor.nLevels": 10,
     # Thresholds for detecting corners using the FAST algorithm. iniThFAST is the initial threshold, and minThFAST is the minimum threshold.
     # Higher values mean fewer corners are detected.
     "ORBextractor.iniThFAST": 1,

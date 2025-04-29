@@ -1,7 +1,7 @@
 CMakeFiles/g2o.dir/g2o/core/matrix_structure.cpp.o: \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/matrix_structure.cpp \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/matrix_structure.cpp \
  /usr/include/stdc-predef.h \
- /home/emanuele/Desktop/github/ORB_SLAM3/Thirdparty/g2o/g2o/core/matrix_structure.h \
+ /home/emanuele/Desktop/github/phd/slam/ORB_SLAM3/Thirdparty/g2o/g2o/core/matrix_structure.h \
  /usr/include/c++/11/string \
  /usr/include/x86_64-linux-gnu/c++/11/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/11/bits/os_defines.h \
