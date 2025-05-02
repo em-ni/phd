@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Usage: ./run_all.sh <config_directory> <number_of_runs>
+# Usage: ./run_dataset.sh <config_directory> <number_of_runs>
 if [ "$#" -ne 2 ]; then
     echo "Usage: $0 <config_directory> <number_of_runs>"
     exit 1
