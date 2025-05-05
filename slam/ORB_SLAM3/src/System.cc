@@ -1072,7 +1072,6 @@ void System::SaveTrajectoryEuRoC(const string &filename, Map* pMap)
     cout << endl << "End of saving trajectory to " << filename << " ..." << endl;
 }*/
 
-
 /*void System::SaveKeyFrameTrajectoryEuRoC_old(const string &filename)
 {
     cout << endl << "Saving keyframe trajectory to " << filename << " ..." << endl;
@@ -1332,6 +1331,88 @@ void System::SaveTrajectoryKITTI(const string &filename)
     f.close();
 }
 
+void System::SavePointCloud(const string &filename){
+    cout << endl << "Saving pointclouds to " << filename << " ..." << endl;
+    int size = mpAtlas->CountMaps();
+    cout << endl << "Number of maps is: " << size << endl;
+    
+    // Extract directory and base filename
+    string directory;
+    string baseFilename;
+    size_t lastSlash = filename.find_last_of("/\\");
+    if(lastSlash != string::npos) {
+        directory = filename.substr(0, lastSlash+1);
+        baseFilename = filename.substr(lastSlash+1);
+    } else {
+        directory = "./";
+        baseFilename = filename;
+    }
+    
+    vector<Map*> vpAllMaps = mpAtlas->GetAllMaps();
+    for(size_t i=0; i<size; i++){
+        Map* vpMap = vpAllMaps[i];
+        if(!vpMap) continue;
+        const vector<MapPoint*> &vpMPs = vpMap->GetAllMapPoints();
+        const vector<MapPoint*> &vpRefMPs = vpMap->GetReferenceMapPoints();
+        set<MapPoint*> spRefMPs(vpRefMPs.begin(), vpRefMPs.end());
+        if(vpMPs.empty()) continue;
+        
+        string mapPrefix = to_string(i) + "_";
+        int count = 0;
+        stringstream mapss("");
+        mapss << fixed;
+        for (size_t i=0, iend=vpMPs.size(); i<iend;i++)
+        {
+            if (vpMPs[i]->isBad() || spRefMPs.count(vpMPs[i])){
+                continue;
+            }
+            count++;
+            Eigen::Matrix<float,3,1> pos = vpMPs[i]->GetWorldPos();
+            mapss << pos(0) << " " << pos(1) << " " << pos(2) << "\n";
+        }
+        
+        ofstream f;
+        if(count > 0) {
+            string fullPath = directory + mapPrefix + baseFilename;
+            f.open(fullPath.c_str());
+            f << "ply\nformat ascii 1.0\nelement vertex " << count << "\n";
+            f << "property float x\nproperty float y\nproperty float z\n";
+            f << "end_header\n";
+            f << fixed;
+            f << mapss.str();
+            f.close();
+            cout << "Saved " << count << " points to " << fullPath << endl;
+            mapss.str("");
+            mapss.clear();
+        }
+
+        count = 0;
+        mapss << fixed;
+        for (set<MapPoint*>::iterator sit=spRefMPs.begin(), send=spRefMPs.end(); sit!=send; sit++)
+        {
+            if((*sit)->isBad()){
+                continue;
+            }
+            count++;
+            Eigen::Matrix<float,3,1> pos = (*sit)->GetWorldPos();
+            mapss << pos(0) << " " << pos(1) << " " << pos(2)  << "\n";
+        }
+        if(count > 0){
+            string fullPath = directory + mapPrefix + "ref_" + baseFilename;
+            f.open(fullPath.c_str());
+            f << "ply\nformat ascii 1.0\nelement vertex " << count << "\n";
+            f << "property float x\nproperty float y\nproperty float z\n";
+            f << "end_header\n";
+            f << fixed;
+            f << mapss.str();
+            f.close();
+            cout << "Saved " << count << " reference points to " << fullPath << endl;
+            mapss.str("");
+            mapss.clear();
+        }
+    }
+    cout << endl << "Saved pointclouds to " << filename << " ..." << endl;
+}
 
 void System::SaveDebugData(const int &initIdx)
 {
@@ -1388,7 +1469,6 @@ void System::SaveDebugData(const int &initIdx)
     f.close();
 }
 
-
 int System::GetTrackingState()
 {
     unique_lock<mutex> lock(mMutexState);
@@ -1428,7 +1508,6 @@ bool System::isLost()
             return false;
     }
 }
-
 
 bool System::isFinished()
 {

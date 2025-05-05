@@ -205,6 +205,7 @@ int main(int argc, char **argv)
     string timeSuffix(timeStr);
     SLAM.SaveKeyFrameTrajectoryTUM(logsPath + "/KeyFrameTrajectory_" + timeSuffix + ".txt");
     SLAM.SaveTrajectoryTUM(logsPath + "/CameraTrajectory_" + timeSuffix + ".txt");
+    SLAM.SavePointCloud(logsPath + "/PointCloud_" + timeSuffix + ".txt");
 
     // Stop all threads
     SLAM.Shutdown();
