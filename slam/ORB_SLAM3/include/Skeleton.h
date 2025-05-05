@@ -79,6 +79,9 @@ private:
                         const std::vector<Sophus::SE3f>& data,
                         const Sophus::Sim3f& sim3);
 
+    // Further alignment to the centerline
+    Eigen::Vector3f ProjectToCenterline(const Eigen::Vector3f& point, const std::vector<Sophus::SE3f>& centerline);
+
 
     // Helper function: Compute the best yaw angle (rotation about Z)
     // that maximizes trace(Rz(theta)*C) following the rpg_trajectory_evaluation approach.

@@ -6,6 +6,7 @@
 #include <mutex>
 
 // TODOE: ATE is too similar among branches
+// TODOE: the pose sent is too far from the centerline, perform a stronger alignment
 namespace ORB_SLAM3 {
 
 Skeleton::Skeleton(string &referenceCenterlinePath, Atlas* pAtlas)
@@ -107,6 +108,13 @@ void Skeleton::Run() {
             // Transform the last keyframe pose according to the best similarity transformation
             Eigen::Matrix3f R_new = bestSim3.rotationMatrix() * lastKFPose.rotationMatrix();
             Eigen::Vector3f t_new = bestSim3.scale() * (bestSim3.rotationMatrix() * lastKFPose.translation()) + bestSim3.translation();
+            
+            // Add projection to closest centerline point
+            if (bestCandidateIndex >= 0) {
+                const std::vector<Sophus::SE3f> &centerline = candidateTrajectories[bestCandidateIndex];
+                t_new = ProjectToCenterline(t_new, centerline);
+            }
+            
             SetCurPose(Sophus::SE3f(R_new, t_new));
             // std::cout << "Last keyframe pose: " << lastKFPose.translation().transpose() << std::endl;
             // std::cout << "Aligned last keyframe pose: " << mCurPose.translation().transpose() << std::endl;
@@ -401,31 +409,31 @@ std::vector<Eigen::Vector3d> Skeleton::ResampleTrajectory(const std::vector<Soph
     return resampled;
 }
 
-Sophus::Sim3f Skeleton::AlignTrajectories(const std::vector<Sophus::SE3f>& model,
+Sophus::Sim3f Skeleton::AlignTrajectories(const std::vector<Sophus::SE3f>& candidate,
                                             const std::vector<Sophus::SE3f>& data,
                                             bool known_scale, bool yaw_only)
 {
     // Choose a fixed number of points for resampling.
-    const size_t num_samples = std::min(model.size(), data.size());
-    std::vector<Eigen::Vector3d> modelPoints = ResampleTrajectory(model, num_samples);
+    const size_t num_samples = std::min(candidate.size(), data.size());
+    std::vector<Eigen::Vector3d> candidatePoints = ResampleTrajectory(candidate, num_samples);
     std::vector<Eigen::Vector3d> dataPoints  = ResampleTrajectory(data, num_samples);
     size_t n = num_samples;
     
     // Compute centroids.
-    Eigen::Vector3d mu_model = Eigen::Vector3d::Zero();
+    Eigen::Vector3d mu_candidate = Eigen::Vector3d::Zero();
     Eigen::Vector3d mu_data  = Eigen::Vector3d::Zero();
     for (size_t i = 0; i < n; i++) {
-        mu_model += modelPoints[i];
+        mu_candidate += candidatePoints[i];
         mu_data  += dataPoints[i];
     }
-    mu_model /= static_cast<double>(n);
+    mu_candidate /= static_cast<double>(n);
     mu_data  /= static_cast<double>(n);
     
     // Build matrices with each row corresponding to a centered 3D point.
-    Eigen::MatrixXd M(n, 3);  // for model trajectory
+    Eigen::MatrixXd M(n, 3);  // for candidate trajectory
     Eigen::MatrixXd D(n, 3);  // for data trajectory
     for (size_t i = 0; i < n; i++) {
-        M.row(i) = modelPoints[i].transpose() - mu_model.transpose();
+        M.row(i) = candidatePoints[i].transpose() - mu_candidate.transpose();
         D.row(i) = dataPoints[i].transpose()  - mu_data.transpose();
     }
     
@@ -455,7 +463,7 @@ Sophus::Sim3f Skeleton::AlignTrajectories(const std::vector<Sophus::SE3f>& model
         R = U * S * V.transpose();
     } else {
         // Restrict rotation to yaw (rotation about the Z-axis).
-        Eigen::Matrix3d rot_C = D.transpose() * M;
+        Eigen::Matrix3d rot_C = M.transpose() * D; // Correct order: model.T * data
         double theta = GetBestYaw(rot_C);
         R = RotZ(theta);
     }
@@ -480,7 +488,7 @@ Sophus::Sim3f Skeleton::AlignTrajectories(const std::vector<Sophus::SE3f>& model
     }
     
     // Compute translation.
-    Eigen::Vector3d t = mu_model - s * R * mu_data;
+    Eigen::Vector3d t = mu_candidate - s * R * mu_data;
     
     // Return the similarity transformation using the RxSO3 pattern.
     return Sophus::Sim3f(
@@ -488,30 +496,30 @@ Sophus::Sim3f Skeleton::AlignTrajectories(const std::vector<Sophus::SE3f>& model
         t.cast<float>());
 }
 
-double Skeleton::CalculateATE(const std::vector<Sophus::SE3f>& model,
+double Skeleton::CalculateATE(const std::vector<Sophus::SE3f>& candidate,
                                 const std::vector<Sophus::SE3f>& data,
                                 const Sophus::Sim3f& sim3)
 {
     const size_t num_samples = 50;
-    std::vector<Eigen::Vector3d> modelPoints = ResampleTrajectory(model, num_samples);
+    std::vector<Eigen::Vector3d> candidatePoints = ResampleTrajectory(candidate, num_samples);
     std::vector<Eigen::Vector3d> dataPoints  = ResampleTrajectory(data, num_samples);
     
-    if (modelPoints.empty() || dataPoints.empty() || modelPoints.size() != dataPoints.size()){
+    if (candidatePoints.empty() || dataPoints.empty() || candidatePoints.size() != dataPoints.size()){
         std::cerr << "Trajectory size mismatch or empty trajectories!" << std::endl;
         return -1;
     }
     
     double sum_squared_error = 0.0;
-    for (size_t i = 0; i < modelPoints.size(); i++) {
+    for (size_t i = 0; i < candidatePoints.size(); i++) {
         // Convert to float for transformation.
-        Eigen::Vector3f p_model = modelPoints[i].cast<float>();
+        Eigen::Vector3f p_candidate = candidatePoints[i].cast<float>();
         Eigen::Vector3f p_data  = dataPoints[i].cast<float>();
         // Transform the data point using the similarity transform.
         Eigen::Vector3f p_aligned = sim3 * p_data;
-        double err = (p_model - p_aligned).squaredNorm();
+        double err = (p_candidate - p_aligned).squaredNorm();
         sum_squared_error += err;
     }
-    double rmse = std::sqrt(sum_squared_error / modelPoints.size());
+    double rmse = std::sqrt(sum_squared_error / candidatePoints.size());
     return rmse;
 }
 
@@ -532,5 +540,36 @@ Eigen::Matrix3d Skeleton::RotZ(double theta)
     return R;
 }
 
+Eigen::Vector3f Skeleton::ProjectToCenterline(const Eigen::Vector3f& point, const std::vector<Sophus::SE3f>& centerline) {
+    float minDist = std::numeric_limits<float>::max();
+    Eigen::Vector3f closestPoint = point;
+    
+    // Find closest point on centerline
+    for (size_t i = 1; i < centerline.size(); i++) {
+        Eigen::Vector3f p1 = centerline[i-1].translation();
+        Eigen::Vector3f p2 = centerline[i].translation();
+        
+        // Project point onto line segment
+        Eigen::Vector3f v = p2 - p1;
+        float l2 = v.squaredNorm();
+        if (l2 < 1e-6) continue; // Skip degenerate segments
+        
+        // Replace std::clamp with min/max combination
+        float t_raw = (point - p1).dot(v) / l2;
+        float t = std::min(1.0f, std::max(0.0f, t_raw));
+        
+        Eigen::Vector3f projection = p1 + t * v;
+        
+        float dist = (point - projection).norm();
+        if (dist < minDist) {
+            minDist = dist;
+            closestPoint = projection;
+        }
+    }
+    
+    // Blend between original point and projection (adjust alpha for strength)
+    float alpha = 0.8f; // Higher value means stronger correction
+    return (1-alpha) * point + alpha * closestPoint;
+}
 
 } // namespace ORB_SLAM3
