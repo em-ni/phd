@@ -55,7 +55,7 @@ void Skeleton::Run() {
             }
             const vector<KeyFrame*> vpKFs = pActiveMap->GetAllKeyFrames();
             if (vpKFs.empty()) {
-                std::cerr << "No keyframes found." << std::endl;
+                if (isDebug) std::cerr << "No keyframes found." << std::endl;
                 continue;
             }
             std::vector<Sophus::SE3f> currentTrajectory;
@@ -151,6 +151,7 @@ std::string MatrixToString(const MatrixType& m) {
 }
 
 void Skeleton::SendPose() {
+    bool isDebug = false;
     // Get the current pose
     auto curPose = GetCurPose().matrix();
     std::string data = MatrixToString(curPose);
@@ -158,7 +159,7 @@ void Skeleton::SendPose() {
         std::cerr << "Error sending data." << std::endl;
     }
     else {
-        std::cout << "Data sent successfully." << std::endl;
+        if (isDebug) std::cout << "Data sent successfully." << std::endl;
     }    
 }
 

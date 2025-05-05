@@ -203,6 +203,8 @@ class MyApp(ShowBase):
         # Set up key controls
         if self.live_mode == False:
             self.setup_key_controls()
+        else:
+            self.trajectory_history = []
 
         # Task for updating the scene
         self.taskMgr.add(self.update_scene, "updateScene")
@@ -920,6 +922,13 @@ Viewer.ViewpointZ: -1.8
 
                     # Update the robot tip position
                     self.robot_tip = translation
+
+                    # Store position in trajectory history (if it's a new position)
+                    if len(self.trajectory_history) == 0 or not np.array_equal(
+                        self.trajectory_history[-1], self.robot_tip
+                    ):
+                        self.trajectory_history.append(np.copy(self.robot_tip))
+
                     print(f"Robot tip position: {self.robot_tip}")
 
                 except (SyntaxError, AttributeError) as e:
@@ -928,6 +937,9 @@ Viewer.ViewpointZ: -1.8
 
         # Update the visual representation
         self.draw_robot_tip()
+
+        if self.live_mode and self.view_mode == "tp":
+            self.update_trajectory()
 
     def update_tip_position_all_branches(self, dt, forward):
         """
@@ -1408,10 +1420,6 @@ Viewer.ViewpointZ: -1.8
         if hasattr(self, "trajectory_line_node") and self.trajectory_line_node:
             self.trajectory_line_node.removeNode()
 
-        # Smooth a lot the line
-        points = self.points
-        points = interpolate_line(points, num_points=1000)
-
         # Create the line
         line = LineSegs()  # type: ignore
         line.setThickness(5.0)
@@ -1419,17 +1427,35 @@ Viewer.ViewpointZ: -1.8
             8 / 255, 232 / 255, 222 / 255, 1
         )  # Same color as the arrow button
 
-        # Start drawing the line from the robot tip
-        robot_tip = self.robot_tip
-        first_point = LVector3f(robot_tip[0], robot_tip[1], robot_tip[2])  # type: ignore
-        line.moveTo(first_point)
+        if self.live_mode == False:
+            # Smooth a lot the line
+            points = self.points
+            points = interpolate_line(points, num_points=1000)
 
-        # Draw to the rest of the points
-        for i in range(1, len(points)):
-            next_point = LVector3f(points[i][0], points[i][1], points[i][2])  # type: ignore
-            if (next_point - first_point).length() < 1.0:
+            # Start drawing the line from the robot tip
+            robot_tip = self.robot_tip
+            first_point = LVector3f(robot_tip[0], robot_tip[1], robot_tip[2])  # type: ignore
+            line.moveTo(first_point)
+
+            # Draw to the rest of the points
+            for i in range(1, len(points)):
+                next_point = LVector3f(points[i][0], points[i][1], points[i][2])  # type: ignore
+                if (next_point - first_point).length() < 1.0:
+                    line.drawTo(next_point)
+                    first_point = next_point
+
+        elif (
+            self.live_mode
+            and hasattr(self, "trajectory_history")
+            and len(self.trajectory_history) > 0
+        ):
+            # In live mode, draw the trajectory from history
+            first_point = LVector3f(*self.trajectory_history[0])  # type: ignore
+            line.moveTo(first_point)
+
+            for i in range(1, len(self.trajectory_history)):
+                next_point = LVector3f(*self.trajectory_history[i])  # type: ignore
                 line.drawTo(next_point)
-                first_point = next_point
 
         # Create the line node and attach it to the scene
         line_node = line.create()

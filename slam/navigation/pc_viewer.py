@@ -111,7 +111,7 @@ class SimplePointCloudViewer(ShowBase):
         self.mouse_looking = False
 
     def moveCamera(self, task):
-        dt = globalClock.getDt()
+        dt = globalClock.getDt()  # type: ignore
 
         # Mouse look
         if self.mouse_looking and self.mouseWatcherNode.hasMouse():
