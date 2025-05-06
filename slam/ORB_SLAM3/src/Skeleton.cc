@@ -568,7 +568,7 @@ Eigen::Vector3f Skeleton::ProjectToCenterline(const Eigen::Vector3f& point, cons
     }
     
     // Blend between original point and projection (adjust alpha for strength)
-    float alpha = 0.8f; // Higher value means stronger correction
+    float alpha = 0.99f; // Higher value means stronger correction
     return (1-alpha) * point + alpha * closestPoint;
 }
 
