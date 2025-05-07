@@ -1,0 +1,17 @@
+Algorithms:
+  rgbd-rd:
+    fn: traj_est
+    label: rgbd-rd
+Datasets:
+  b1:
+    label: b1
+  b2:
+    label: b2
+  b3:
+    label: b3
+  b4:
+    label: b4
+  b5:
+    label: b5
+RelDistancePercentages: []
+RelDistances: []

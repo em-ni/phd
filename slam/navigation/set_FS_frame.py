@@ -407,11 +407,12 @@ def save_frames_single_branch(input_path):
 
 
 def save_frames_all_branches(input_paths):
+    convention = "wTc"
 
     for path in input_paths:
         output_fs = save_frames_single_branch(path)
-        output_tum = output_fs.replace("_fs.txt", "_tum.txt")
-        convert_fs_to_tum(output_fs, output_tum, convention="wTc")
+        output_tum = output_fs.replace("_fs.txt", f"_{convention}_tum.txt")
+        convert_fs_to_tum(output_fs, output_tum, convention=convention)
 
 
 def convert_fs_to_tum(input_file, output_file, convention="wTc"):
@@ -545,7 +546,7 @@ def parse_arguments():
         description="Process centerline file and compute Frenet-Serret frames."
     )
     parser.add_argument(
-        "i", type=str, help="Path to the input centerline .vtp file or folder"
+        "-i", type=str, help="Path to the input centerline .vtp file or folder"
     )
     return parser.parse_args()
 
