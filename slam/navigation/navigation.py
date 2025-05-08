@@ -76,7 +76,7 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-class MyApp(ShowBase):
+class BronchoSim(ShowBase):
     def __init__(self):
         ShowBase.__init__(self)
 
@@ -1209,87 +1209,55 @@ Viewer.ViewpointZ: -1.8
         if hasattr(self, "light_cone_geom_np") and self.light_cone_geom_np:
             self.light_cone_geom_np.removeNode()
 
-        if self.live_mode == False:
-            # Load cone model
-            cone_model = self.loader.loadModel(
-                "/home/emanuele/Desktop/github/navigation/data/icons/cone.obj"
-            )
-            cone_model.reparentTo(self.robot_tip_node)
+        # Load cone model
+        cone_model = self.loader.loadModel("data/icons/cone.obj")
+        cone_model.setScale(0.5)
+        cone_model.setColor(1, 1, 0, 0.3)  # Slightly yellow, partial alpha
+        cone_model.setTransparency(TransparencyAttrib.MAlpha)  # type: ignore
 
-            # Set size and color/transparency
-            cone_model.setScale(10)
-            cone_model.setColor(1, 1, 0, 0.3)  # Slightly yellow, partial alpha
-            cone_model.setTransparency(TransparencyAttrib.MAlpha)  # type: ignore
-
-            # Find the index of the closest point to the robot tip
+        # Find the index of the closest point to the robot tip on the centerline
+        if hasattr(self, "interpolated_points") and len(self.interpolated_points) > 0:
             distances = np.linalg.norm(
                 self.interpolated_points - self.robot_tip, axis=1
             )
             closest_index = np.argmin(distances)
 
-            # Get the corresponding tangent, normal, and binormal vectors
-            tangent_vector = LVector3f(*self.tangents[closest_index])  # type: ignore
-            normal_vector = LVector3f(*self.normals[closest_index])  # type: ignore
-
-            # Orient the cone so that +Z aligns with the tangent and the origin of the cone is at the robot tip.
-            # Create a transformation node to handle the orientation
-            cone_np = self.render.attachNewNode("cone_transform")
-
-            # Position the cone at the robot tip
-            cone_np.setPos(LVector3f(*self.robot_tip))  # type: ignore
-
-            # Calculate focal point
-            focal_point = self.robot_tip + tangent_vector
-
-            # Set the HPR of the cone to align with the tangent vector
-            cone_np.lookAt(LVector3f(*focal_point), normal_vector)  # type: ignore
-
-            # Parent the cone model to the transformation node
-            cone_model.reparentTo(cone_np)
-
-            # Store for later (if we want to remove it next frame)
-            self.light_cone_geom_np = cone_np
-
-        else:
-            # Load cone model
-            cone_model = self.loader.loadModel(
-                "/home/emanuele/Desktop/github/navigation/data/icons/cone.obj"
-            )
-            cone_model.reparentTo(self.robot_tip_node)
-            if not cone_model:
-                print("Error loading cone model")
-
-            # Set size and color/transparency
-            cone_model.setScale(0.5)
-            cone_model.setColor(1, 1, 0, 0.3)  # Slightly yellow, partial alpha
-            cone_model.setTransparency(TransparencyAttrib.MAlpha)  # type: ignore
-
-            # Use the self.o_T_fs matrix to draw the cone
-            # Compute the tangent vector from o_T_fs (if available)
-            if hasattr(self, "o_T_fs"):
-                tangent_vector = LVector3f(*self.o_T_fs[:3, 0])  # type: ignore
-                normal_vector = LVector3f(*self.o_T_fs[:3, 1])  # type: ignore
+            # Get the tangent vector at this point
+            if closest_index < len(self.tangents):
+                direction_vector = self.tangents[closest_index]
+                tangent_vector = LVector3f(*direction_vector)  # type: ignore
+                # Use the normal vector from the FS frame as the "up" vector for lookAt
+                # This helps orient the cone correctly along the path's curvature
+                if closest_index < len(self.normals):
+                    normal_vector = LVector3f(*self.normals[closest_index])  # type: ignore
+                else:
+                    normal_vector = LVector3f(0, 0, 1)  # type: ignore # Fallback
             else:
-                tangent_vector = LVector3f(1, 0, 0)  # type: ignore # Fallback
-                normal_vector = LVector3f(0, 1, 0)  # type: ignore # Fallback
+                # Fallback to a default direction if something is wrong with indexing
+                tangent_vector = LVector3f(1, 0, 0)  # type: ignore
+                normal_vector = LVector3f(0, 0, 1)  # type: ignore
+        else:
+            # Fallback if centerline data is not available
+            tangent_vector = LVector3f(1, 0, 0)  # type: ignore
+            normal_vector = LVector3f(0, 0, 1)  # type: ignore
 
-            # Create a transformation node to handle the orientation
-            cone_np = self.render.attachNewNode("cone_transform")
+        # Create a transformation node to handle the orientation
+        cone_np = self.render.attachNewNode("cone_transform")
 
-            # Position the cone at the robot tip
-            cone_np.setPos(LVector3f(*self.robot_tip))  # type: ignore
+        # Position the cone at the robot tip
+        cone_np.setPos(LVector3f(*self.robot_tip))  # type: ignore
 
-            # Calculate focal point
-            focal_point = self.robot_tip + tangent_vector
+        # Calculate focal point
+        focal_point = self.robot_tip
 
-            # Set the HPR of the cone to align with the tangent vector
-            cone_np.lookAt(LVector3f(*focal_point), normal_vector)  # type: ignore
+        # cone_np.lookAt(LVector3f(*focal_point), -normal_vector if normal_vector else LVector3f(0, 0, 1))  # type: ignore
+        cone_np.lookAt(LVector3f(*focal_point), tangent_vector)  # type: ignore
 
-            # Parent the cone model to the transformation node
-            cone_model.reparentTo(cone_np)
+        # Parent the cone model to the transformation node
+        cone_model.reparentTo(cone_np)
 
-            # Store for later (if we want to remove it next frame)
-            self.light_cone_geom_np = cone_np
+        # Store for later (if we want to remove it next frame)
+        self.light_cone_geom_np = cone_np
 
     def draw_origin_frame(self):
         # Create a LineSegs object to draw the frame
@@ -1384,8 +1352,8 @@ Viewer.ViewpointZ: -1.8
         robot_tip_visual.reparentTo(robot_tip_node)
         self.robot_tip_node = robot_tip_node
 
-        # Draw the light cone geometry (TODO: fix this)
-        # self.draw_light_cone_geom()
+        # Draw the light cone geometry
+        self.draw_light_cone_geom()
 
     def draw_path(self, points, up_to_index):
         # Ensure the up_to_index is within bounds
@@ -1890,5 +1858,5 @@ Viewer.ViewpointZ: -1.8
 
 
 if __name__ == "__main__":
-    app = MyApp()
+    app = BronchoSim()
     app.run()
