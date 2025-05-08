@@ -32,7 +32,7 @@ import numpy as np  # type: ignore
 import socket
 import math
 import cv2
-from set_FS_frame import (
+from utils.set_FS_frame import (
     interpolate_line,
     compute_tangent_vectors,
     compute_MRF,
