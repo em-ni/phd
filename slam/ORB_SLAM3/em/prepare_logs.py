@@ -50,14 +50,14 @@ def main():
     slam_logs_folder = sys.argv[3]
 
     # Define output structure:
-    # <current working directory>/logs/<platform>/<alg>/<platform>_<alg>_<branch>
+    # <current working directory>/logs/<platform>/<alg>/<platform>_<alg>_<branch_or_sequence_name>
     output_root = os.path.join(os.getcwd(), "logs", platform)
     alg_folder = os.path.join(output_root, alg)
     os.makedirs(alg_folder, exist_ok=True)
 
-    # Regular expression to match record folders of the form: record_bXXX_TIMESTAMP
+    # Regular expression to match record folders of the form: record_NAME_TIMESTAMP
     record_pattern = re.compile(r"record_(.+)_\d+$")
-    # Map branch -> list of record folder paths
+    # Map identifier -> list of record folder paths
     datasets = {}
 
     # Iterate over items in the slam_logs_folder to find record folders.
@@ -66,19 +66,39 @@ def main():
         if os.path.isdir(item_path):
             match = record_pattern.match(item)
             if match:
-                branch_raw = match.group(1)  # e.g., "b001"
-                # Normalize branch name (remove any leading zeros), e.g., "b001" -> "b1"
-                branch_normalized = "b" + str(int(branch_raw[1:]))
+                branch_raw = match.group(
+                    1
+                )  # e.g., "b001" or "real_seq_000_part_1_dif_1"
+                # Normalize branch name if it's in "b<digits>" format, otherwise use raw.
+                if (
+                    branch_raw.startswith("b")
+                    and branch_raw[1:].isdigit()
+                    and len(branch_raw) > 1
+                ):
+                    branch_normalized = "b" + str(int(branch_raw[1:]))
+                else:
+                    branch_normalized = branch_raw
                 datasets.setdefault(branch_normalized, []).append(item_path)
 
     if not datasets:
         print("No record folders found in the slam logs folder.")
         sys.exit(1)
-    else:
-        print("\nFound the following lung branches:\n", ", ".join(datasets.keys()))
 
-    # Process each branch: merge all record folders for that branch into one dataset folder.
-    for branch, record_folders in datasets.items():
+    # Helper function for sorting keys: numeric for "bX", then alphabetical
+    def sort_key_func(key_str):
+        if key_str.startswith("b") and key_str[1:].isdigit() and len(key_str) > 1:
+            return (0, int(key_str[1:]))  # Sort numerically first
+        return (1, key_str)  # Sort alphabetically after
+
+    print(
+        "\nFound the following dataset groups:\n",
+        ", ".join(sorted(datasets.keys(), key=sort_key_func)),
+    )
+
+    # Process each group: merge all record folders for that group into one dataset folder.
+    for branch, record_folders in sorted(
+        datasets.items(), key=lambda item: sort_key_func(item[0])
+    ):
         dataset_folder_name = f"{platform}_{alg}_{branch}"
         dataset_folder = os.path.join(alg_folder, dataset_folder_name)
         os.makedirs(dataset_folder, exist_ok=True)
@@ -157,8 +177,9 @@ def main():
         "RelDistances": [],
         "RelDistancePercentages": [],
     }
-    # Add each branch as a dataset entry.
-    for branch in sorted(datasets.keys(), key=lambda b: int(b[1:])):
+    # Add each branch/sequence as a dataset entry.
+    # Use the same sorting key function for consistent ordering.
+    for branch in sorted(datasets.keys(), key=sort_key_func):
         config_data["Datasets"][branch] = {"label": branch}
 
     # Write the configuration file to the root of the <platform> folder.

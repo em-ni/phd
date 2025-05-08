@@ -1,0 +1,55 @@
+Algorithms:
+  rgbd-rd:
+    fn: traj_est
+    label: rgbd-rd
+Datasets:
+  real_seq_000_part_0_dif_1:
+    label: real_seq_000_part_0_dif_1
+  real_seq_000_part_1_dif_1:
+    label: real_seq_000_part_1_dif_1
+  real_seq_001_part_0_dif_1:
+    label: real_seq_001_part_0_dif_1
+  real_seq_001_part_1_dif_1:
+    label: real_seq_001_part_1_dif_1
+  real_seq_001_part_2_dif_1:
+    label: real_seq_001_part_2_dif_1
+  real_seq_001_part_3_dif_1:
+    label: real_seq_001_part_3_dif_1
+  real_seq_001_part_4_dif_1:
+    label: real_seq_001_part_4_dif_1
+  stable_seq_000_part_0_dif_0:
+    label: stable_seq_000_part_0_dif_0
+  stable_seq_000_part_1_dif_0:
+    label: stable_seq_000_part_1_dif_0
+  stable_seq_000_part_2_dif_0:
+    label: stable_seq_000_part_2_dif_0
+  stable_seq_001_part_0_dif_0:
+    label: stable_seq_001_part_0_dif_0
+  stable_seq_001_part_1_dif_0:
+    label: stable_seq_001_part_1_dif_0
+  stable_seq_001_part_2_dif_0:
+    label: stable_seq_001_part_2_dif_0
+  stable_seq_001_part_3_dif_0:
+    label: stable_seq_001_part_3_dif_0
+  stable_seq_001_part_4_dif_0:
+    label: stable_seq_001_part_4_dif_0
+  stable_seq_002_part_0_dif_1:
+    label: stable_seq_002_part_0_dif_1
+  stable_seq_002_part_1_dif_1:
+    label: stable_seq_002_part_1_dif_1
+  stable_seq_002_part_2_dif_1:
+    label: stable_seq_002_part_2_dif_1
+  stable_seq_003_part_0_dif_1:
+    label: stable_seq_003_part_0_dif_1
+  stable_seq_004_part_0_dif_0:
+    label: stable_seq_004_part_0_dif_0
+  stable_seq_004_part_1_dif_0:
+    label: stable_seq_004_part_1_dif_0
+  stable_seq_004_part_2_dif_1:
+    label: stable_seq_004_part_2_dif_1
+  stable_seq_004_part_3_dif_1:
+    label: stable_seq_004_part_3_dif_1
+  stable_seq_006_part_2_dif_1:
+    label: stable_seq_006_part_2_dif_1
+RelDistancePercentages: []
+RelDistances: []

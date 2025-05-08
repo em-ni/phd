@@ -31,4 +31,4 @@ done
 echo "Done"
 echo " "
 echo "Use em/prepare_logs.py to prepare the logs for analysis with rpg_trajectory_evaluation"
-echo "e.g. python prepare_logs.py $DATASET_NAME rgbd-rd $DATASET_FOLDER" "
+echo "e.g. python prepare_logs.py $DATASET_NAME rgbd-rd $DATASET_FOLDER"
