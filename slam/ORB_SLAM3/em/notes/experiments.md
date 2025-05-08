@@ -81,71 +81,71 @@ N aimed to be processed overall.
 # results on bronchoscopy dataset
 in summary basically one of the video worked from start to end neither with lung.yaml nor new_lung.yaml
 ; bronchoscopy dataset
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/dynamic_seq_000.mp4                     
+; video = em/run/datasets/bronchoscopy_dataset/dataset/dynamic_seq_000.mp4                     
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/dynamic_seq_001.mp4                     
+; video = em/run/datasets/bronchoscopy_dataset/dataset/dynamic_seq_001.mp4                     
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/dynamic_seq_002.mp4                     
+; video = em/run/datasets/bronchoscopy_dataset/dataset/dynamic_seq_002.mp4                     
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/dynamic_seq_003.mp4                     
+; video = em/run/datasets/bronchoscopy_dataset/dataset/dynamic_seq_003.mp4                     
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/real_seq_000_part_0_dif_1.mp4           
+; video = em/run/datasets/bronchoscopy_dataset/dataset/real_seq_000_part_0_dif_1.mp4           
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/real_seq_000_part_1_dif_1.mp4           
+; video = em/run/datasets/bronchoscopy_dataset/dataset/real_seq_000_part_1_dif_1.mp4           
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/real_seq_001_part_0_dif_1.mp4           
+; video = em/run/datasets/bronchoscopy_dataset/dataset/real_seq_001_part_0_dif_1.mp4           
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/real_seq_001_part_1_dif_1.mp4           
+; video = em/run/datasets/bronchoscopy_dataset/dataset/real_seq_001_part_1_dif_1.mp4           
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/real_seq_001_part_2_dif_1.mp4           
+; video = em/run/datasets/bronchoscopy_dataset/dataset/real_seq_001_part_2_dif_1.mp4           
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/real_seq_001_part_3_dif_1.mp4           
+; video = em/run/datasets/bronchoscopy_dataset/dataset/real_seq_001_part_3_dif_1.mp4           
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/real_seq_001_part_4_dif_1.mp4           
+; video = em/run/datasets/bronchoscopy_dataset/dataset/real_seq_001_part_4_dif_1.mp4           
 ; lung.yaml: X    new_lung.yaml: X
-;       video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_000_part_0_dif_0.mp4         
+;       video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_000_part_0_dif_0.mp4         
 ; lung.yaml: V    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_000_part_1_dif_0.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_000_part_1_dif_0.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_000_part_2_dif_0.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_000_part_2_dif_0.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_001_part_0_dif_0.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_001_part_0_dif_0.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_001_part_1_dif_0.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_001_part_1_dif_0.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_001_part_2_dif_0.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_001_part_2_dif_0.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-;       video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_001_part_3_dif_0.mp4         
+;       video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_001_part_3_dif_0.mp4         
 ; lung.yaml: V    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_001_part_4_dif_0.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_001_part_4_dif_0.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_002_part_0_dif_1.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_002_part_0_dif_1.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_002_part_1_dif_1.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_002_part_1_dif_1.mp4         
 ; lung.yaml: V    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_002_part_2_dif_1.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_002_part_2_dif_1.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-;       video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_003_part_0_dif_1.mp4         
+;       video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_003_part_0_dif_1.mp4         
 ; lung.yaml: V    new_lung.yaml: X
-;       video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_003_part_1_dif_1.mp4         
+;       video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_003_part_1_dif_1.mp4         
 ; lung.yaml: V    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_004_part_0_dif_0.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_004_part_0_dif_0.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_004_part_1_dif_0.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_004_part_1_dif_0.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_004_part_2_dif_1.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_004_part_2_dif_1.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_004_part_3_dif_1.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_004_part_3_dif_1.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-;       video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_005_part_0_dif_1.mp4         
+;       video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_005_part_0_dif_1.mp4         
 ; lung.yaml: V    new_lung.yaml: V
-;       video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_005_part_1_dif_1.mp4         
+;       video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_005_part_1_dif_1.mp4         
 ; lung.yaml: V    new_lung.yaml: V
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_006_part_0_dif_1.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_006_part_0_dif_1.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_006_part_1_dif_1.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_006_part_1_dif_1.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-; video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_006_part_2_dif_1.mp4         
+; video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_006_part_2_dif_1.mp4         
 ; lung.yaml: X    new_lung.yaml: X
-;       video = em/run/videos/datasets/bronchoscopy_dataset/dataset/stable_seq_006_part_3_dif_1.mp4         
+;       video = em/run/datasets/bronchoscopy_dataset/dataset/stable_seq_006_part_3_dif_1.mp4         
 ; lung.yaml: V    new_lung.yaml: X
