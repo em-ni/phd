@@ -85,6 +85,7 @@ class BronchoSim(ShowBase):
         self.model_name = self.app_config["PATHS"]["model_name"]
         self.negative_model_name = self.app_config["PATHS"]["negative_model_name"]
         self.videos_dir = self.app_config["PATHS"]["record_dir"]
+        self.logs_dir = self.app_config["PATHS"]["logs_dir"]
         self.all_branches_bool = self.app_config["PATHS"]["all_branches_bool"]
 
         self.draw_circles_bool = self.app_config["DRAW"]["draw_circles_bool"]
@@ -201,7 +202,8 @@ class BronchoSim(ShowBase):
         if self.live_mode == False:
             self.setup_key_controls()
         else:
-            self.trajectory_history = []
+            self.trajectory_history_position = []
+            self.trajectory_history_wTc = []
 
         # Task for updating the scene
         self.taskMgr.add(self.update_scene, "updateScene")
@@ -297,7 +299,7 @@ class BronchoSim(ShowBase):
                         # Convert the list of lists into a NumPy array
                         self.w_T_c = np.array(matrix)
                         self.connected = True
-                        print(f"Received: {self.w_T_c}")
+                        # print(f"Received: {self.w_T_c}")
                         time.sleep(1)
                     print("Connection closed")
 
@@ -922,12 +924,18 @@ Viewer.ViewpointZ: -1.8
                     self.robot_tip = translation
 
                     # Store position in trajectory history (if it's a new position)
-                    if len(self.trajectory_history) == 0 or not np.array_equal(
-                        self.trajectory_history[-1], self.robot_tip
+                    if len(self.trajectory_history_position) == 0 or not np.array_equal(
+                        self.trajectory_history_position[-1], self.robot_tip
                     ):
-                        self.trajectory_history.append(np.copy(self.robot_tip))
+                        self.trajectory_history_position.append(np.copy(self.robot_tip))
 
-                    print(f"Robot tip position: {self.robot_tip}")
+                    # Store wTc in trajectory history
+                    if len(self.trajectory_history_wTc) == 0 or not np.array_equal(
+                        self.trajectory_history_wTc[-1], w_T_c_matrix
+                    ):
+                        self.trajectory_history_wTc.append(np.copy(w_T_c_matrix))
+
+                    # print(f"Robot tip position: {self.robot_tip}")
 
                 except (SyntaxError, AttributeError) as e:
                     print(f"Error in update_robot_tip_position: {e}")
@@ -1418,15 +1426,15 @@ Viewer.ViewpointZ: -1.8
 
         elif (
             self.live_mode
-            and hasattr(self, "trajectory_history")
-            and len(self.trajectory_history) > 0
+            and hasattr(self, "trajectory_history_position")
+            and len(self.trajectory_history_position) > 0
         ):
             # In live mode, draw the trajectory from history
-            first_point = LVector3f(*self.trajectory_history[0])  # type: ignore
+            first_point = LVector3f(*self.trajectory_history_position[0])  # type: ignore
             line.moveTo(first_point)
 
-            for i in range(1, len(self.trajectory_history)):
-                next_point = LVector3f(*self.trajectory_history[i])  # type: ignore
+            for i in range(1, len(self.trajectory_history_position)):
+                next_point = LVector3f(*self.trajectory_history_position[i])  # type: ignore
                 line.drawTo(next_point)
 
         # Create the line node and attach it to the scene
@@ -1633,6 +1641,7 @@ Viewer.ViewpointZ: -1.8
         # Stop the Panda3D main loop.
         self.taskMgr.stop()
 
+        # Save record
         if self.record_mode and hasattr(self, "record_dir"):
             # Extract centerline name from path (for naming purposes).
             if self.all_branches_bool == "1":
@@ -1797,6 +1806,50 @@ Viewer.ViewpointZ: -1.8
 
             # Remove the temporary record folder.
             shutil.rmtree(self.record_dir)
+
+        # Save trajectory in TUM format
+        if (
+            self.live_mode
+            and hasattr(self, "trajectory_history_wTc")
+            and hasattr(self, "logs_dir")
+        ):
+            # Ensure logs_dir exists
+            logs_dir_path = os.path.join(self.data_folder, self.logs_dir)
+            os.makedirs(logs_dir_path, exist_ok=True)
+
+            # Define filename for the live trajectory
+            live_trajectory_filename = "live_trajectory_wTc.txt"
+            live_trajectory_filepath = os.path.join(
+                logs_dir_path, live_trajectory_filename
+            )
+
+            if self.trajectory_history_wTc:
+                with open(live_trajectory_filepath, "w") as f:
+                    for idx, wTc_matrix in enumerate(self.trajectory_history_wTc):
+                        # Using index as a simple timestamp.
+                        # For more accurate timing, timestamps should be recorded when poses are received.
+                        timestamp = float(idx)
+
+                        # Translation
+                        t = wTc_matrix[:3, 3]
+                        tx, ty, tz = t[0], t[1], t[2]
+
+                        # Rotation to Quaternion
+                        R_matrix = wTc_matrix[:3, :3]
+                        rotation = Rotation.from_matrix(R_matrix)
+                        q = rotation.as_quat()  # Returns [qx, qy, qz, qw]
+                        qx, qy, qz, qw = q[0], q[1], q[2], q[3]
+
+                        # Write in TUM format: timestamp tx ty tz qx qy qz qw
+                        f.write(
+                            f"{timestamp:.6f} {tx:.6f} {ty:.6f} {tz:.6f} {qx:.6f} {qy:.6f} {qz:.6f} {qw:.6f}\n"
+                        )
+
+                print(
+                    f"[INFO] Live trajectory (wTc) saved to {live_trajectory_filepath}"
+                )
+            else:
+                print("[INFO] No live trajectory data to save.")
 
         self.userExit()
 
