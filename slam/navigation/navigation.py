@@ -42,11 +42,8 @@ from utils.set_FS_frame import (
     interpolate_fs_frames,
 )
 
-# TODO: Check all the measurements units and make sure they are consistent
-# TODO: Minimize the rotation and translation from frames of different branches
-
 # Parse command-line arguments
-parser = argparse.ArgumentParser(description="Path Navigation Tool")
+parser = argparse.ArgumentParser(description="Bronchoscopy Simulation")
 parser.add_argument(
     "-view",
     type=str,
@@ -607,8 +604,9 @@ Viewer.ViewpointZ: -1.8
         self.scene.setTransparency(TransparencyAttrib.MDual)  # type: ignore
         self.scene.setColorScale(1, 1, 1, 0.5)
 
-        # Initially draw the path up to the first point
-        self.draw_path(self.interpolated_points, 0)
+        if self.live_mode == False and self.view_mode == "tp":
+            # Initially draw the path up to the first point
+            self.draw_path(self.interpolated_points, 0)
 
     def setup_o_T_w(self):
         """The first point of the centerline (i = 0) corresponds to the transformation from the world frame to the origin frame
@@ -890,7 +888,7 @@ Viewer.ViewpointZ: -1.8
             )
             closest_index = np.argmin(distances)
 
-            if self.view_mode == "tp":
+            if self.view_mode == "tp" and self.live_mode == False:
                 # Redraw the path up to the robot tip
                 self.draw_path(self.interpolated_points, closest_index)
 
@@ -1016,7 +1014,7 @@ Viewer.ViewpointZ: -1.8
             # Update the robot tip position
             self.robot_tip = self.interpolated_points[self.current_index]
 
-        if self.view_mode == "tp":
+        if self.view_mode == "tp" and self.live_mode == False:
             # Redraw the path up to the robot tip
             self.draw_path(self.interpolated_points, self.current_index)
 
