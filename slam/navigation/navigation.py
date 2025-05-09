@@ -1066,9 +1066,9 @@ Viewer.ViewpointZ: -1.8
                         self.update_robot_tip_position(dt, forward=True)
                 if self.keyMap["robot_tip_backward"]:
                     if self.all_branches_bool == "1":
-                        self.update_tip_position_all_branches(dt, forward=True)
+                        self.update_tip_position_all_branches(dt, forward=False)
                     else:
-                        self.update_robot_tip_position(dt, forward=True)
+                        self.update_robot_tip_position(dt, forward=False)
         else:
             self.update_robot_tip_position(dt)
 
@@ -1387,6 +1387,7 @@ Viewer.ViewpointZ: -1.8
         # Check if the trajectory line node already exists and remove it
         if hasattr(self, "trajectory_line_node") and self.trajectory_line_node:
             self.trajectory_line_node.removeNode()
+            self.trajectory_line_node = None  # Clear the reference
 
         # Create the line
         line = LineSegs()  # type: ignore
