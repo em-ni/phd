@@ -1360,6 +1360,11 @@ Viewer.ViewpointZ: -1.8
         if up_to_index >= len(points):
             up_to_index = len(points) - 1
 
+        # Clean everything before drawing again
+        if hasattr(self, "path_line_node") and self.path_line_node:
+            self.path_line_node.removeNode()
+            self.path_line_node = None
+
         # Create the line
         line = LineSegs()  # type: ignore
         line.setThickness(5.0)  # Set a reasonable thickness
@@ -1381,7 +1386,7 @@ Viewer.ViewpointZ: -1.8
 
         # Add the line to the scene
         line_node = line.create()
-        self.render.attachNewNode(line_node)
+        self.path_line_node = self.render.attachNewNode(line_node)
 
     def draw_trajectory(self):
         # Check if the trajectory line node already exists and remove it
