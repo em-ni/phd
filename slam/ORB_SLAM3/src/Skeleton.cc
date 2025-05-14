@@ -4,6 +4,9 @@
 #include <thread>
 #include <chrono>
 #include <mutex>
+#include <vector>
+#include <algorithm> // For std::reverse
+#include <set> // For visited_in_path
 
 // TODOE: ATE is too similar among branches
 // TODOE: the pose sent is too far from the centerline, perform a stronger alignment
@@ -35,7 +38,7 @@ void Skeleton::Run() {
             std::cout << "Stop requested in Skeleton." << std::endl;
             break;
         }
-        bool isDebug = false;
+        bool isDebug = true;
         if (isDebug) std::cout << "Skeleton thread running..." << std::endl;
         if (connected) {
             // auto startTime = std::chrono::steady_clock::now();
@@ -47,31 +50,98 @@ void Skeleton::Run() {
             Sophus::Sim3f bestSim3;
             Sophus::SE3f lastKFPose;
 
-            // Get the current trajectory (coming from slam) 
-            // TODOE: this must be the trajectory from the current pose to the origin not the complete trajectory
+            // Get the current trajectory (coming from slam)
             Map* pActiveMap = mpAtlas->GetCurrentMap();
             if (!pActiveMap) {
                 std::cerr << "No active map found." << std::endl;
+                std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Avoid busy loop
                 continue;
             }
-            const vector<KeyFrame*> vpKFs = pActiveMap->GetAllKeyFrames();
-            if (vpKFs.empty()) {
-                if (isDebug) std::cerr << "No keyframes found." << std::endl;
+
+            // Get all KeyFrames from the active map
+            std::vector<KeyFrame*> vpKFs_in_map = pActiveMap->GetAllKeyFrames();
+
+            if (vpKFs_in_map.empty()) {
+                if (isDebug) std::cerr << "Active map has no keyframes." << std::endl;
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
             }
-            std::vector<Sophus::SE3f> currentTrajectory;
-            for (size_t i = 0; i < vpKFs.size(); i++) {
-                KeyFrame* pKF = vpKFs[i];
-                Eigen::Matrix4f Twc = pKF->GetPoseInverse().matrix();
-                Sophus::SE3f pose(Twc);
-                currentTrajectory.push_back(pose);
-                if (i == vpKFs.size() - 1) {
-                    lastKFPose = pose;
+
+            // Sort KeyFrames by ID to find the one with the highest ID (assumed to be the latest)
+            std::sort(vpKFs_in_map.begin(), vpKFs_in_map.end(), KeyFrame::lId);
+            KeyFrame* pCurrentKF = vpKFs_in_map.back();
+
+            if (!pCurrentKF || pCurrentKF->isBad()) {
+                if (isDebug) std::cerr << "No valid last keyframe found." << std::endl;
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+
+            // Determine the origin KeyFrame (e.g., KeyFrame with ID 0)
+            KeyFrame* pOriginTargetKF = nullptr;
+            const std::vector<KeyFrame*> vpAllKFs = pActiveMap->GetAllKeyFrames();
+            for(KeyFrame* pKF_search : vpAllKFs) {
+                if(pKF_search && pKF_search->mnId == 0 && !pKF_search->isBad()) {
+                    pOriginTargetKF = pKF_search;
+                    break;
                 }
             }
-            if (isDebug) std::cout << "Current trajectory poses: " << currentTrajectory.size() << std::endl;
-            if (currentTrajectory.size() < 10) {
-                if (isDebug) std::cout << "Current trajectory is too short." << std::endl;
+
+            std::vector<KeyFrame*> pathKFs_from_current_to_origin;
+            KeyFrame* pKF_iter = pCurrentKF;
+            std::set<KeyFrame*> visited_in_path; // To prevent cycles in case of malformed parent links
+
+            while(pKF_iter && !pKF_iter->isBad() && visited_in_path.find(pKF_iter) == visited_in_path.end()) {
+                pathKFs_from_current_to_origin.push_back(pKF_iter);
+                visited_in_path.insert(pKF_iter);
+
+                if (pOriginTargetKF && pKF_iter == pOriginTargetKF) {
+                    break; // Reached the target origin
+                }
+                
+                KeyFrame* pParent = pKF_iter->GetParent();
+                if (!pParent) { // Reached the root of the spanning tree
+                    // If we were looking for a specific origin and didn't find it by now,
+                    // and this root is not it, the specific origin is not an ancestor.
+                    // The path will be to this root.
+                    break; 
+                }
+                pKF_iter = pParent;
+            }
+            
+            std::vector<Sophus::SE3f> currentTrajectory;
+            if (pathKFs_from_current_to_origin.empty()) {
+                if (isDebug) std::cerr << "Path to origin is empty." << std::endl;
+                // Fallback: use only the current keyframe's pose for lastKFPose
+                // The trajectory will be too short and likely skipped.
+                Eigen::Matrix4f Twc = pCurrentKF->GetPoseInverse().matrix();
+                lastKFPose = Sophus::SE3f(Twc);
+            } else {
+                // Reverse the path to be from Origin/Root to Current
+                std::reverse(pathKFs_from_current_to_origin.begin(), pathKFs_from_current_to_origin.end());
+                
+                for (KeyFrame* pKF : pathKFs_from_current_to_origin) {
+                    Eigen::Matrix4f Twc = pKF->GetPoseInverse().matrix();
+                    Sophus::SE3f pose(Twc);
+                    currentTrajectory.push_back(pose);
+                }
+                if (!currentTrajectory.empty()) {
+                    lastKFPose = currentTrajectory.back(); // Pose of pCurrentKF
+                } else {
+                     // Should not happen if pathKFs_from_current_to_origin was not empty
+                    Eigen::Matrix4f Twc = pCurrentKF->GetPoseInverse().matrix();
+                    lastKFPose = Sophus::SE3f(Twc);
+                }
+            }
+
+            if (isDebug) std::cout << "Current trajectory (path to origin) poses: " << currentTrajectory.size() << std::endl;
+            
+            // Original code had a threshold of 10. 
+            // A path to origin might be shorter. Adjust threshold as needed.
+            // For ATE, at least 2 points are generally needed.
+            if (currentTrajectory.size() < 2) { 
+                if (isDebug) std::cout << "Current trajectory (path to origin) is too short." << std::endl;
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
             }
             
@@ -209,6 +279,7 @@ void Skeleton::SetCurPose(Sophus::SE3f pose) {
 void Skeleton::SetCurvilinearAbscissa(double value) {
     std::unique_lock<std::mutex> lock(mMutexCurvilinearAbscissa);
     mCurvilinearAbscissa = value;
+    // cout << "Curvilinear abscissa set to: " << value << endl;
 }
 
 double Skeleton::GetCurvilinearAbscissa() {
@@ -227,7 +298,7 @@ void Skeleton::SetReferenceCenterline() {
     // Clear any existing reference centerline poses.
     mRefCenterlinePoses.clear();
 
-    bool isDebug = false;
+    bool isDebug = true;
 
     int branchId = 1;
     while (true){
@@ -288,7 +359,7 @@ std::vector<std::vector<Sophus::SE3f>> Skeleton::GetReferenceCenterline() {
 
 std::vector<std::vector<Sophus::SE3f>> Skeleton::FindCandidateTrajectories() {
 
-    bool isDebug = false;
+    bool isDebug = true;
 
     std::vector<std::vector<Sophus::SE3f>> candidateTrajectories;
 

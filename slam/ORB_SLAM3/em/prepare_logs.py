@@ -51,7 +51,7 @@ def main():
 
     # Define output structure:
     # <current working directory>/logs/<platform>/<alg>/<platform>_<alg>_<branch_or_sequence_name>
-    output_root = os.path.join(os.getcwd(), "logs", platform)
+    output_root = os.path.join(os.getcwd(), "em", "logs", platform)
     alg_folder = os.path.join(output_root, alg)
     os.makedirs(alg_folder, exist_ok=True)
 
