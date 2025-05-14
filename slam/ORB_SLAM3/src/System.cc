@@ -232,7 +232,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     mptLoopClosing = new thread(&ORB_SLAM3::LoopClosing::Run, mpLoopCloser);
 
     // Run the Skeleton main thread if we have patient data and encoder data
-    if (mbWithPatientData && mbWithEncoder){
+    if (mbWithPatientData){
         mptSkeleton = new thread(&ORB_SLAM3::Skeleton::Run, mpTracker->mpSkeleton);
     }
 
@@ -412,9 +412,17 @@ Sophus::SE3f System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const
 
     Sophus::SE3f Tcw = mpTracker->GrabImageRGBD(imToFeed,imDepthToFeed,timestamp,filename);
 
-    // If we have patient data and encoder data, we can use the encoder data to update the curvilinear abscissa
-    if (curvilinearAbscissa != std::numeric_limits<double>::max() && mbWithPatientData && mbWithEncoder){
-        mpTracker->mpSkeleton->SetCurvilinearAbscissa(curvilinearAbscissa);
+    if (mbWithPatientData) {
+        // If we have patient data and encoder data, we can use the encoder data to update the curvilinear abscissa
+        if (mbWithEncoder) {
+            if (curvilinearAbscissa != std::numeric_limits<double>::max() ){
+                mpTracker->mpSkeleton->SetCurvilinearAbscissa(curvilinearAbscissa);
+            }
+        }
+        // else it's computed from the system trajectory
+        else {
+            mpTracker->SetCAFromMapToSkeleton();
+        }
     }
 
     unique_lock<mutex> lock2(mMutexState);

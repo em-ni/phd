@@ -126,7 +126,7 @@ Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer,
     mbWithPatientData = withPatient;
     mbWithEncoder = withEncoder;
 
-    if (withPatient && withEncoder){
+    if (withPatient){
         std::cout << "\nInitializing Skeleton" << std::endl;
         string centerlinePath = ini["PATIENT"].get("folder");
         mpSkeleton = new Skeleton(centerlinePath, mpAtlas);
@@ -2536,7 +2536,51 @@ void Tracking::MonocularInitialization()
     }
 }
 
+void Tracking::SetCAFromMapToSkeleton(){
+    // Set the curvilinear abscissa computing it from the system trajectory
+    if (this->mpSkeleton && this->mpAtlas) {
+        Map* pActiveMap = this->mpAtlas->GetCurrentMap();
+        // Use this->mpLastKeyFrame as it's the most recent KF in the map structure
+        // after a tracking cycle which might include new KF creation.
+        KeyFrame* pCurrentKFForAbscissa = this->mpLastKeyFrame;
 
+        if (pActiveMap && pCurrentKFForAbscissa && !pCurrentKFForAbscissa->isBad() && pCurrentKFForAbscissa->GetMap() == pActiveMap) {
+            KeyFrame* pOriginTargetKF = nullptr;
+            const std::vector<KeyFrame*> vpAllKFsInActiveMap = pActiveMap->GetAllKeyFrames();
+            for(KeyFrame* pKF_search : vpAllKFsInActiveMap) {
+                if(pKF_search && !pKF_search->isBad() && pKF_search->mnId == 0 && pKF_search->GetMap() == pActiveMap) {
+                    pOriginTargetKF = pKF_search;
+                    break;
+                }
+            }
+
+            double computedCurvilinearAbscissa = 0.0;
+            KeyFrame* pNode = pCurrentKFForAbscissa;
+            std::set<KeyFrame*> visited_nodes_for_abscissa; // To prevent cycles
+
+            // Traverse from current KF towards its root or KF0 in the same map
+            while(pNode && !pNode->isBad() && pNode->GetMap() == pActiveMap &&
+                visited_nodes_for_abscissa.find(pNode) == visited_nodes_for_abscissa.end()) {
+
+                if (pOriginTargetKF && pNode == pOriginTargetKF) { // Reached specific origin
+                    break;
+                }
+                visited_nodes_for_abscissa.insert(pNode);
+                KeyFrame* pParent = pNode->GetParent();
+
+                if (pParent && !pParent->isBad() && pParent->GetMap() == pActiveMap) {
+                    Eigen::Vector3f posNode = pNode->GetCameraCenter();
+                    Eigen::Vector3f posParent = pParent->GetCameraCenter();
+                    computedCurvilinearAbscissa += (posNode - posParent).norm();
+                    pNode = pParent;
+                } else { // Reached root of this map's spanning tree, bad parent, or parent in different map
+                    pNode = nullptr; // End loop
+                }
+            }
+            this->mpSkeleton->SetCurvilinearAbscissa(computedCurvilinearAbscissa);
+        }
+    } 
+}
 
 void Tracking::CreateInitialMapMonocular()
 {

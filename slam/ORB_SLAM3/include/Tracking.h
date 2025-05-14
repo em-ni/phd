@@ -90,6 +90,8 @@ public:
     void SetStepByStep(bool bSet);
     bool GetStepByStep();
 
+    void SetCAFromMapToSkeleton();
+
     // Load new settings
     // The focal lenght should be similar or scale prediction will fail when projecting points
     void ChangeCalibration(const string &strSettingPath);
