@@ -267,7 +267,7 @@ void LocalMapping::Run()
             // Safe area to stop
             while(isStopped() && !CheckFinish())
             {
-                cout << "LocalMapping: waiting to stop" << endl;
+                // cout << "LocalMapping: waiting to stop" << endl;
                 usleep(3000);
             }
             if(CheckFinish()){
