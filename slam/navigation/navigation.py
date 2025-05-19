@@ -39,8 +39,10 @@ from utils.set_FS_frame import (
     smooth_vectors,
     save_frames_single_branch,
     convert_fs_to_tum,
+    convert_tum_to_fs,
     interpolate_fs_frames,
 )
+from utils.align_trajectory import align_umeyama
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Bronchoscopy Simulation")
@@ -68,7 +70,11 @@ parser.add_argument(
     action="store_true",
     help="Enable continuous forward motion (autopilot)",
 )
-
+parser.add_argument(
+    "-results",
+    action="store_true",
+    help="Enable results visualization mode",
+)
 
 args = parser.parse_args()
 
@@ -108,24 +114,240 @@ class BronchoSim(ShowBase):
         self.live_mode = args.live
         self.record_mode = args.record
         self.autopilot = args.autopilot
+        self.results_mode = args.results
+
         print("\nCommand line arguments:")
         print(f"-View: {self.view_mode}")
         print(f"-Live: {self.live_mode}")
         print(f"-Record: {self.record_mode}")
-        print(f"-Autopilot: {self.autopilot}\n")
+        print(f"-Autopilot: {self.autopilot}")
+        print(f"-Results mode: {self.results_mode}\n")
+
+        # Initialize keyMap with default values to ensure it always exists
+        self.keyMap = {"robot_tip_forward": False, "robot_tip_backward": False}
+
+        if self.results_mode:
+            print("[INFO] Results visualization mode enabled.")
+            self.view_mode = "tp"
+            self.live_mode = False
+            self.record_mode = False
+            self.autopilot = False
+            self.sim_server_bool = "0"
+
+            try:
+                res_centerline_fs_path_config = os.path.join(
+                    self.data_folder, self.app_config["RESULTS"]["res_centerline_fs"]
+                )
+                res_centerline_tum_path_config = os.path.join(
+                    self.data_folder, self.app_config["RESULTS"]["res_centerline_tum"]
+                )
+                res_gt_path_config = os.path.join(
+                    self.data_folder, self.app_config["RESULTS"]["res_gt"]
+                )
+                res_slam_path_config = os.path.join(
+                    self.data_folder, self.app_config["RESULTS"]["res_slam"]
+                )
+                temp_output_file = (
+                    "trash.txt"  # Used by convert_tum_to_fs if write_file=True
+                )
+
+                # Load TUM trajectories and convert to lists of 4x4 FS-like frames
+                print("[INFO] Loading and converting centerline trajectory...")
+                self.res_centerline_frames = convert_tum_to_fs(
+                    res_centerline_tum_path_config,
+                    temp_output_file,
+                    res_centerline_fs_path_config,
+                    write_file=False,
+                )
+                print(
+                    f"[INFO] Loaded {len(self.res_centerline_frames)} centerline frames."
+                )
+
+                print("[INFO] Loading and converting ground truth trajectory...")
+                res_gt_frames = convert_tum_to_fs(
+                    res_gt_path_config,
+                    temp_output_file,
+                    res_centerline_fs_path_config,
+                    write_file=False,
+                )
+                print(f"[INFO] Loaded {len(res_gt_frames)} GT frames.")
+
+                print("[INFO] Loading and converting SLAM trajectory...")
+                res_slam_frames = convert_tum_to_fs(
+                    res_slam_path_config,
+                    temp_output_file,
+                    res_centerline_fs_path_config,
+                    write_file=False,
+                )
+                print(f"[INFO] Loaded {len(res_slam_frames)} SLAM frames.")
+
+                if os.path.exists(temp_output_file):
+                    os.remove(temp_output_file)
+
+                def resample_trajectory_points(points_array, num_target_points):
+                    num_original_points = len(points_array)
+                    if num_original_points == num_target_points:
+                        return points_array
+                    if num_original_points < 1 or num_target_points < 1:
+                        print("[WARNING] Cannot resample trajectory with less than 1 point.")
+                        return points_array # Or return empty, or raise error
+                    if num_original_points == 1: # Replicate the single point
+                        return np.tile(points_array, (num_target_points, 1))
+                    
+                    original_indices = np.linspace(0, num_original_points - 1, num_original_points)
+                    target_indices = np.linspace(0, num_original_points - 1, num_target_points)
+                    
+                    resampled_points = np.zeros((num_target_points, points_array.shape[1]))
+                    for i in range(points_array.shape[1]): # For each dimension (e.g., x, y, z)
+                        resampled_points[:, i] = np.interp(target_indices, original_indices, points_array[:, i])
+                    return resampled_points
+
+                def apply_sRt_to_frames(frames_list, s, R, t_vec):
+                    aligned_frames = []
+                    for frame in frames_list:
+                        pos = frame[:3, 3]
+                        rot = frame[:3, :3]
+                        aligned_pos = s * np.dot(R, pos) + t_vec
+                        aligned_rot = np.dot(R, rot)
+                        new_frame = np.eye(4)
+                        new_frame[:3, :3] = aligned_rot
+                        new_frame[:3, 3] = aligned_pos
+                        aligned_frames.append(new_frame)
+                    return aligned_frames
+
+                # Align gt to centerline
+                self.res_gt_aligned_frames = list(res_gt_frames) # Default to original if alignment fails/skipped
+                if self.res_centerline_frames and res_gt_frames:
+                    print("[INFO] Aligning GT trajectory to centerline trajectory...")
+                    centerline_pos_orig = np.array([f[:3, 3] for f in self.res_centerline_frames])
+                    gt_pos_orig = np.array([f[:3, 3] for f in res_gt_frames])
+
+                    len_c = len(centerline_pos_orig)
+                    len_g = len(gt_pos_orig)
+
+                    if len_c > 0 and len_g > 0:
+                        centerline_pos_align = centerline_pos_orig
+                        gt_pos_align = gt_pos_orig
+
+                        if len_c != len_g:
+                            print(f"[INFO] Original lengths: Centerline={len_c}, GT={len_g}. Resampling for alignment.")
+                            if len_c > len_g: # Resample centerline to match GT length
+                                centerline_pos_align = resample_trajectory_points(centerline_pos_orig, len_g)
+                                print(f"[INFO] Resampled centerline to {len(centerline_pos_align)} points.")
+                            else: # Resample GT to match centerline length
+                                gt_pos_align = resample_trajectory_points(gt_pos_orig, len_c)
+                                print(f"[INFO] Resampled GT to {len(gt_pos_align)} points.")
+                        
+                        s_gt_c, R_gt_c, t_gt_c = align_umeyama(
+                            model=centerline_pos_align, # Target
+                            data=gt_pos_align,         # Source to be aligned
+                            known_scale=False,
+                        )
+                        print(
+                            f"[INFO] GT to Centerline alignment params: s={s_gt_c:.4f}, t={t_gt_c.flatten()}"
+                        )
+                        # Apply transform to the original (full) GT trajectory frames
+                        self.res_gt_aligned_frames = apply_sRt_to_frames(
+                            res_gt_frames, s_gt_c, R_gt_c, t_gt_c
+                        )
+                        print(
+                            f"[INFO] GT trajectory aligned to centerline. Resulting frames: {len(self.res_gt_aligned_frames)}"
+                        )
+                    else:
+                        print(
+                            "[WARNING] Cannot align GT to centerline: one or both trajectories have zero length."
+                        )
+                else:
+                    print(
+                        "[WARNING] Centerline or GT trajectory is empty. Skipping GT to Centerline alignment."
+                    )
+
+                # Align slam to (aligned) gt
+                self.res_slam_aligned_frames = list(res_slam_frames) # Default to original
+                if self.res_gt_aligned_frames and res_slam_frames:
+                    print(
+                        "[INFO] Aligning SLAM trajectory to (aligned) GT trajectory..."
+                    )
+                    gt_aligned_pos_orig = np.array(
+                        [f[:3, 3] for f in self.res_gt_aligned_frames]
+                    )
+                    slam_pos_orig = np.array([f[:3, 3] for f in res_slam_frames])
+
+                    len_gt_aligned = len(gt_aligned_pos_orig)
+                    len_slam = len(slam_pos_orig)
+
+                    if len_gt_aligned > 0 and len_slam > 0:
+                        gt_aligned_pos_align = gt_aligned_pos_orig
+                        slam_pos_align = slam_pos_orig
+
+                        if len_gt_aligned != len_slam:
+                            print(f"[INFO] Original lengths: Aligned GT={len_gt_aligned}, SLAM={len_slam}. Resampling for alignment.")
+                            if len_gt_aligned > len_slam: # Resample aligned GT to match SLAM length
+                                gt_aligned_pos_align = resample_trajectory_points(gt_aligned_pos_orig, len_slam)
+                                print(f"[INFO] Resampled aligned GT to {len(gt_aligned_pos_align)} points.")
+                            else: # Resample SLAM to match aligned GT length
+                                slam_pos_align = resample_trajectory_points(slam_pos_orig, len_gt_aligned)
+                                print(f"[INFO] Resampled SLAM to {len(slam_pos_align)} points.")
+
+                        s_slam_gt, R_slam_gt, t_slam_gt = align_umeyama(
+                            model=gt_aligned_pos_align, # Target
+                            data=slam_pos_align,        # Source to be aligned
+                            known_scale=False,
+                        )
+                        print(
+                            f"[INFO] SLAM to GT alignment params: s={s_slam_gt:.4f}, t={t_slam_gt.flatten()}"
+                        )
+                        # Apply transform to the original (full) SLAM trajectory frames
+                        self.res_slam_aligned_frames = apply_sRt_to_frames(
+                            res_slam_frames, s_slam_gt, R_slam_gt, t_slam_gt
+                        )
+                        print(
+                            f"[INFO] SLAM trajectory aligned to GT. Resulting frames: {len(self.res_slam_aligned_frames)}"
+                        )
+                    else:
+                        print(
+                            "[WARNING] Cannot align SLAM to GT: one or both trajectories have zero length."
+                        )
+                else:
+                    print(
+                        "[WARNING] Aligned GT or SLAM trajectory is empty. Skipping SLAM to GT alignment."
+                    )
+                
+                self.draw_results_trajectories()
+
+            except KeyError as e:
+                print(f"[ERROR] Missing key in [RESULTS] section of config.ini: {e}")
+                print(
+                    "[INFO] Please ensure res_centerline_fs, res_centerline_tum, res_gt, and res_slam are defined for -results mode."
+                )
+                sys.exit(1)
+            except ImportError:
+                print(
+                    "[ERROR] Could not import align_umeyama. Make sure utils.align_trajectory is in the correct path and numpy is installed."
+                )
+                sys.exit(1)
+            except Exception as e:
+                print(
+                    f"[ERROR] An unexpected error occurred during results processing: {e}"
+                )
+                import traceback
+
+                traceback.print_exc()
+                sys.exit(1)
 
         if self.live_mode and self.autopilot:
             print(
-                "[WARNING] Autopilot cannot be used in live mode. Disabling autopilot."
+                "[WARNING] Live mode and autopilot are mutually exclusive. Disabling autopilot."
             )
             self.autopilot = False
 
         # Quit app on "q"
         self.accept("q", self.quit_app)
 
-        # Set up camera parameters
-        if self.view_mode == "fp":
-            self.setup_camera_params()
+        if not self.results_mode:
+            # Set up camera parameters
+            if self.view_mode == "fp":
+                self.setup_camera_params()
 
         self.connected = False
 
@@ -189,21 +411,17 @@ class BronchoSim(ShowBase):
         # Set antialiasing
         self.render.setAntialias(AntialiasAttrib.MAuto)  # type: ignore
 
-        # Initialize timer for blinking
         self.blink_timer = 0
-        self.blink_interval = 1  # in seconds
-        self.robot_tip_visible = True  # Initial visibility status
+        self.blink_interval = 1
+        self.robot_tip_visible = False
+        if not self.results_mode:
+            self.robot_tip_visible = True
 
-        # # Load basic environment
-        # self.scene = self.loader.loadModel("models/environment")
-        # self.scene.reparentTo(self.render)
-
-        # Set up key controls
-        if self.live_mode == False:
-            self.setup_key_controls()
-        else:
-            self.trajectory_history_position = []
-            self.trajectory_history_wTc = []
+            if self.live_mode == False:
+                self.setup_key_controls()
+            else:
+                self.trajectory_history_position = []
+                self.trajectory_history_wTc = []
 
         # Task for updating the scene
         self.taskMgr.add(self.update_scene, "updateScene")
@@ -241,6 +459,7 @@ class BronchoSim(ShowBase):
         self.fsi_T_ci[:3, :3] = R_n
 
         self.o_T_w = self.setup_o_T_w()
+        # print("[INFO] o_T_w: ", self.o_T_w)
 
         # Load the model
         if self.view_mode == "fp":
@@ -676,7 +895,7 @@ Viewer.ViewpointZ: -1.8
             branch_normals, branch_binormals = compute_MRF(branch_tangents)
 
             # FORWARD TRAVEL: Build FS frames for each point along the branch
-            for i, pt in enumerate(interp_points):
+            for i, pt in interp_points:
                 fs_frame = np.eye(4)
                 fs_frame[:3, 0] = branch_tangents[i]
                 fs_frame[:3, 1] = branch_normals[i]
@@ -1341,6 +1560,8 @@ Viewer.ViewpointZ: -1.8
         return frame_node
 
     def draw_robot_tip(self):
+        if self.results_mode:
+            return
         if self.robot_tip_node:
             self.robot_tip_node.removeNode()  # Remove the old node if it exists
 
@@ -1441,20 +1662,78 @@ Viewer.ViewpointZ: -1.8
         line_node = line.create()
         self.trajectory_line_node = self.render.attachNewNode(line_node)
 
-    def draw_vector(self, start_point, direction, color):
-        # Convert NumPy array to LVecBase3f
-        start_point = LVector3f(start_point[0], start_point[1], start_point[2])  # type: ignore
-        end_point = (
-            start_point + LVector3f(direction[0], direction[1], direction[2]) * 0.2  # type: ignore
+    def _draw_trajectory_from_frames(
+        self, frames_list, color_tuple, thickness=3.0, node_name="trajectory_node"
+    ):
+        """Helper function to draw a single trajectory from a list of 4x4 frames."""
+        if not frames_list:
+            print(f"[INFO] No frames to draw for {node_name}")
+            return None
+
+        positions = [frame[:3, 3] for frame in frames_list]
+
+        if len(positions) < 2:
+            print(
+                f"[INFO] Not enough points to draw trajectory for {node_name} (needs at least 2, got {len(positions)})"
+            )
+            return None
+
+        line_segs = LineSegs()  # type: ignore
+        line_segs.setThickness(thickness)
+        line_segs.setColor(
+            color_tuple[0], color_tuple[1], color_tuple[2], color_tuple[3]
+        )  # R, G, B, A
+
+        line_segs.moveTo(LVector3f(*positions[0]))  # type: ignore
+        for i in range(1, len(positions)):
+            line_segs.drawTo(LVector3f(*positions[i]))  # type: ignore
+
+        node = line_segs.create()
+        path_node = self.render.attachNewNode(node)
+        path_node.setName(node_name)
+        return path_node
+
+    def draw_results_trajectories(self):
+        """Draws the centerline, aligned GT, and aligned SLAM trajectories for results mode."""
+        print("[INFO] Drawing results trajectories...")
+
+        # Colors: (R, G, B, A)
+        color_centerline = (0.8, 0.8, 0.8, 1)  # Light Gray/White for centerline
+        color_gt = (0, 1, 0, 1)  # Green for Ground Truth
+        color_slam = (0, 0, 1, 1)  # Blue for SLAM
+
+        # Store nodes to self if they need to be accessed/removed later
+        self.results_centerline_node = self._draw_trajectory_from_frames(
+            self.res_centerline_frames,
+            color_centerline,
+            thickness=2.0,
+            node_name="results_centerline_traj",
+        )
+        self.results_gt_node = self._draw_trajectory_from_frames(
+            self.res_gt_aligned_frames,
+            color_gt,
+            thickness=2.0,
+            node_name="results_gt_aligned_traj",
+        )
+        self.results_slam_node = self._draw_trajectory_from_frames(
+            self.res_slam_aligned_frames,
+            color_slam,
+            thickness=2.0,
+            node_name="results_slam_aligned_traj",
         )
 
-        line = LineSegs()  # type: ignore
-        line.setThickness(2.0)
-        line.setColor(color)
-        line.moveTo(start_point)
-        line.drawTo(end_point)
-        line_node = line.create()
-        self.render.attachNewNode(line_node)
+        if self.results_centerline_node:
+            print(
+                f"[INFO] Drawn centerline trajectory with {len(self.res_centerline_frames)} points."
+            )
+        if self.results_gt_node:
+            print(
+                f"[INFO] Drawn aligned GT trajectory with {len(self.res_gt_aligned_frames)} points."
+            )
+        if self.results_slam_node:
+            print(
+                f"[INFO] Drawn aligned SLAM trajectory with {len(self.res_slam_aligned_frames)} points."
+            )
 
     def highlight_arrow(self, arrow):
         rgb_color = (8 / 255, 232 / 255, 222 / 255, 1)
