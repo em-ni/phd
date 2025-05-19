@@ -456,8 +456,6 @@ def convert_fs_to_tum(input_file, output_file, convention="wTc"):
     so to get the ground truth data from here I have to obtain all the Twc_i (w_T_ci) matrices
 
     w_T_ci = o_T_w^-1 * o_T_ci
-
-
     """
 
     with open(input_file, "r") as fin, open(output_file, "w") as fout:
@@ -541,6 +539,163 @@ def convert_fs_to_tum(input_file, output_file, convention="wTc"):
             )
 
 
+def calculate_o_T_w_from_fs_first_line(ref_centerline_fs_file):
+    """
+    Calculates the o_T_w (which is o_T_c0, the pose of the first camera in origin frame)
+    based on the first valid line of an FS file and the logic from convert_fs_to_tum.
+
+    Parameters:
+    - ref_centerline_fs_file (str): Path to the original FS file.
+
+    Returns:
+    - np.ndarray: The 4x4 o_T_w matrix, or None if calculation fails.
+    """
+    try:
+        with open(ref_centerline_fs_file, "r") as fs_fin:
+            for line_idx, line in enumerate(fs_fin):
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                vals = line.split(",")
+                if len(vals) != 12:
+                    print(
+                        f"Skipping malformed FS line {line_idx+1} in {ref_centerline_fs_file} for o_T_w calc."
+                    )
+                    continue
+
+                try:
+                    px, py, pz = map(float, vals[0:3])
+                    tx, ty, tz = map(float, vals[3:6])
+                    nx, ny, nz = map(float, vals[6:9])
+                    bx, by, bz = map(float, vals[9:12])
+                except ValueError:
+                    print(
+                        f"Skipping FS line {line_idx+1} with non-float values in {ref_centerline_fs_file} for o_T_w calc."
+                    )
+                    continue
+
+                # This is o_T_fs0 from the first valid FS line
+                o_R_fs0 = np.array([[tx, nx, bx], [ty, ny, by], [tz, nz, bz]])
+                o_p_fs0 = np.array([px, py, pz])
+
+                # Check determinant and orthogonality of o_R_fs0
+                if not np.isclose(np.linalg.det(o_R_fs0), 1.0):
+                    print(
+                        f"Warning: Determinant of o_R_fs0 from {ref_centerline_fs_file} (line {line_idx+1}) is not 1.0. Cannot reliably compute o_T_w."
+                    )
+                    return None
+                if not np.allclose(o_R_fs0.T @ o_R_fs0, np.eye(3), atol=1e-5):
+                    print(
+                        f"Warning: o_R_fs0 from {ref_centerline_fs_file} (line {line_idx+1}) is not orthogonal. Cannot reliably compute o_T_w."
+                    )
+                    return None
+
+                o_T_fs0 = np.eye(4)
+                o_T_fs0[:3, :3] = o_R_fs0
+                o_T_fs0[:3, 3] = o_p_fs0
+
+                # Fixed rotation R_fs_c (Rn in original convert_fs_to_tum)
+                # This matrix transforms coordinates from camera (c) to FS frame (fs)
+                # Its columns are Xc, Yc, Zc expressed in fs frame.
+                R_fs_c = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
+                fs_T_c = np.eye(4)
+                fs_T_c[:3, :3] = R_fs_c
+                # fs_T_c[:3, 3] is [0,0,0]
+
+                # o_T_w is defined as o_T_c0 = o_T_fs0 @ fs_T_c0
+                o_T_w = o_T_fs0 @ fs_T_c
+                return o_T_w  # Successfully calculated from the first valid line
+
+            print(
+                f"Error: No valid FS lines found in {ref_centerline_fs_file} to calculate o_T_w."
+            )
+            return None
+
+    except FileNotFoundError:
+        print(f"Error: Original FS file not found at {ref_centerline_fs_file}")
+        return None
+    except Exception as e:
+        print(
+            f"An error occurred while calculating o_T_w from {ref_centerline_fs_file}: {e}"
+        )
+        return None
+
+
+def convert_tum_to_fs(
+    input_file, output_file, ref_centerline_fs_file, convention="wTc", write_file=False
+):
+    """
+    Convert TUM format trajectory (timestamp px py pz qx qy qz qw)
+    into Frenet-Serret frames (px, py, pz, Tx, Ty, Tz, Nx, Ny, Nz, Bx, By, Bz),
+    Inverting the operations of convert_fs_to_tum:
+    o_T_fsi = o_T_w * w_T_ci * ci_T_fsi
+    """
+    if not write_file:
+        trajectory = []
+
+    o_T_fsi = np.eye(4)
+    Rn = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
+    fsi_T_ci = np.eye(4)
+    fsi_T_ci[:3, :3] = Rn
+    fsi_T_ci[:3, 3] = [0, 0, 0]
+    ci_T_fsi = np.linalg.inv(fsi_T_ci)
+
+    # Calculate o_T_w from the first valid line of the original FS file
+    o_T_w = calculate_o_T_w_from_fs_first_line(ref_centerline_fs_file)
+    if o_T_w is None:
+        print(
+            f"Error: Could not calculate o_T_w from the original FS file {ref_centerline_fs_file}. Exiting."
+        )
+        return None
+
+    with open(input_file, "r") as fin, open(output_file, "w") as fout:
+        lines = fin.readlines()
+        for line in lines:
+            # Each line has 8 floats: timestamp px py pz qx qy qz qw
+            vals = line.strip().split(" ")
+            if len(vals) != 8:
+                continue
+
+            # Parse floats
+            px, py, pz = map(float, vals[1:4])
+            qx, qy, qz, qw = map(float, vals[4:8])
+
+            # Build rotation matrix from quaternion
+            rot = Rotation.from_quat([qx, qy, qz, qw])
+            w_R_ci = rot.as_matrix()
+
+            # Build w_T_ci
+            w_T_ci = np.eye(4)
+            w_T_ci[:3, :3] = w_R_ci
+            w_T_ci[:3, 3] = [px, py, pz]
+
+            # Build o_T_fsi (FS frame as originally set)
+            o_T_ci = o_T_w @ w_T_ci
+            o_T_fsi = o_T_ci @ ci_T_fsi
+
+            # Extract data
+            p = o_T_fsi[:3, 3]
+            T = o_T_fsi[:3, 0]
+            N = o_T_fsi[:3, 1]
+            B = o_T_fsi[:3, 2]
+
+            if write_file:
+                # Write to file
+                fout.write(
+                    f"{p[0]}, {p[1]}, {p[2]}, "
+                    f"{T[0]}, {T[1]}, {T[2]}, "
+                    f"{N[0]}, {N[1]}, {N[2]}, "
+                    f"{B[0]}, {B[1]}, {B[2]}\n"
+                )
+            else:
+                trajectory.append(o_T_fsi)
+    if write_file:
+        return output_file
+    else:
+        return trajectory
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description="Process centerline file and compute Frenet-Serret frames."
@@ -552,29 +707,62 @@ def parse_arguments():
 
 
 if __name__ == "__main__":
-    args = parse_arguments()
+    # args = parse_arguments()
 
-    draw_only = False
+    # draw_only = False
 
-    if draw_only:
-        draw_FS_frames(path=args.i)
+    # if draw_only:
+    #     draw_FS_frames(path=args.i)
 
-    else:
-        # Check if input is a file or directory
-        if os.path.isfile(args.i) and args.i.endswith(".vtp"):
-            # Process single .vtp file
-            save_frames_single_branch(args.i)
-        elif os.path.isdir(args.i):
-            # Process all centerline_b*.vtp files in directory
-            vtp_files = [
-                os.path.join(args.i, f)
-                for f in os.listdir(args.i)
-                if f.startswith("b") and f.endswith(".vtp")
-            ]
+    # else:
+    #     # Check if input is a file or directory
+    #     if os.path.isfile(args.i) and args.i.endswith(".vtp"):
+    #         # Process single .vtp file
+    #         save_frames_single_branch(args.i)
+    #     elif os.path.isdir(args.i):
+    #         # Process all centerline_b*.vtp files in directory
+    #         vtp_files = [
+    #             os.path.join(args.i, f)
+    #             for f in os.listdir(args.i)
+    #             if f.startswith("b") and f.endswith(".vtp")
+    #         ]
 
-            save_frames_all_branches(vtp_files)
+    #         save_frames_all_branches(vtp_files)
 
-        else:
-            print(
-                "Error: Input must be either a .vtp file or a directory containing .vtp files"
-            )
+    #     else:
+    #         print(
+    #             "Error: Input must be either a .vtp file or a directory containing .vtp files"
+    #         )
+    # Temp test the tum to fs conversion
+
+    # o_T_w = np.array(
+    #     [
+    #         [
+    #             -0.8345107844315099,
+    #             -0.49428117862057064,
+    #             -0.24347046459265959,
+    #             10.052926063537598,
+    #         ],
+    #         [
+    #             -0.4745037531640682,
+    #             0.8693020857240541,
+    #             -0.1384199118227658,
+    #             20.929256439208984,
+    #         ],
+    #         [
+    #             0.28006773984291555,
+    #             0.000014740037659645538,
+    #             -0.9599802398393481,
+    #             37.55293273925781,
+    #         ],
+    #         [0.0, 0.0, 0.0, 1.0],
+    #     ]
+    # )
+    input_file = "/home/emanuele/Desktop/github/phd/slam/navigation/utils/tum.txt"
+    output_file = "/home/emanuele/Desktop/github/phd/slam/navigation/utils/fs.txt"
+    ref_centerline_fs_file = "/home/emanuele/Desktop/github/phd/slam/navigation/data/mesh/lungs/sim/centerlines/b1_fs.txt"
+    print(
+        convert_tum_to_fs(
+            input_file, output_file, ref_centerline_fs_file, convention="wTc"
+        )
+    )
