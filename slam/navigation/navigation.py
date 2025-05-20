@@ -189,17 +189,29 @@ class BronchoSim(ShowBase):
                     if num_original_points == num_target_points:
                         return points_array
                     if num_original_points < 1 or num_target_points < 1:
-                        print("[WARNING] Cannot resample trajectory with less than 1 point.")
-                        return points_array # Or return empty, or raise error
-                    if num_original_points == 1: # Replicate the single point
+                        print(
+                            "[WARNING] Cannot resample trajectory with less than 1 point."
+                        )
+                        return points_array  # Or return empty, or raise error
+                    if num_original_points == 1:  # Replicate the single point
                         return np.tile(points_array, (num_target_points, 1))
-                    
-                    original_indices = np.linspace(0, num_original_points - 1, num_original_points)
-                    target_indices = np.linspace(0, num_original_points - 1, num_target_points)
-                    
-                    resampled_points = np.zeros((num_target_points, points_array.shape[1]))
-                    for i in range(points_array.shape[1]): # For each dimension (e.g., x, y, z)
-                        resampled_points[:, i] = np.interp(target_indices, original_indices, points_array[:, i])
+
+                    original_indices = np.linspace(
+                        0, num_original_points - 1, num_original_points
+                    )
+                    target_indices = np.linspace(
+                        0, num_original_points - 1, num_target_points
+                    )
+
+                    resampled_points = np.zeros(
+                        (num_target_points, points_array.shape[1])
+                    )
+                    for i in range(
+                        points_array.shape[1]
+                    ):  # For each dimension (e.g., x, y, z)
+                        resampled_points[:, i] = np.interp(
+                            target_indices, original_indices, points_array[:, i]
+                        )
                     return resampled_points
 
                 def apply_sRt_to_frames(frames_list, s, R, t_vec):
@@ -216,10 +228,14 @@ class BronchoSim(ShowBase):
                     return aligned_frames
 
                 # Align gt to centerline
-                self.res_gt_aligned_frames = list(res_gt_frames) # Default to original if alignment fails/skipped
+                self.res_gt_aligned_frames = list(
+                    res_gt_frames
+                )  # Default to original if alignment fails/skipped
                 if self.res_centerline_frames and res_gt_frames:
                     print("[INFO] Aligning GT trajectory to centerline trajectory...")
-                    centerline_pos_orig = np.array([f[:3, 3] for f in self.res_centerline_frames])
+                    centerline_pos_orig = np.array(
+                        [f[:3, 3] for f in self.res_centerline_frames]
+                    )
                     gt_pos_orig = np.array([f[:3, 3] for f in res_gt_frames])
 
                     len_c = len(centerline_pos_orig)
@@ -230,17 +246,27 @@ class BronchoSim(ShowBase):
                         gt_pos_align = gt_pos_orig
 
                         if len_c != len_g:
-                            print(f"[INFO] Original lengths: Centerline={len_c}, GT={len_g}. Resampling for alignment.")
-                            if len_c > len_g: # Resample centerline to match GT length
-                                centerline_pos_align = resample_trajectory_points(centerline_pos_orig, len_g)
-                                print(f"[INFO] Resampled centerline to {len(centerline_pos_align)} points.")
-                            else: # Resample GT to match centerline length
-                                gt_pos_align = resample_trajectory_points(gt_pos_orig, len_c)
-                                print(f"[INFO] Resampled GT to {len(gt_pos_align)} points.")
-                        
+                            print(
+                                f"[INFO] Original lengths: Centerline={len_c}, GT={len_g}. Resampling for alignment."
+                            )
+                            if len_c > len_g:  # Resample centerline to match GT length
+                                centerline_pos_align = resample_trajectory_points(
+                                    centerline_pos_orig, len_g
+                                )
+                                print(
+                                    f"[INFO] Resampled centerline to {len(centerline_pos_align)} points."
+                                )
+                            else:  # Resample GT to match centerline length
+                                gt_pos_align = resample_trajectory_points(
+                                    gt_pos_orig, len_c
+                                )
+                                print(
+                                    f"[INFO] Resampled GT to {len(gt_pos_align)} points."
+                                )
+
                         s_gt_c, R_gt_c, t_gt_c = align_umeyama(
-                            model=centerline_pos_align, # Target
-                            data=gt_pos_align,         # Source to be aligned
+                            model=centerline_pos_align,  # Target
+                            data=gt_pos_align,  # Source to be aligned
                             known_scale=False,
                         )
                         print(
@@ -263,7 +289,9 @@ class BronchoSim(ShowBase):
                     )
 
                 # Align slam to (aligned) gt
-                self.res_slam_aligned_frames = list(res_slam_frames) # Default to original
+                self.res_slam_aligned_frames = list(
+                    res_slam_frames
+                )  # Default to original
                 if self.res_gt_aligned_frames and res_slam_frames:
                     print(
                         "[INFO] Aligning SLAM trajectory to (aligned) GT trajectory..."
@@ -281,17 +309,29 @@ class BronchoSim(ShowBase):
                         slam_pos_align = slam_pos_orig
 
                         if len_gt_aligned != len_slam:
-                            print(f"[INFO] Original lengths: Aligned GT={len_gt_aligned}, SLAM={len_slam}. Resampling for alignment.")
-                            if len_gt_aligned > len_slam: # Resample aligned GT to match SLAM length
-                                gt_aligned_pos_align = resample_trajectory_points(gt_aligned_pos_orig, len_slam)
-                                print(f"[INFO] Resampled aligned GT to {len(gt_aligned_pos_align)} points.")
-                            else: # Resample SLAM to match aligned GT length
-                                slam_pos_align = resample_trajectory_points(slam_pos_orig, len_gt_aligned)
-                                print(f"[INFO] Resampled SLAM to {len(slam_pos_align)} points.")
+                            print(
+                                f"[INFO] Original lengths: Aligned GT={len_gt_aligned}, SLAM={len_slam}. Resampling for alignment."
+                            )
+                            if (
+                                len_gt_aligned > len_slam
+                            ):  # Resample aligned GT to match SLAM length
+                                gt_aligned_pos_align = resample_trajectory_points(
+                                    gt_aligned_pos_orig, len_slam
+                                )
+                                print(
+                                    f"[INFO] Resampled aligned GT to {len(gt_aligned_pos_align)} points."
+                                )
+                            else:  # Resample SLAM to match aligned GT length
+                                slam_pos_align = resample_trajectory_points(
+                                    slam_pos_orig, len_gt_aligned
+                                )
+                                print(
+                                    f"[INFO] Resampled SLAM to {len(slam_pos_align)} points."
+                                )
 
                         s_slam_gt, R_slam_gt, t_slam_gt = align_umeyama(
-                            model=gt_aligned_pos_align, # Target
-                            data=slam_pos_align,        # Source to be aligned
+                            model=gt_aligned_pos_align,  # Target
+                            data=slam_pos_align,  # Source to be aligned
                             known_scale=False,
                         )
                         print(
@@ -312,7 +352,7 @@ class BronchoSim(ShowBase):
                     print(
                         "[WARNING] Aligned GT or SLAM trajectory is empty. Skipping SLAM to GT alignment."
                     )
-                
+
                 self.draw_results_trajectories()
 
             except KeyError as e:
@@ -895,7 +935,7 @@ Viewer.ViewpointZ: -1.8
             branch_normals, branch_binormals = compute_MRF(branch_tangents)
 
             # FORWARD TRAVEL: Build FS frames for each point along the branch
-            for i, pt in interp_points:
+            for i, pt in enumerate(interp_points):
                 fs_frame = np.eye(4)
                 fs_frame[:3, 0] = branch_tangents[i]
                 fs_frame[:3, 1] = branch_normals[i]
