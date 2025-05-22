@@ -100,6 +100,7 @@ args = parser.parse_args()
 class BronchoSim(ShowBase):
     def __init__(self):
         ShowBase.__init__(self)
+
         # Base app setup
         self.setup_init()
 
@@ -1571,8 +1572,3 @@ Viewer.ViewpointZ: -1.8
                 print("[INFO] No live trajectory data to save.")
 
         self.userExit()
-
-
-if __name__ == "__main__":
-    app = BronchoSim()
-    app.run()
