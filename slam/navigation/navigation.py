@@ -13,6 +13,14 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.spatial.transform import Rotation, Slerp
 import heapq
 
+from src.utils import (
+    filter_trajectory_positions,
+    get_depth_image,
+    get_rotation_from_index,
+    save_fs_frames_multibranch,
+    trajectory_snapping,
+)
+
 # Read width and height from config.ini
 cfg = configparser.ConfigParser()
 cfg.read("config.ini")
@@ -175,40 +183,12 @@ class BronchoSim(ShowBase):
 
         self.connected = False
 
-        # --- Set up Depth Buffer & Camera for Depth Image ---
-        # Create window properties matching the main window's size.
-        winprops = WindowProperties.size(self.win.getXSize(), self.win.getYSize())  # type: ignore
-        # Define framebuffer properties and request a depth channel.
-        fbprops = FrameBufferProperties()  # type: ignore
-        fbprops.setDepthBits(1)
-        # Create an offscreen buffer for the depth image.
-        self.depthBuffer = self.graphicsEngine.makeOutput(
-            self.pipe,
-            "depth buffer",
-            -2,
-            fbprops,
-            winprops,
-            GraphicsPipe.BFRefuseWindow,  # type: ignore
-            self.win.getGsg(),
-            self.win,
-        )
-        # Create a texture to store depth values.
-        self.depthTex = Texture()  # type: ignore
-        self.depthTex.setFormat(Texture.FDepthComponent)  # type: ignore
-        # Attach the depth texture to the depth buffer.
-        self.depthBuffer.addRenderTexture(
-            self.depthTex, GraphicsOutput.RTMCopyRam, GraphicsOutput.RTPDepth  # type: ignore
-        )
-        # Use the same lens as your main camera.
-        lens = self.cam.node().getLens()
-        # Create a camera that renders the scene into the depth buffer.
-        self.depthCam = self.makeCamera(self.depthBuffer, lens=lens, scene=self.render)
-        # Parent the depth camera to the main camera to follow its movement.
-        self.depthCam.reparentTo(self.cam)
-
-        print(f"[INFO] Save depth map: {self.depth_bool}")
-        print(f"[INFO] Save visual depth map: {self.save_vis_depth}")
-        # --- End of Depth Setup ---
+        if (
+            self.depth_bool == "1"
+            and self.record_mode == True
+            and self.results_mode == False
+        ):
+            self.setup_depth()
 
         # Set background color
         self.setBackgroundColor(0, 0.168627, 0.211765, 1.0)
@@ -266,9 +246,6 @@ class BronchoSim(ShowBase):
         else:
             # Get centerline points from the .vtp
             points = self.get_vtp_line_points()
-
-            # print number of points
-            print("[INFO] Number of points in the centerline: ", len(points))
 
             # Setup
             self.setup_line(points)
@@ -528,6 +505,37 @@ Viewer.ViewpointZ: -1.8
 
         self.save_calibration_file(width, height, fx, fy, cx, cy, calibration_filename)
 
+    def setup_depth(self):
+        # Create window properties matching the main window's size.
+        winprops = WindowProperties.size(self.win.getXSize(), self.win.getYSize())  # type: ignore
+        # Define framebuffer properties and request a depth channel.
+        fbprops = FrameBufferProperties()  # type: ignore
+        fbprops.setDepthBits(1)
+        # Create an offscreen buffer for the depth image.
+        self.depthBuffer = self.graphicsEngine.makeOutput(
+            self.pipe,
+            "depth buffer",
+            -2,
+            fbprops,
+            winprops,
+            GraphicsPipe.BFRefuseWindow,  # type: ignore
+            self.win.getGsg(),
+            self.win,
+        )
+        # Create a texture to store depth values.
+        self.depthTex = Texture()  # type: ignore
+        self.depthTex.setFormat(Texture.FDepthComponent)  # type: ignore
+        # Attach the depth texture to the depth buffer.
+        self.depthBuffer.addRenderTexture(
+            self.depthTex, GraphicsOutput.RTMCopyRam, GraphicsOutput.RTPDepth  # type: ignore
+        )
+        # Use the same lens as your main camera.
+        lens = self.cam.node().getLens()
+        # Create a camera that renders the scene into the depth buffer.
+        self.depthCam = self.makeCamera(self.depthBuffer, lens=lens, scene=self.render)
+        # Parent the depth camera to the main camera to follow its movement.
+        self.depthCam.reparentTo(self.cam)
+
     def setup_key_controls(self):
         self.keyMap = {"robot_tip_forward": False, "robot_tip_backward": False}
 
@@ -636,7 +644,6 @@ Viewer.ViewpointZ: -1.8
         temp_output_file = "trash.txt"  # Used by convert_tum_to_fs if write_file=True
 
         # Load TUM trajectories and convert to lists of 4x4 FS-like frames
-        print("[INFO] Loading and converting centerline trajectory...")
         self.res_centerline_frames = convert_tum_to_fs(
             res_centerline_tum_path_config,
             temp_output_file,
@@ -645,7 +652,6 @@ Viewer.ViewpointZ: -1.8
         )
         print(f"[INFO] Loaded {len(self.res_centerline_frames)} centerline frames.")
 
-        print("[INFO] Loading and converting ground truth trajectory...")
         res_gt_frames = convert_tum_to_fs(
             res_gt_path_config,
             temp_output_file,
@@ -706,7 +712,7 @@ Viewer.ViewpointZ: -1.8
             res_gt_frames
         )  # Default to original if alignment fails/skipped
         if self.res_centerline_frames and res_gt_frames:
-            print("[INFO] Aligning GT trajectory to centerline trajectory...")
+            print("[INFO] Aligning trajectories...")
             centerline_pos_orig = np.array(
                 [f[:3, 3] for f in self.res_centerline_frames]
             )
@@ -720,34 +726,22 @@ Viewer.ViewpointZ: -1.8
                 gt_pos_align = gt_pos_orig
 
                 if len_c != len_g:
-                    print(
-                        f"[INFO] Original lengths: Centerline={len_c}, GT={len_g}. Resampling for alignment."
-                    )
                     if len_c > len_g:  # Resample centerline to match GT length
                         centerline_pos_align = resample_trajectory_points(
                             centerline_pos_orig, len_g
                         )
-                        print(
-                            f"[INFO] Resampled centerline to {len(centerline_pos_align)} points."
-                        )
                     else:  # Resample GT to match centerline length
                         gt_pos_align = resample_trajectory_points(gt_pos_orig, len_c)
-                        print(f"[INFO] Resampled GT to {len(gt_pos_align)} points.")
 
                 s_gt_c, R_gt_c, t_gt_c = align_umeyama(
                     model=centerline_pos_align,  # Target
                     data=gt_pos_align,  # Source to be aligned
                     known_scale=False,
                 )
-                print(
-                    f"[INFO] GT to Centerline alignment params: s={s_gt_c:.4f}, t={t_gt_c.flatten()}"
-                )
+
                 # Apply transform to the original (full) GT trajectory frames
                 self.res_gt_aligned_frames = apply_sRt_to_frames(
                     res_gt_frames, s_gt_c, R_gt_c, t_gt_c
-                )
-                print(
-                    f"[INFO] GT trajectory aligned to centerline. Resulting frames: {len(self.res_gt_aligned_frames)}"
                 )
             else:
                 print(
@@ -761,7 +755,6 @@ Viewer.ViewpointZ: -1.8
         # Align slam to (aligned) gt
         self.res_slam_aligned_frames = list(res_slam_frames)  # Default to original
         if self.res_gt_aligned_frames and res_slam_frames:
-            print("[INFO] Aligning SLAM trajectory to (aligned) GT trajectory...")
             gt_aligned_pos_orig = np.array(
                 [f[:3, 3] for f in self.res_gt_aligned_frames]
             )
@@ -775,38 +768,25 @@ Viewer.ViewpointZ: -1.8
                 slam_pos_align = slam_pos_orig
 
                 if len_gt_aligned != len_slam:
-                    print(
-                        f"[INFO] Original lengths: Aligned GT={len_gt_aligned}, SLAM={len_slam}. Resampling for alignment."
-                    )
                     if (
                         len_gt_aligned > len_slam
                     ):  # Resample aligned GT to match SLAM length
                         gt_aligned_pos_align = resample_trajectory_points(
                             gt_aligned_pos_orig, len_slam
                         )
-                        print(
-                            f"[INFO] Resampled aligned GT to {len(gt_aligned_pos_align)} points."
-                        )
                     else:  # Resample SLAM to match aligned GT length
                         slam_pos_align = resample_trajectory_points(
                             slam_pos_orig, len_gt_aligned
                         )
-                        print(f"[INFO] Resampled SLAM to {len(slam_pos_align)} points.")
 
                 s_slam_gt, R_slam_gt, t_slam_gt = align_umeyama(
                     model=gt_aligned_pos_align,  # Target
                     data=slam_pos_align,  # Source to be aligned
                     known_scale=False,
                 )
-                print(
-                    f"[INFO] SLAM to GT alignment params: s={s_slam_gt:.4f}, t={t_slam_gt.flatten()}"
-                )
                 # Apply transform to the original (full) SLAM trajectory frames
                 self.res_slam_aligned_frames = apply_sRt_to_frames(
                     res_slam_frames, s_slam_gt, R_slam_gt, t_slam_gt
-                )
-                print(
-                    f"[INFO] SLAM trajectory aligned to GT. Resulting frames: {len(self.res_slam_aligned_frames)}"
                 )
             else:
                 print(
@@ -824,7 +804,7 @@ Viewer.ViewpointZ: -1.8
             print(
                 f"[INFO] Snapping SLAM trajectory with threshold radius: {self.snap_trajectory_threshold_radius}..."
             )
-            self.res_slam_snapped_frames = self.trajectory_snapping(
+            self.res_slam_snapped_frames = trajectory_snapping(
                 self.res_slam_aligned_frames,
                 self.res_centerline_frames,
                 self.snap_trajectory_threshold_radius,
@@ -834,19 +814,10 @@ Viewer.ViewpointZ: -1.8
                 self.filter_snapped_trajectory_bool == "1"
                 and self.res_slam_snapped_frames
             ):
-                print(
-                    f"[INFO] Filtering snapped SLAM trajectory with sigma: {self.filter_snapped_trajectory_sigma}..."
-                )
-                self.res_slam_snapped_frames = self.filter_trajectory_positions(
+                self.res_slam_snapped_frames = filter_trajectory_positions(
                     self.res_slam_snapped_frames,
                     self.filter_snapped_trajectory_sigma,
                 )
-                print(
-                    f"[INFO] Filtered snapped SLAM trajectory now has {len(self.res_slam_snapped_frames)} frames."
-                )
-            print(
-                f"[INFO] Generated {len(self.res_slam_snapped_frames)} snapped SLAM frames."
-            )
         else:
             print(
                 "[WARNING] Cannot snap SLAM trajectory: SLAM or centerline trajectory is empty."
@@ -869,6 +840,34 @@ Viewer.ViewpointZ: -1.8
         if self.live_mode == False and self.view_mode == "tp":
             # Initially draw the path up to the first point
             self.draw_path(self.interpolated_points, 0)
+
+    def setup_video_recorder(self):
+        """
+        Create a directory for recording and subdirectories for RGB and depth images.
+        Also prepare files for associations and CA data.
+        Everything will be saved under this record_dir.
+        """
+        self.record_frame_idx = 0
+        if self.record_mode:
+            # Use a persistent record directory.
+            self.record_dir = os.path.join(os.getcwd(), "recorded_frames")
+            os.makedirs(self.record_dir, exist_ok=True)
+            # Subdirectories for rgb and depth images
+            self.rgb_dir = os.path.join(self.record_dir, "rgb")
+            self.depth_dir = os.path.join(self.record_dir, "depth")
+            os.makedirs(self.rgb_dir, exist_ok=True)
+            os.makedirs(self.depth_dir, exist_ok=True)
+            # Association file in TUM format (timestamps, rgb file, timestamps, depth file)
+            self.assoc_file = os.path.join(self.record_dir, "associations.txt")
+            with open(self.assoc_file, "w") as f:
+                f.write("")
+            # CSV file to store CA data (frame number, timestamp, CA)
+            self.ca_csv_file = os.path.join(self.record_dir, "ca_data.csv")
+            with open(self.ca_csv_file, "w") as f:
+                f.write("frame,timestamp,curvilinear_abscissa\n")
+            print(f"[INFO] Recording frames to {self.record_dir}")
+        else:
+            self.record_dir = None
 
     def sim_server(self, host="127.0.0.1", port=12345):
         time.sleep(1)  # Give the server time to start
@@ -1294,8 +1293,12 @@ Viewer.ViewpointZ: -1.8
                 "[INFO] Translation difference is near zero. Update only tip orientation."
             )
             # Orientation interpolation via SLERP
-            R_current = self.get_rotation_from_index(self.current_index)
-            R_next = self.get_rotation_from_index(next_index)
+            R_current = get_rotation_from_index(
+                self.current_index, self.tangents, self.normals, self.binormals
+            )
+            R_next = get_rotation_from_index(
+                next_index, self.tangents, self.normals, self.binormals
+            )
 
             # Create Slerp instance with key times and rotations
             key_times = [0, 1]  # Start and end times
@@ -1820,34 +1823,6 @@ Viewer.ViewpointZ: -1.8
             self.down_arrow["image_color"] = (1, 1, 1, 1)
 
     # RECORD METHODS
-    def setup_video_recorder(self):
-        """
-        Create a directory for recording and subdirectories for RGB and depth images.
-        Also prepare files for associations and CA data.
-        Everything will be saved under this record_dir.
-        """
-        self.record_frame_idx = 0
-        if self.record_mode:
-            # Use a persistent record directory.
-            self.record_dir = os.path.join(os.getcwd(), "recorded_frames")
-            os.makedirs(self.record_dir, exist_ok=True)
-            # Subdirectories for rgb and depth images
-            self.rgb_dir = os.path.join(self.record_dir, "rgb")
-            self.depth_dir = os.path.join(self.record_dir, "depth")
-            os.makedirs(self.rgb_dir, exist_ok=True)
-            os.makedirs(self.depth_dir, exist_ok=True)
-            # Association file in TUM format (timestamps, rgb file, timestamps, depth file)
-            self.assoc_file = os.path.join(self.record_dir, "associations.txt")
-            with open(self.assoc_file, "w") as f:
-                f.write("")
-            # CSV file to store CA data (frame number, timestamp, CA)
-            self.ca_csv_file = os.path.join(self.record_dir, "ca_data.csv")
-            with open(self.ca_csv_file, "w") as f:
-                f.write("frame,timestamp,curvilinear_abscissa\n")
-            print(f"[INFO] Recording frames to {self.record_dir}")
-        else:
-            self.record_dir = None
-
     def record_frame(self):
         """
         Capture the current window as two images (RGB and, if enabled, depth) and save them.
@@ -1887,7 +1862,7 @@ Viewer.ViewpointZ: -1.8
         # --- Save Depth Image (if enabled) ---
         depth_filename = ""
         if self.depth_bool == "1":
-            depth = self.get_depth_image()  # normalized, from 0 to 1
+            depth = get_depth_image(self.depthTex)  # normalized, from 0 to 1
             if depth is not None:
                 near_plane = float(
                     self.app_config["CAMERA"]["np"]
@@ -2126,7 +2101,13 @@ Viewer.ViewpointZ: -1.8
             # Save trajectory in TUM format
             # TODO: save trajectory in case of all branches used
             if self.all_branches_bool == "1":
-                fs_trajectory = self.save_fs_frames_multibranch()
+                fs_trajectory = save_fs_frames_multibranch(
+                    self.data_folder,
+                    self.interpolated_points,
+                    self.tangents,
+                    self.normals,
+                    self.binormals,
+                )
             else:
                 vtp_trajectory = os.path.join(self.data_folder, self.path_name)
                 fs_trajectory = save_frames_single_branch(vtp_trajectory)
@@ -2202,160 +2183,6 @@ Viewer.ViewpointZ: -1.8
                 print("[INFO] No live trajectory data to save.")
 
         self.userExit()
-
-    # UTILS
-    def filter_trajectory_positions(self, frames, sigma):
-        """
-        Applies a 1D Gaussian filter to the x, y, z coordinates of trajectory positions.
-        Preserves original orientations.
-        """
-        # Ensure sigma is a float for comparison and for gaussian_filter1d
-        try:
-            float_sigma = float(sigma)
-        except ValueError:
-            print(
-                f"[ERROR] Invalid sigma value for filtering: {sigma}. Cannot convert to float. Skipping filtering."
-            )
-            return frames
-
-        if not frames or float_sigma <= 0.0:
-            return frames
-
-        positions = np.array([frame[:3, 3] for frame in frames])
-
-        # Need at least a few points for meaningful filtering, gaussian_filter1d might also have minimums
-        # depending on sigma and internal truncation. A simple check:
-        if (
-            positions.shape[0] < 3
-        ):  # Arbitrary small number, can be tuned or made more robust
-            print(
-                "[WARNING] Not enough points to filter trajectory effectively, returning original."
-            )
-            return frames
-
-        filtered_positions = np.empty_like(positions)
-        for i in range(positions.shape[1]):  # Iterate over x, y, z (columns)
-            # Using mode='nearest' to handle boundaries by extending with the edge value.
-            # 'reflect' is another good option.
-            filtered_positions[:, i] = gaussian_filter1d(
-                positions[:, i], sigma=float_sigma, mode="nearest"
-            )
-
-        new_frames = []
-        for i, original_frame in enumerate(frames):
-            new_frame = np.copy(original_frame)
-            new_frame[:3, 3] = filtered_positions[i]
-            new_frames.append(new_frame)
-        return new_frames
-
-    def get_depth_image(self):
-        """
-        Returns the current depth image as a NumPy array (float32, values between 0.0 and 1.0).
-        """
-        # Retrieve the raw depth data from the texture.
-        data = self.depthTex.getRamImage()
-        if data is None or len(data) == 0:
-            print("Depth image not ready yet!")
-            return None
-        # Convert the raw data to a NumPy array.
-        depth_image = np.frombuffer(data, dtype=np.float32)
-        # Reshape according to the texture's dimensions.
-        depth_image.shape = (
-            self.depthTex.getYSize(),
-            self.depthTex.getXSize(),
-            self.depthTex.getNumComponents(),
-        )
-        # Flip vertically (Panda3D's origin is bottom-left).
-        depth_image = np.flipud(depth_image)
-
-        return depth_image
-
-    def get_rotation_from_index(self, index):
-        """
-        Returns a 3x3 rotation matrix from the FS frame at the given index.
-        The rotation is built from the tangent, normal, and binormal vectors.
-        """
-        R = np.eye(3)
-        R[:, 0] = self.tangents[index]
-        R[:, 1] = self.normals[index]
-        R[:, 2] = self.binormals[index]
-        return R
-
-    def save_fs_frames_multibranch(self, file_name="ball_fs.txt"):
-        """
-        Save the FS frames in a format that can be read by the app.
-        """
-        # Save the FS frames in a format that can be read by the app.
-
-        fs_frames_path = os.path.join(self.data_folder, "centerlines", file_name)
-        # For each point, save the coordinates and the respective FS frame
-        with open(fs_frames_path, "w") as file:
-            for idx in range(len(self.interpolated_points)):
-                point = self.interpolated_points[idx]
-                tangent = self.tangents[idx]
-                normal = self.normals[idx]
-                binormal = self.binormals[idx]
-
-                # Write to file
-                file.write(
-                    f"{point[0]}, {point[1]}, {point[2]}, "
-                    f"{tangent[0]}, {tangent[1]}, {tangent[2]}, "
-                    f"{normal[0]}, {normal[1]}, {normal[2]}, "
-                    f"{binormal[0]}, {binormal[1]}, {binormal[2]}\n"
-                )
-
-        print(f"[INFO] FS frames saved as {fs_frames_path}")
-        return fs_frames_path
-
-    def trajectory_snapping(self, slam_frames, centerline_frames, threshold_radius):
-        """
-        Snaps the SLAM trajectory points to be within a certain radius of the centerline.
-        If a SLAM point is further than threshold_radius from its closest centerline point,
-        it's moved along the vector connecting them to be exactly at threshold_radius distance.
-        Orietations are preserved from the original SLAM frames.
-        """
-        if not slam_frames or not centerline_frames:
-            print(
-                "[WARNING] SLAM or centerline frames are empty, cannot perform snapping."
-            )
-            return []
-
-        slam_positions = np.array([frame[:3, 3] for frame in slam_frames])
-        centerline_positions = np.array([frame[:3, 3] for frame in centerline_frames])
-
-        if centerline_positions.shape[0] == 0:
-            print("[WARNING] Centerline positions are empty, cannot perform snapping.")
-            return []
-
-        # Build KDTree for efficient closest point search on the centerline
-        centerline_tree = cKDTree(centerline_positions)
-
-        snapped_slam_frames = []
-        for i, slam_frame in enumerate(slam_frames):
-            slam_pos = slam_positions[i]
-
-            # Find the closest centerline point
-            distance, closest_centerline_idx = centerline_tree.query(slam_pos)
-            closest_centerline_pos = centerline_positions[closest_centerline_idx]
-
-            snapped_pos = np.copy(slam_pos)
-            if distance > threshold_radius:
-                # Vector from centerline point to SLAM point
-                vec_c_to_s = slam_pos - closest_centerline_pos
-                # Normalize this vector (avoid division by zero if distance is already small, though covered by `if` )
-                if distance > 1e-6:  # Check for non-zero distance
-                    unit_vec_c_to_s = vec_c_to_s / distance
-                    # New snapped position is on the sphere of threshold_radius around the centerline point
-                    snapped_pos = (
-                        closest_centerline_pos + unit_vec_c_to_s * threshold_radius
-                    )
-
-            # Create new frame with snapped position but original orientation
-            new_frame = np.copy(slam_frame)
-            new_frame[:3, 3] = snapped_pos
-            snapped_slam_frames.append(new_frame)
-
-        return snapped_slam_frames
 
 
 if __name__ == "__main__":
