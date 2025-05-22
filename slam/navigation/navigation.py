@@ -8,10 +8,7 @@ import time
 from direct.showbase.ShowBase import ShowBase  # type: ignore
 import configparser
 import numpy as np
-from scipy.spatial import cKDTree
-from scipy.ndimage import gaussian_filter1d
 from scipy.spatial.transform import Rotation, Slerp
-import heapq
 
 from src.server import sim_server, start_server
 from src.draw import (
@@ -24,9 +21,12 @@ from src.draw import (
     unhighlight_arrow,
 )
 from src.utils import (
+    build_all_branches_path,
+    curvilinear_abscissa,
     filter_trajectory_positions,
     get_depth_image,
     get_rotation_from_index,
+    get_vtp_line_points,
     save_fs_frames_multibranch,
     trajectory_snapping,
 )
@@ -46,9 +46,6 @@ loadPrcFileData("", "load-file-type p3assimp")  # type: ignore
 
 from direct.task import Task  # type: ignore
 from direct.gui.DirectGui import DirectLabel  # type: ignore
-import pyvista as pv  # type: ignore
-import numpy as np  # type: ignore
-import socket
 import math
 import cv2
 from utils.set_FS_frame import (
@@ -243,7 +240,9 @@ class BronchoSim(ShowBase):
         if self.all_branches_bool == "1":
             # Crate a trajectory traversing all the branches in the folder forward and backward
             print("[INFO] Building final path combining all branches...")
-            fs_frames, points = self.build_all_branches_path()
+            fs_frames, points = build_all_branches_path(
+                self.app_config, self.data_folder
+            )
 
             if not fs_frames:
                 print("[ERROR] No branches found. Exiting...")
@@ -255,7 +254,7 @@ class BronchoSim(ShowBase):
 
         else:
             # Get centerline points from the .vtp
-            points = self.get_vtp_line_points()
+            points = get_vtp_line_points(self.path_path)
 
             # Setup
             self.setup_line(points)
@@ -553,7 +552,12 @@ Viewer.ViewpointZ: -1.8
         self.robot_tip_node = None
 
         # Compute line length
-        self.line_length = self.curvilinear_abscissa(self.end_point)
+        self.line_length = curvilinear_abscissa(
+            self.end_point,
+            self.interpolated_points,
+            self.all_branches_bool,
+            self.record_mode,
+        )
         print("[INFO] Centerline length: ", self.line_length, "mm")
 
     def setup_line_multibranch(self, fs_frames):
@@ -857,188 +861,6 @@ Viewer.ViewpointZ: -1.8
         else:
             self.record_dir = None
 
-    ## LINE UTILS
-    def build_all_branches_path(self):
-        """
-        Reads multiple branch VTP files (listed in the config entry 'branch_files' under [BRANCHES]),
-        computes the FS frame for every point in each branch, and stacks them together
-        by first appending the branch (forward) and then appending the same branch in reverse (back).
-        Returns a list of 4x4 FS frame matrices.
-        """
-        # Get the full path to the centerline folder
-        centerline_folder_name = self.app_config["PATHS"]["all_branches_folder"]
-        centerline_folder_path = os.path.join(self.data_folder, centerline_folder_name)
-        print(f"[INFO] Looking for .vtp files in: {centerline_folder_path}")
-
-        # Find all .vtp files in the folder
-        branch_files = []
-        for file in os.listdir(centerline_folder_path):
-            if file.endswith(".vtp"):
-                full_path = os.path.join(centerline_folder_name, file)
-                branch_files.append(full_path)
-
-        if not branch_files:
-            print("[ERROR] No .vtp files found in the specified folder")
-            return []
-
-        print(f"[INFO] Found {len(branch_files)} branch files: {branch_files}")
-
-        final_frames = []
-        all_points = []  # Initialize a list to collect all points
-
-        for branch_file in branch_files:
-            branch_file = branch_file.strip()
-            branch_path = os.path.join(self.data_folder, branch_file)
-            print(f"[INFO] Processing branch file: {branch_path}")
-            branch_model = pv.read(branch_path)
-            # Discard the first n_d points of each branch
-            n_d = 0
-            if len(branch_model.points) > n_d:
-                branch_points = [tuple(point) for point in branch_model.points[n_d:]]
-            else:
-                print(
-                    f"[WARNING] Branch has fewer than {n_d} points ({len(branch_model.points)}). Skipping branch."
-                )
-                continue
-
-            # Interpolate the branch points
-            interp_points = interpolate_line(branch_points, num_points=1000)
-            branch_tangents = compute_tangent_vectors(interp_points)
-            branch_tangents = smooth_vectors(branch_tangents, 10, 10)
-            branch_normals, branch_binormals = compute_MRF(branch_tangents)
-
-            # FORWARD TRAVEL: Build FS frames for each point along the branch
-            for i, pt in enumerate(interp_points):
-                fs_frame = np.eye(4)
-                fs_frame[:3, 0] = branch_tangents[i]
-                fs_frame[:3, 1] = branch_normals[i]
-                fs_frame[:3, 2] = branch_binormals[i]
-                fs_frame[:3, 3] = pt
-
-                if len(final_frames) > 0 and i == 0:
-                    # Interpolate the first frame with the last frame added to the final_frames list
-                    # This is to glue the branches together smoothly
-                    extra_frames = interpolate_fs_frames(
-                        final_frames[-1], fs_frame, num_points=10
-                    )
-                    final_frames.extend(extra_frames)
-                    all_points.extend([f[:3, 3] for f in extra_frames])
-                else:
-                    final_frames.append(fs_frame)
-                    all_points.append(pt)
-
-            # RETURN TRAVEL: Append the same points in reverse order.
-            # Skip the last point of the forward travel when creating the return path
-            for i, pt in enumerate(interp_points[-2::-1]):
-                fs_frame = np.eye(4)
-                # Adjust the index calculation since we're starting from second-to-last point
-                idx = len(interp_points) - 2 - i
-                fs_frame[:3, 0] = branch_tangents[idx]  # Invert tangent for return
-                fs_frame[:3, 1] = branch_normals[idx]
-                fs_frame[:3, 2] = branch_binormals[idx]
-                fs_frame[:3, 3] = pt
-                final_frames.append(fs_frame)
-                all_points.append(pt)  # Add point to all_points list
-
-        # Reduce the total number of points
-        print(f"[INFO] Initial number of points: {len(final_frames)}")
-        divide_factor = 4
-        final_frames = final_frames[::divide_factor]
-        all_points = all_points[::divide_factor]
-        print(f"[INFO] Reduced number of points: {len(final_frames)}")
-        return final_frames, all_points
-
-    def curvilinear_abscissa(self, current_point):
-        if self.all_branches_bool == "1" and self.record_mode == True:
-            """
-            Compute the curvilinear abscissa (distance) from the current_point to the first point
-            by finding the shortest path along the graph of points. The graph is built by connecting
-            points that are within a threshold distance of each other (to avoid jumping between branches).
-            It's very slow so it's only used in record mode when data is being saved.
-
-            Parameters:
-            current_point: (3,) array_like representing the current robot tip position.
-
-            Returns:
-            The shortest-path distance from the current_point to the first point in self.interpolated_points.
-            """
-            # return 0.0
-            points = self.interpolated_points  # assumed shape (N, 3)
-            n = len(points)
-            if n < 2:
-                return 0.0
-
-            # Compute a threshold distance based on the average distance between consecutive points.
-            diffs = points[1:] - points[:-1]
-            mean_distance = np.mean(np.linalg.norm(diffs, axis=1))
-            threshold = (
-                2 * mean_distance
-            )  # factor can be tuned; it prevents jumps between distant branches
-
-            # Build a KD-tree for efficient neighbor search.
-            tree = cKDTree(points)
-
-            # Build a graph (as an adjacency list) connecting each point to its neighbors within threshold.
-            graph = {i: [] for i in range(n)}
-            for i in range(n):
-                # Find all neighbor indices within the threshold radius.
-                neighbors = tree.query_ball_point(points[i], r=threshold)
-                for j in neighbors:
-                    if j == i:
-                        continue
-                    # Use the Euclidean distance as the edge weight.
-                    dist_ij = np.linalg.norm(points[i] - points[j])
-                    graph[i].append((j, dist_ij))
-
-            # Identify the node corresponding to the current point.
-            current_index = np.argmin(np.linalg.norm(points - current_point, axis=1))
-            target_index = 0  # we want the distance to the first point
-
-            # Run Dijkstra's algorithm from current_index to target_index.
-            distances = {i: float("inf") for i in range(n)}
-            distances[current_index] = 0.0
-            pq = [(0.0, current_index)]
-            while pq:
-                d, i = heapq.heappop(pq)
-                if i == target_index:
-                    break
-                if d > distances[i]:
-                    continue
-                for neighbor, weight in graph[i]:
-                    new_dist = d + weight
-                    if new_dist < distances[neighbor]:
-                        distances[neighbor] = new_dist
-                        heapq.heappush(pq, (new_dist, neighbor))
-
-            return distances[target_index]
-
-        else:
-            """
-            Simpler and faster method to compute the curvilinear abscissa (distance) from the current_point to the first point.
-            This works only for single branches and does not consider the possibility of multiple branches with forward and return paths.
-            """
-            # Find the closest point to the given point
-            distances = np.linalg.norm(self.interpolated_points - current_point, axis=1)
-            closest_index = np.argmin(distances)
-
-            # Calculate cumulative distance from start to the closest point
-            total_distance = 0
-            for i in range(closest_index):
-                segment = self.interpolated_points[i + 1] - self.interpolated_points[i]
-                total_distance += np.linalg.norm(segment)
-
-            return total_distance
-
-    def get_vtp_line_points(self):
-        # Load the .vtp file
-        line_model = pv.read(self.path_path)
-
-        # Convert the points to a list of tuples
-        points = [tuple(point) for point in line_model.points]
-
-        # Return the points so as to be able to use them in create_line
-        return points
-
     ## UPDATE METHODS
     def update_camera_to_robot_tip(self):
         # Find the index of the closest point to the robot tip
@@ -1130,7 +952,12 @@ Viewer.ViewpointZ: -1.8
             current_point = self.interpolated_points[closest_index]
 
             # Compute the curvilinear abscissa
-            self.current_ca = self.curvilinear_abscissa(current_point)
+            self.current_ca = curvilinear_abscissa(
+                current_point,
+                self.interpolated_points,
+                self.all_branches_bool,
+                self.record_mode,
+            )
 
         else:
             # Update the robot tip position based on the transformation matrix
@@ -1264,7 +1091,12 @@ Viewer.ViewpointZ: -1.8
 
         # Compute the curvilinear abscissa
         current_point = self.interpolated_points[self.current_index]
-        self.current_ca = self.curvilinear_abscissa(current_point)
+        self.current_ca = curvilinear_abscissa(
+            current_point,
+            self.interpolated_points,
+            self.all_branches_bool,
+            self.record_mode,
+        )
 
         # Update next index based on the new current_index.
         if forward:
@@ -1286,9 +1118,9 @@ Viewer.ViewpointZ: -1.8
         elif controlName == "robot_tip_backward":
             if self.record_mode == False:
                 if controlState:
-                    self.highlight_arrow("down")
+                    highlight_arrow(self, "down")
                 else:
-                    self.unhighlight_arrow("down")
+                    unhighlight_arrow(self, "down")
 
     def update_scene(self, task):
         dt = globalClock.getDt()  # type: ignore
