@@ -13,6 +13,19 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.spatial.transform import Rotation, Slerp
 import heapq
 
+from src.draw import (
+    draw_FS_frames,
+    draw_base_frame,
+    draw_circles_around_points,
+    draw_elements,
+    draw_origin_frame,
+    draw_path,
+    draw_results_trajectories,
+    draw_robot_tip,
+    draw_trajectory,
+    highlight_arrow,
+    unhighlight_arrow,
+)
 from src.utils import (
     filter_trajectory_positions,
     get_depth_image,
@@ -145,7 +158,7 @@ class BronchoSim(ShowBase):
 
             try:
                 self.setup_results()
-                self.draw_results_trajectories()
+                draw_results_trajectories(self)
 
             except KeyError as e:
                 print(f"[ERROR] Missing key in [RESULTS] section of config.ini: {e}")
@@ -293,33 +306,9 @@ class BronchoSim(ShowBase):
             self.setup_video_recorder()
 
         # Draw elements
-        self.draw_elements(points)
+        draw_elements(self)
 
     ## SETUP METHODS
-    def draw_elements(self, points):
-        if self.draw_frames_bool == "1":
-            # Draw some frames
-            self.draw_FS_frames(
-                points,
-                draw_tangent=True,
-                draw_normal=True,
-                draw_binormal=True,
-            )
-
-        if self.draw_circles_bool == "1":
-            # Drawing circles
-            self.draw_circles_around_points(radius=0.2, num_segments=50)
-
-        if self.view_mode == "tp" and self.draw_reference_frames_bool == "1":
-            # Draw the origin frame
-            self.draw_origin_frame()
-
-            # Draw the base frame
-            self.draw_base_frame()
-
-        # Draw the robot tip
-        self.draw_robot_tip()
-
     def setup_fp(self):
         print("[INFO] Initializing First Person View Mode...")
         self.model = self.data_folder + self.negative_model_name
@@ -839,7 +828,7 @@ Viewer.ViewpointZ: -1.8
 
         if self.live_mode == False and self.view_mode == "tp":
             # Initially draw the path up to the first point
-            self.draw_path(self.interpolated_points, 0)
+            draw_path(self, self.interpolated_points, 0)
 
     def setup_video_recorder(self):
         """
@@ -1182,7 +1171,7 @@ Viewer.ViewpointZ: -1.8
 
             if self.view_mode == "tp" and self.live_mode == False:
                 # Redraw the path up to the robot tip
-                self.draw_path(self.interpolated_points, closest_index)
+                draw_path(self, self.interpolated_points, closest_index)
 
             # Get the current point on the centerline using the closest_index
             current_point = self.interpolated_points[closest_index]
@@ -1232,7 +1221,7 @@ Viewer.ViewpointZ: -1.8
                     pass
 
         # Update the visual representation
-        self.draw_robot_tip()
+        draw_robot_tip(self)
 
         if self.live_mode and self.view_mode == "tp":
             self.update_trajectory()
@@ -1318,7 +1307,7 @@ Viewer.ViewpointZ: -1.8
 
         if self.view_mode == "tp" and self.live_mode == False:
             # Redraw the path up to the robot tip
-            self.draw_path(self.interpolated_points, self.current_index)
+            draw_path(self, self.interpolated_points, self.current_index)
 
         # Compute the curvilinear abscissa
         current_point = self.interpolated_points[self.current_index]
@@ -1338,9 +1327,9 @@ Viewer.ViewpointZ: -1.8
         if controlName == "robot_tip_forward":
             if self.record_mode == False:
                 if controlState:
-                    self.highlight_arrow("up")
+                    highlight_arrow(self, "up")
                 else:
-                    self.unhighlight_arrow("up")
+                    unhighlight_arrow(self, "up")
         elif controlName == "robot_tip_backward":
             if self.record_mode == False:
                 if controlState:
@@ -1433,394 +1422,7 @@ Viewer.ViewpointZ: -1.8
 
     def update_trajectory(self):
         # Draw the trajectory from the current robot tip position
-        self.draw_trajectory()
-
-    ## DRAW METHODS
-    def draw_circles_around_points(self, radius=1, num_segments=10):
-        for i, center in enumerate(self.interpolated_points):
-            normal = self.normals[i]
-            binormal = self.binormals[i]
-
-            # Debug: Print normal and binormal
-            # print(f"Point {i}: Normal = {normal}, Binormal = {binormal}")
-
-            # Generate circle points
-            circle_points = []
-            for j in range(num_segments):
-                angle = 2 * np.pi * j / num_segments
-                dx = np.cos(angle) * normal
-                dy = np.sin(angle) * binormal
-                point = center + radius * (dx + dy)
-                circle_points.append(point)
-
-            # Debug: Print first few points of each circle
-            # print(f"Circle {i} points: {circle_points[:3]}")
-
-            # Draw the circle
-            self.draw_circle(circle_points)
-
-    def draw_circle(self, points):
-        circle = LineSegs()  # type: ignore
-        circle.setThickness(5.0)  # Increased thickness
-        circle.setColor(1, 1, 0, 1)  # Changed color to yellow for better visibility
-
-        # Convert points to LVecBase3f and draw the circle
-        for i, point in enumerate(points):
-            panda_point = LVector3f(point[0], point[1], point[2])  # type: ignore
-            if i == 0:
-                circle.moveTo(panda_point)
-            else:
-                circle.drawTo(panda_point)
-        # Connect back to the first point
-        circle.drawTo(LVector3f(points[0][0], points[0][1], points[0][2]))  # type: ignore
-
-        # Add the circle to the scene
-        circle_node = circle.create()
-        self.render.attachNewNode(circle_node)
-
-    def draw_FS_frames(
-        self,
-        points,
-        draw_tangent=True,
-        draw_normal=True,
-        draw_binormal=True,
-    ):
-        # Draw the frames
-        for i, point in enumerate(self.interpolated_points):
-            if draw_tangent:
-                self.draw_vector(
-                    point, self.tangents[i], (1, 0, 0, 1)
-                )  # Red for tangent
-            if draw_normal:
-                self.draw_vector(
-                    point, self.normals[i], (0, 1, 0, 1)
-                )  # Green for normal
-            if draw_binormal:
-                self.draw_vector(
-                    point, self.binormals[i], (0, 0, 1, 1)
-                )  # Blue for binormal
-
-    def draw_light_cone_geom(self):
-        """
-        Draws a translucent cone geometry that starts at the robot tip
-        and extends in the tangent direction.
-        """
-        # Remove old cone if it exists
-        if hasattr(self, "light_cone_geom_np") and self.light_cone_geom_np:
-            self.light_cone_geom_np.removeNode()
-
-        # Load cone model
-        cone_model = self.loader.loadModel("data/icons/cone.obj")
-        cone_model.setScale(0.5)
-        cone_model.setColor(1, 1, 0, 0.3)  # Slightly yellow, partial alpha
-        cone_model.setTransparency(TransparencyAttrib.MAlpha)  # type: ignore
-
-        # Find the index of the closest point to the robot tip on the centerline
-        if hasattr(self, "interpolated_points") and len(self.interpolated_points) > 0:
-            distances = np.linalg.norm(
-                self.interpolated_points - self.robot_tip, axis=1
-            )
-            closest_index = np.argmin(distances)
-
-            # Get the tangent vector at this point
-            if closest_index < len(self.tangents):
-                direction_vector = self.tangents[closest_index]
-                tangent_vector = LVector3f(*direction_vector)  # type: ignore
-                # Use the normal vector from the FS frame as the "up" vector for lookAt
-                # This helps orient the cone correctly along the path's curvature
-                if closest_index < len(self.normals):
-                    normal_vector = LVector3f(*self.normals[closest_index])  # type: ignore
-                else:
-                    normal_vector = LVector3f(0, 0, 1)  # type: ignore # Fallback
-            else:
-                # Fallback to a default direction if something is wrong with indexing
-                tangent_vector = LVector3f(1, 0, 0)  # type: ignore
-                normal_vector = LVector3f(0, 0, 1)  # type: ignore
-        else:
-            # Fallback if centerline data is not available
-            tangent_vector = LVector3f(1, 0, 0)  # type: ignore
-            normal_vector = LVector3f(0, 0, 1)  # type: ignore
-
-        # Create a transformation node to handle the orientation
-        cone_np = self.render.attachNewNode("cone_transform")
-
-        # Position the cone at the robot tip
-        cone_np.setPos(LVector3f(*self.robot_tip))  # type: ignore
-
-        # Calculate focal point
-        focal_point = self.robot_tip
-
-        # cone_np.lookAt(LVector3f(*focal_point), -normal_vector if normal_vector else LVector3f(0, 0, 1))  # type: ignore
-        cone_np.lookAt(LVector3f(*focal_point), tangent_vector)  # type: ignore
-
-        # Parent the cone model to the transformation node
-        cone_model.reparentTo(cone_np)
-
-        # Store for later (if we want to remove it next frame)
-        self.light_cone_geom_np = cone_np
-
-    def draw_origin_frame(self):
-        # Create a LineSegs object to draw the frame
-        frame = LineSegs()  # type: ignore
-        frame.setThickness(5.0)  # Set a reasonable thickness
-
-        # Draw the X axis in red
-        frame.setColor(1, 0, 0, 1)  # Red color
-        frame.moveTo(0, 0, 0)
-        frame.drawTo(1 * 0.5, 0, 0)
-
-        # Draw the Y axis in green
-        frame.setColor(0, 1, 0, 1)  # Green color
-        frame.moveTo(0, 0, 0)
-        frame.drawTo(0, 1 * 0.5, 0)
-
-        # Draw the Z axis in blue
-        frame.setColor(0, 0, 1, 1)  # Blue color
-        frame.moveTo(0, 0, 0)
-        frame.drawTo(0, 0, 1 * 0.5)
-
-        # Create a node to attach the frame to
-        frame_node = self.render.attachNewNode("OriginFrame")
-
-        # Create the frame geometry and attach it directly
-        frame_geom = frame.create()
-        frame_node.attachNewNode(frame_geom)
-
-        # Set the scale of the frame
-        frame_node.setScale(1)  # Scale to a reasonable size
-
-        # Return the node for later reference
-        return frame_node
-
-    def draw_base_frame(self):
-
-        w_T_o = np.linalg.inv(self.o_T_w)
-
-        # Draw w_T_o frame
-        frame = LineSegs()  # type: ignore
-        frame.setThickness(5.0)  # Set thickness
-
-        # Extract position and axes from w_T_o matrix
-        position = w_T_o[:3, 3]
-        x_axis = w_T_o[:3, 0] * 0.5
-        y_axis = w_T_o[:3, 1] * 0.5
-        z_axis = w_T_o[:3, 2] * 0.5
-
-        # Draw the X axis in red
-        frame.setColor(1, 0, 0, 1)  # Red
-        frame.moveTo(*position)
-        frame.drawTo(*(position + x_axis))
-
-        # Draw the Y axis in green
-        frame.setColor(0, 1, 0, 1)  # Green
-        frame.moveTo(*position)
-        frame.drawTo(*(position + y_axis))
-
-        # Draw the Z axis in blue
-        frame.setColor(0, 0, 1, 1)  # Blue
-        frame.moveTo(*position)
-        frame.drawTo(*(position + z_axis))
-
-        # Create a node to attach the frame
-        frame_node = self.render.attachNewNode("BaseFrame")
-
-        # Create the frame geometry and attach it
-        frame_geom = frame.create()
-        frame_node.attachNewNode(frame_geom)
-
-        # Set scale of the frame
-        frame_node.setScale(1)
-
-        # Return the node for later reference
-        return frame_node
-
-    def draw_robot_tip(self):
-        if self.results_mode:
-            return
-        if self.robot_tip_node:
-            self.robot_tip_node.removeNode()  # Remove the old node if it exists
-
-        # Create the robot tip visual
-        robot_tip_visual = self.loader.loadModel(
-            "models/smiley"
-        )  # Ensure this is a valid model path
-
-        robot_tip_visual.setScale(1)  # Scale to appropriate size
-        robot_tip_visual.setColor(0, 1, 0, 1)  # Set color to green
-        robot_tip_visual.setPos(LVector3f(*self.robot_tip))  # type: ignore
-
-        # Create a new node and parent the visual to it
-        robot_tip_node = self.render.attachNewNode("RobotTipNode")
-        robot_tip_visual.reparentTo(robot_tip_node)
-        self.robot_tip_node = robot_tip_node
-
-        # Draw the light cone geometry
-        self.draw_light_cone_geom()
-
-    def draw_path(self, points, up_to_index):
-        # Ensure the up_to_index is within bounds
-        if up_to_index >= len(points):
-            up_to_index = len(points) - 1
-
-        # Clean everything before drawing again
-        if hasattr(self, "path_line_node") and self.path_line_node:
-            self.path_line_node.removeNode()
-            self.path_line_node = None
-
-        # Create the line
-        line = LineSegs()  # type: ignore
-        line.setThickness(5.0)  # Set a reasonable thickness
-        line.setColor(1, 0, 0, 1)  # Red color
-
-        # Start drawing the line from the first point
-        first_point = LVector3f(points[0][0], points[0][1], points[0][2])  # type: ignore
-        line.moveTo(first_point)
-
-        # Draw to the rest of the points up to the specified index
-        for i in range(1, up_to_index + 1):
-            next_point = LVector3f(points[i][0], points[i][1], points[i][2])  # type: ignore
-            # Check for large jumps in the points and skip if necessary
-            if (
-                next_point - first_point
-            ).length() < 1.0:  # Adjust this threshold as needed
-                line.drawTo(next_point)
-                first_point = next_point
-
-        # Add the line to the scene
-        line_node = line.create()
-        self.path_line_node = self.render.attachNewNode(line_node)
-
-    def draw_trajectory(self):
-        # Check if the trajectory line node already exists and remove it
-        if hasattr(self, "trajectory_line_node") and self.trajectory_line_node:
-            self.trajectory_line_node.removeNode()
-            self.trajectory_line_node = None  # Clear the reference
-
-        # Create the line
-        line = LineSegs()  # type: ignore
-        line.setThickness(5.0)
-        line.setColor(
-            8 / 255, 232 / 255, 222 / 255, 1
-        )  # Same color as the arrow button
-
-        if self.live_mode == False:
-            # Smooth a lot the line
-            points = self.points
-            points = interpolate_line(points, num_points=1000)
-
-            # Start drawing the line from the robot tip
-            robot_tip = self.robot_tip
-            first_point = LVector3f(robot_tip[0], robot_tip[1], robot_tip[2])  # type: ignore
-            line.moveTo(first_point)
-
-            # Draw to the rest of the points
-            for i in range(1, len(points)):
-                next_point = LVector3f(points[i][0], points[i][1], points[i][2])  # type: ignore
-                if (next_point - first_point).length() < 1.0:
-                    line.drawTo(next_point)
-                    first_point = next_point
-
-        elif (
-            self.live_mode
-            and hasattr(self, "trajectory_history_position")
-            and len(self.trajectory_history_position) > 0
-        ):
-            # In live mode, draw the trajectory from history
-            first_point = LVector3f(*self.trajectory_history_position[0])  # type: ignore
-            line.moveTo(first_point)
-
-            for i in range(1, len(self.trajectory_history_position)):
-                next_point = LVector3f(*self.trajectory_history_position[i])  # type: ignore
-                line.drawTo(next_point)
-
-        # Create the line node and attach it to the scene
-        line_node = line.create()
-        self.trajectory_line_node = self.render.attachNewNode(line_node)
-
-    def draw_trajectory_from_frames(
-        self, frames_list, color_tuple, thickness=3.0, node_name="trajectory_node"
-    ):
-        """Helper function to draw a single trajectory from a list of 4x4 frames."""
-        if not frames_list:
-            print(f"[INFO] No frames to draw for {node_name}")
-            return None
-
-        positions = [frame[:3, 3] for frame in frames_list]
-
-        if len(positions) < 2:
-            print(
-                f"[INFO] Not enough points to draw trajectory for {node_name} (needs at least 2, got {len(positions)})"
-            )
-            return None
-
-        line_segs = LineSegs()  # type: ignore
-        line_segs.setThickness(thickness)
-        line_segs.setColor(
-            color_tuple[0], color_tuple[1], color_tuple[2], color_tuple[3]
-        )  # R, G, B, A
-
-        line_segs.moveTo(LVector3f(*positions[0]))  # type: ignore
-        for i in range(1, len(positions)):
-            line_segs.drawTo(LVector3f(*positions[i]))  # type: ignore
-
-        node = line_segs.create()
-        path_node = self.render.attachNewNode(node)
-        path_node.setName(node_name)
-        return path_node
-
-    def draw_results_trajectories(self):
-        """Draws the centerline, aligned GT, and aligned SLAM trajectories for results mode."""
-        print("[INFO] Drawing results trajectories...")
-
-        # Colors: (R, G, B, A)
-        color_centerline = (0.8, 0.8, 0.8, 1)  # Light Gray/White for centerline
-        color_gt = (0, 1, 0, 1)  # Green for Ground Truth
-        color_slam = (0, 0, 1, 1)  # Blue for SLAM
-        color_slam_snapped = (1, 0.5, 0, 1)  # Orange for Snapped SLAM
-
-        # Store nodes to self if they need to be accessed/removed later
-        if self.draw_centerline_bool == "1":
-            self.results_centerline_node = self.draw_trajectory_from_frames(
-                self.res_centerline_frames,
-                color_centerline,
-                thickness=4.0,
-                node_name="results_centerline_traj",
-            )
-        if self.draw_gt_bool == "1":
-            self.results_gt_node = self.draw_trajectory_from_frames(
-                self.res_gt_aligned_frames,
-                color_gt,
-                thickness=4.0,
-                node_name="results_gt_aligned_traj",
-            )
-        if self.draw_original_slam_bool == "1":
-            self.results_slam_node = self.draw_trajectory_from_frames(
-                self.res_slam_aligned_frames,
-                color_slam,
-                thickness=4.0,
-                node_name="results_slam_aligned_traj",
-            )
-
-        if self.draw_snapped_slam_bool == "1":
-            self.results_slam_snapped_node = self.draw_trajectory_from_frames(
-                self.res_slam_snapped_frames,
-                color_slam_snapped,
-                thickness=4.0,
-                node_name="results_slam_snapped_traj",
-            )
-
-    def highlight_arrow(self, arrow):
-        rgb_color = (8 / 255, 232 / 255, 222 / 255, 1)
-        if arrow == "up":
-            self.up_arrow["image_color"] = rgb_color
-        elif arrow == "down":
-            self.down_arrow["image_color"] = rgb_color
-
-    def unhighlight_arrow(self, arrow):
-        if arrow == "up":
-            self.up_arrow["image_color"] = (1, 1, 1, 1)  # Change back to normal color
-        elif arrow == "down":
-            self.down_arrow["image_color"] = (1, 1, 1, 1)
+        draw_trajectory(self)
 
     # RECORD METHODS
     def record_frame(self):
