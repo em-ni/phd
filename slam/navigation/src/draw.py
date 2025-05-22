@@ -9,7 +9,6 @@ from panda3d.core import (  # type: ignore
     Geom,
     GeomTriangles,
     GeomNode,
-    GeomVertexWriter,
 )
 from utils.set_FS_frame import interpolate_line
 
