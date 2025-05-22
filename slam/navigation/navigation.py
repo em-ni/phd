@@ -9,7 +9,26 @@ from direct.showbase.ShowBase import ShowBase  # type: ignore
 import configparser
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
+import math
+import cv2
 
+# Read width and height from config.ini before importing panda3d
+cfg = configparser.ConfigParser()
+cfg.read("config.ini")
+width = int(cfg["CAMERA"]["width"])
+height = int(cfg["CAMERA"]["height"])
+
+from panda3d.core import *  # type: ignore
+
+# Set the window size and title before anything else
+loadPrcFileData("", f"win-size {width} {height}")  # type: ignore
+loadPrcFileData("", "window-title Bronchoscopy Simulation")  # type: ignore
+loadPrcFileData("", "load-file-type p3assimp")  # type: ignore
+
+from direct.task import Task  # type: ignore
+from direct.gui.DirectGui import DirectLabel  # type: ignore
+
+# src import
 from src.server import sim_server, start_server
 from src.draw import (
     draw_elements,
@@ -31,23 +50,7 @@ from src.utils import (
     trajectory_snapping,
 )
 
-# Read width and height from config.ini
-cfg = configparser.ConfigParser()
-cfg.read("config.ini")
-width = int(cfg["CAMERA"]["width"])
-height = int(cfg["CAMERA"]["height"])
-
-from panda3d.core import *  # type: ignore
-
-# Set the window size and title before anything else
-loadPrcFileData("", f"win-size {width} {height}")  # type: ignore
-loadPrcFileData("", "window-title Bronchoscopy Simulation")  # type: ignore
-loadPrcFileData("", "load-file-type p3assimp")  # type: ignore
-
-from direct.task import Task  # type: ignore
-from direct.gui.DirectGui import DirectLabel  # type: ignore
-import math
-import cv2
+# utils import
 from utils.set_FS_frame import (
     interpolate_line,
     compute_tangent_vectors,
@@ -56,7 +59,6 @@ from utils.set_FS_frame import (
     save_frames_single_branch,
     convert_fs_to_tum,
     convert_tum_to_fs,
-    interpolate_fs_frames,
 )
 from utils.align_trajectory import align_umeyama
 
@@ -98,264 +100,17 @@ args = parser.parse_args()
 class BronchoSim(ShowBase):
     def __init__(self):
         ShowBase.__init__(self)
+        # Base app setup
+        self.setup_init()
 
-        # Read the configuration file
-        self.app_config = configparser.ConfigParser()
-        self.app_config.read("config.ini")
-        self.data_folder = self.app_config["PATHS"]["data_folder"]
-        self.path_name = self.app_config["PATHS"]["path_name"]
-        self.model_name = self.app_config["PATHS"]["model_name"]
-        self.negative_model_name = self.app_config["PATHS"]["negative_model_name"]
-        self.videos_dir = self.app_config["PATHS"]["record_dir"]
-        self.logs_dir = self.app_config["PATHS"]["logs_dir"]
-        self.all_branches_bool = self.app_config["PATHS"]["all_branches_bool"]
-
-        self.draw_circles_bool = self.app_config["DRAW"]["draw_circles_bool"]
-        self.draw_centerline_bool = self.app_config["DRAW"]["draw_centerline_bool"]
-        self.draw_frames_bool = self.app_config["DRAW"]["draw_frames_bool"]
-        self.draw_reference_frames_bool = self.app_config["DRAW"][
-            "draw_reference_frames_bool"
-        ]
-
-        self.sim_server_bool = self.app_config["SLAM"]["sim_server_bool"]
-
-        self.depth_bool = self.app_config["CAMERA"]["depth_bool"]
-        self.save_vis_depth = self.app_config["CAMERA"]["save_vis_depth_bool"]
-
-        # Define path of the .vtp file
-        self.path_path = self.data_folder + self.path_name
-
-        # Read parameters from command line
-        self.view_mode = args.view
-        self.live_mode = args.live
-        self.record_mode = args.record
-        self.autopilot = args.autopilot
-        self.results_mode = args.results
-
-        print("\nCommand line arguments:")
-        print(f"-View: {self.view_mode}")
-        print(f"-Live: {self.live_mode}")
-        print(f"-Record: {self.record_mode}")
-        print(f"-Autopilot: {self.autopilot}")
-        print(f"-Results mode: {self.results_mode}\n")
-
-        # Initialize keyMap with default values to ensure it always exists
-        self.keyMap = {"robot_tip_forward": False, "robot_tip_backward": False}
-
-        if self.results_mode:
-            print("[INFO] Results visualization mode enabled.")
-            self.view_mode = "tp"
-            self.live_mode = False
-            self.record_mode = False
-            self.autopilot = False
-            self.sim_server_bool = "0"
-
-            try:
-                self.setup_results()
-                draw_results_trajectories(self)
-
-            except KeyError as e:
-                print(f"[ERROR] Missing key in [RESULTS] section of config.ini: {e}")
-                print(
-                    "[INFO] Please ensure res_centerline_fs, res_centerline_tum, res_gt, and res_slam are defined for -results mode."
-                )
-                sys.exit(1)
-            except ImportError:
-                print(
-                    "[ERROR] Could not import align_umeyama. Make sure utils.align_trajectory is in the correct path and numpy is installed."
-                )
-                sys.exit(1)
-            except Exception as e:
-                print(
-                    f"[ERROR] An unexpected error occurred during results processing: {e}"
-                )
-                import traceback
-
-                traceback.print_exc()
-                sys.exit(1)
-
-        if self.live_mode and self.autopilot:
-            print(
-                "[WARNING] Live mode and autopilot are mutually exclusive. Disabling autopilot."
-            )
-            self.autopilot = False
-
-        # Quit app on "q"
-        self.accept("q", self.quit_app)
-
-        if not self.results_mode:
-            # Set up camera parameters
-            if self.view_mode == "fp":
-                self.setup_camera_params()
-
-        self.connected = False
-
-        if (
-            self.depth_bool == "1"
-            and self.record_mode == True
-            and self.results_mode == False
-        ):
-            self.setup_depth()
-
-        # Set background color
-        self.setBackgroundColor(0, 0.168627, 0.211765, 1.0)
-
-        if self.record_mode == False:
-            # Load arrow key icons with transparency
-            self.up_arrow = DirectLabel(
-                image="data/icons/up_white.png",
-                pos=(1.7, 0, -0.70),
-                scale=0.05,
-                relief=None,
-            )
-            self.down_arrow = DirectLabel(
-                image="data/icons/down_white.png",
-                pos=(1.7, 0, -0.85),
-                scale=0.05,
-                relief=None,
-            )
-
-            # Enable transparency for these icons
-            self.up_arrow.setTransparency(TransparencyAttrib.MDual)  # type: ignore
-            self.down_arrow.setTransparency(TransparencyAttrib.MDual)  # type: ignore
-
-        # Set antialiasing
-        self.render.setAntialias(AntialiasAttrib.MAuto)  # type: ignore
-
-        self.blink_timer = 0
-        self.blink_interval = 1
-        self.robot_tip_visible = False
-        if not self.results_mode:
-            self.robot_tip_visible = True
-
-            if self.live_mode == False:
-                self.setup_key_controls()
-            else:
-                self.trajectory_history_position = []
-                self.trajectory_history_wTc = []
-
-        # Task for updating the scene
-        self.taskMgr.add(self.update_scene, "updateScene")
-
-        if self.all_branches_bool == "1":
-            # Crate a trajectory traversing all the branches in the folder forward and backward
-            print("[INFO] Building final path combining all branches...")
-            fs_frames, points = build_all_branches_path(
-                self.app_config, self.data_folder
-            )
-
-            if not fs_frames:
-                print("[ERROR] No branches found. Exiting...")
-                sys.exit(1)
-
-            self.setup_line_multibranch(fs_frames)
-            print("[INFO] Final path built successfully")
-            self.points = points
-
-        else:
-            # Get centerline points from the .vtp
-            points = get_vtp_line_points(self.path_path)
-
-            # Setup
-            self.setup_line(points)
-            self.points = points
-
-        # Init transformation matrices
-        self.w_T_c = np.eye(4)
-        self.o_T_fs = np.eye(4)
-
-        R_n = Rotation.from_euler("y", 90, degrees=True).as_matrix()
-        self.fsi_T_ci = np.eye(4)
-        self.fsi_T_ci[:3, :3] = R_n
-
-        self.o_T_w = self.setup_o_T_w()
-        # print("[INFO] o_T_w: ", self.o_T_w)
-
-        # Load the model
-        if self.view_mode == "fp":
-            self.setup_fp()
-
-        elif self.view_mode == "tp":
-            self.setup_tp()
-
+        # Mode-dependent setup
+        self.setup_mode()
         print("[INFO] Initialization done")
-
-        if self.autopilot:
-            print(
-                "[INFO] Autopilot enabled. Starting continuous forward motion for full lungs inspection..."
-            )
-
-        if self.live_mode == True:
-
-            # Start the server in a thread
-            self.listen_thread = threading.Thread(
-                target=start_server, args=(self,), daemon=True
-            )
-            self.listen_thread.start()
-
-            if self.sim_server_bool == "1":
-                # Start the simulation server
-                self.sim_server_thread = threading.Thread(
-                    target=sim_server, args=(self,), daemon=True
-                )
-                self.sim_server_thread.start()
-
-        if self.record_mode == True:
-            self.setup_video_recorder()
 
         # Draw elements
         draw_elements(self)
 
     ## SETUP METHODS
-    def setup_fp(self):
-        print("[INFO] Initializing First Person View Mode...")
-        self.model = self.data_folder + self.negative_model_name
-
-        # Load the negative model
-        self.scene = self.loader.loadModel(self.model)
-        self.scene.reparentTo(self.render)
-        self.scene.setTransparency(TransparencyAttrib.MDual)  # type: ignore
-        self.scene.setColorScale(1, 1, 1, 1)
-        self.scene.setTwoSided(True)
-
-        # Adjust material
-        myMaterial = Material()  # type: ignore
-        myMaterial.setShininess(80)
-        myMaterial.setSpecular((0.9, 0.9, 0.9, 1))
-        myMaterial.setAmbient((0.3, 0.3, 0.3, 1))
-        myMaterial.setDiffuse((0.7, 0.2, 0.2, 1))
-        self.scene.setMaterial(myMaterial, 1)
-
-        # (Optional) enable auto-shader
-        self.render.setShaderAuto()
-
-        # Add a brighter ambient light
-        ambientLight = AmbientLight("ambientLight")  # type: ignore
-        ambientLight.setColor((0.5, 0.5, 0.5, 1))  # Brighter
-        ambientLightNP = self.render.attachNewNode(ambientLight)
-        self.render.setLight(ambientLightNP)
-
-        # Add a directional light
-        directionalLight = DirectionalLight("directionalLight")  # type: ignore
-        directionalLight.setColor((1, 1, 1, 1))
-        directionalLightNP = self.render.attachNewNode(directionalLight)
-        directionalLightNP.setHpr(45, -45, 0)
-        self.render.setLight(directionalLightNP)
-        self.directionalLightNP = directionalLightNP
-
-        # Add a point light that moves with the camera
-        pointLight = PointLight("pointLight")  # type: ignore
-        pointLight.setColor((1, 1, 1, 1))
-        # Tweak attenuation: constant=1, linear=0, quadratic=0.02
-        pointLight.setAttenuation((1, 0, 0.02))
-
-        self.pointLightNP = self.camera.attachNewNode(pointLight)
-        self.pointLightNP.setPos(0, 0, 0)  # Right at the camera
-        self.render.setLight(self.pointLightNP)
-
-        # Optionally store them so we can reference or tweak later
-        self.ambientLightNP = ambientLightNP
-
     def save_calibration_file(self, width, height, fx, fy, cx, cy, filename):
         """
         Writes a YAML file in the same format as shown,
@@ -523,6 +278,126 @@ Viewer.ViewpointZ: -1.8
         # Parent the depth camera to the main camera to follow its movement.
         self.depthCam.reparentTo(self.cam)
 
+    def setup_fp(self):
+        print("[INFO] Initializing First Person View Mode...")
+        self.model = self.data_folder + self.negative_model_name
+
+        # Load the negative model
+        self.scene = self.loader.loadModel(self.model)
+        self.scene.reparentTo(self.render)
+        self.scene.setTransparency(TransparencyAttrib.MDual)  # type: ignore
+        self.scene.setColorScale(1, 1, 1, 1)
+        self.scene.setTwoSided(True)
+
+        # Adjust material
+        myMaterial = Material()  # type: ignore
+        myMaterial.setShininess(80)
+        myMaterial.setSpecular((0.9, 0.9, 0.9, 1))
+        myMaterial.setAmbient((0.3, 0.3, 0.3, 1))
+        myMaterial.setDiffuse((0.7, 0.2, 0.2, 1))
+        self.scene.setMaterial(myMaterial, 1)
+
+        # (Optional) enable auto-shader
+        self.render.setShaderAuto()
+
+        # Add a brighter ambient light
+        ambientLight = AmbientLight("ambientLight")  # type: ignore
+        ambientLight.setColor((0.5, 0.5, 0.5, 1))  # Brighter
+        ambientLightNP = self.render.attachNewNode(ambientLight)
+        self.render.setLight(ambientLightNP)
+
+        # Add a directional light
+        directionalLight = DirectionalLight("directionalLight")  # type: ignore
+        directionalLight.setColor((1, 1, 1, 1))
+        directionalLightNP = self.render.attachNewNode(directionalLight)
+        directionalLightNP.setHpr(45, -45, 0)
+        self.render.setLight(directionalLightNP)
+        self.directionalLightNP = directionalLightNP
+
+        # Add a point light that moves with the camera
+        pointLight = PointLight("pointLight")  # type: ignore
+        pointLight.setColor((1, 1, 1, 1))
+        # Tweak attenuation: constant=1, linear=0, quadratic=0.02
+        pointLight.setAttenuation((1, 0, 0.02))
+
+        self.pointLightNP = self.camera.attachNewNode(pointLight)
+        self.pointLightNP.setPos(0, 0, 0)  # Right at the camera
+        self.render.setLight(self.pointLightNP)
+
+        # Optionally store them so we can reference or tweak later
+        self.ambientLightNP = ambientLightNP
+
+    def setup_init(self):
+        # Read the configuration file
+        self.app_config = configparser.ConfigParser()
+        self.app_config.read("config.ini")
+
+        # PATHS
+        self.data_folder = self.app_config["PATHS"]["data_folder"]
+        self.path_name = self.app_config["PATHS"]["path_name"]
+        self.model_name = self.app_config["PATHS"]["model_name"]
+        self.negative_model_name = self.app_config["PATHS"]["negative_model_name"]
+        self.videos_dir = self.app_config["PATHS"]["record_dir"]
+        self.logs_dir = self.app_config["PATHS"]["logs_dir"]
+        self.all_branches_bool = self.app_config["PATHS"]["all_branches_bool"]
+
+        # DRAW
+        self.draw_circles_bool = self.app_config["DRAW"]["draw_circles_bool"]
+        self.draw_centerline_bool = self.app_config["DRAW"]["draw_centerline_bool"]
+        self.draw_frames_bool = self.app_config["DRAW"]["draw_frames_bool"]
+        self.draw_reference_frames_bool = self.app_config["DRAW"][
+            "draw_reference_frames_bool"
+        ]
+
+        # SLAM
+        self.sim_server_bool = self.app_config["SLAM"]["sim_server_bool"]
+
+        # CAMERA
+        self.depth_bool = self.app_config["CAMERA"]["depth_bool"]
+        self.save_vis_depth = self.app_config["CAMERA"]["save_vis_depth_bool"]
+
+        # Define path of the .vtp file
+        self.path_path = self.data_folder + self.path_name
+
+        # Read parameters from command line
+        self.view_mode = args.view
+        self.live_mode = args.live
+        self.record_mode = args.record
+        self.autopilot = args.autopilot
+        self.results_mode = args.results
+
+        print("\nCommand line arguments:")
+        print(f"-View: {self.view_mode}")
+        print(f"-Live: {self.live_mode}")
+        print(f"-Record: {self.record_mode}")
+        print(f"-Autopilot: {self.autopilot}")
+        print(f"-Results mode: {self.results_mode}\n")
+
+        # Initialize keyMap with default values to ensure it always exists
+        self.keyMap = {"robot_tip_forward": False, "robot_tip_backward": False}
+
+        # Set background color
+        self.setBackgroundColor(0, 0.168627, 0.211765, 1.0)
+
+        # Quit app on "q"
+        self.accept("q", self.quit_app)
+
+        # Task for updating the scene
+        self.taskMgr.add(self.update_scene, "updateScene")
+
+        # Set antialiasing
+        self.render.setAntialias(AntialiasAttrib.MAuto)  # type: ignore
+
+        # Init variables
+        self.connected = False
+        self.blink_timer = 0
+        self.blink_interval = 1
+        self.robot_tip_visible = False
+
+        # Finish initial setup
+        self.setup_points()
+        self.setup_matrices()
+
     def setup_key_controls(self):
         self.keyMap = {"robot_tip_forward": False, "robot_tip_backward": False}
 
@@ -589,6 +464,100 @@ Viewer.ViewpointZ: -1.8
         self.current_index = 0
         self.next_index = 1
 
+    def setup_live_mode(self):
+        # Start the server in a thread
+        self.listen_thread = threading.Thread(
+            target=start_server, args=(self,), daemon=True
+        )
+        self.listen_thread.start()
+
+        if self.sim_server_bool == "1":
+            # Start the simulation server
+            self.sim_server_thread = threading.Thread(
+                target=sim_server, args=(self,), daemon=True
+            )
+            self.sim_server_thread.start()
+
+    def setup_matrices(self):
+        # Init transformation matrices
+        self.w_T_c = np.eye(4)
+        self.o_T_fs = np.eye(4)
+
+        R_n = Rotation.from_euler("y", 90, degrees=True).as_matrix()
+        self.fsi_T_ci = np.eye(4)
+        self.fsi_T_ci[:3, :3] = R_n
+
+        self.o_T_w = self.setup_o_T_w()
+        # print("[INFO] o_T_w: ", self.o_T_w)
+
+    def setup_mode(self):
+        self.setup_view()
+
+        if self.results_mode:
+            print("[INFO] Results visualization mode enabled.")
+            self.view_mode = "tp"
+            self.live_mode = False
+            self.record_mode = False
+            self.autopilot = False
+            self.sim_server_bool = "0"
+
+            self.setup_results()
+            draw_results_trajectories(self)
+        else:
+            # Set up camera parameters
+            if self.view_mode == "fp":
+                self.setup_camera_params()
+
+            self.robot_tip_visible = True
+
+            if self.live_mode == False:
+                self.setup_key_controls()
+            else:
+                self.trajectory_history_position = []
+                self.trajectory_history_wTc = []
+
+        if self.live_mode and self.autopilot:
+            print(
+                "[WARNING] Live mode and autopilot are mutually exclusive. Disabling autopilot."
+            )
+            self.autopilot = False
+
+        if (
+            self.depth_bool == "1"
+            and self.record_mode == True
+            and self.results_mode == False
+        ):
+            self.setup_depth()
+
+        if self.autopilot:
+            print(
+                "[INFO] Autopilot enabled. Starting continuous forward motion for full lungs inspection..."
+            )
+
+        if self.live_mode == True:
+            self.setup_live_mode()
+
+        if self.record_mode == True:
+            self.setup_video_recorder()
+        else:
+            # Load arrow key icons with transparency
+            self.up_arrow = DirectLabel(
+                image="data/icons/up_white.png",
+                pos=(1.7, 0, -0.70),
+                scale=0.05,
+                relief=None,
+            )
+            self.down_arrow = DirectLabel(
+                image="data/icons/down_white.png",
+                pos=(1.7, 0, -0.85),
+                scale=0.05,
+                relief=None,
+            )
+
+            # Enable transparency for these icons
+            self.up_arrow.setTransparency(TransparencyAttrib.MDual)  # type: ignore
+            self.down_arrow.setTransparency(TransparencyAttrib.MDual)  # type: ignore
+
     def setup_o_T_w(self):
         """The first point of the centerline (i = 0) corresponds to the transformation from the world frame to the origin frame
         o_T_w = o_T_fs0 * fs0_T_c0"""
@@ -603,6 +572,30 @@ Viewer.ViewpointZ: -1.8
         o_T_c0 = np.dot(o_T_fs0, self.fsi_T_ci)
 
         return o_T_c0
+
+    def setup_points(self):
+        if self.all_branches_bool == "1":
+            # Crate a trajectory traversing all the branches in the folder forward and backward
+            print("[INFO] Building final path combining all branches...")
+            fs_frames, points = build_all_branches_path(
+                self.app_config, self.data_folder
+            )
+
+            if not fs_frames:
+                print("[ERROR] No branches found. Exiting...")
+                sys.exit(1)
+
+            self.setup_line_multibranch(fs_frames)
+            print("[INFO] Final path built successfully")
+            self.points = points
+
+        else:
+            # Get centerline points from the .vtp
+            points = get_vtp_line_points(self.path_path)
+
+            # Setup
+            self.setup_line(points)
+            self.points = points
 
     def setup_results(self):
 
@@ -861,6 +854,14 @@ Viewer.ViewpointZ: -1.8
         else:
             self.record_dir = None
 
+    def setup_view(self):
+        # Load the model
+        if self.view_mode == "fp":
+            self.setup_fp()
+
+        elif self.view_mode == "tp":
+            self.setup_tp()
+
     ## UPDATE METHODS
     def update_camera_to_robot_tip(self):
         # Find the index of the closest point to the robot tip
@@ -1006,6 +1007,105 @@ Viewer.ViewpointZ: -1.8
         if self.live_mode and self.view_mode == "tp":
             self.update_trajectory()
 
+    def update_key_map(self, controlName, controlState):
+        self.keyMap[controlName] = controlState
+
+        if controlName == "robot_tip_forward":
+            if self.record_mode == False:
+                if controlState:
+                    highlight_arrow(self, "up")
+                else:
+                    unhighlight_arrow(self, "up")
+        elif controlName == "robot_tip_backward":
+            if self.record_mode == False:
+                if controlState:
+                    highlight_arrow(self, "down")
+                else:
+                    unhighlight_arrow(self, "down")
+
+    def update_scene(self, task):
+        dt = globalClock.getDt()  # type: ignore
+
+        # Update the robot tip position
+        if self.live_mode == False:
+            if self.autopilot:
+                if self.all_branches_bool == "1":
+                    self.update_tip_position_all_branches(dt, forward=True)
+                else:
+                    self.update_robot_tip_position(dt, forward=True)
+            else:
+                if self.keyMap["robot_tip_forward"]:
+                    if self.all_branches_bool == "1":
+                        self.update_tip_position_all_branches(dt, forward=True)
+                    else:
+                        self.update_robot_tip_position(dt, forward=True)
+                if self.keyMap["robot_tip_backward"]:
+                    if self.all_branches_bool == "1":
+                        self.update_tip_position_all_branches(dt, forward=False)
+                    else:
+                        self.update_robot_tip_position(dt, forward=False)
+        else:
+            self.update_robot_tip_position(dt)
+
+        # Update the camera position and orientation
+        if self.view_mode == "fp":
+            self.update_camera_to_robot_tip()
+
+            if self.draw_centerline_bool == "1":
+                # Update the trajectory
+                self.update_trajectory()
+
+        # Blinking logic
+        self.blink_timer += dt
+        if self.blink_timer >= self.blink_interval:
+            self.blink_timer = 0  # Reset timer
+            self.robot_tip_visible = not self.robot_tip_visible  # Toggle visibility
+            if self.robot_tip_node:
+                self.robot_tip_node.setTransparency(
+                    TransparencyAttrib.MDual  # type: ignore
+                )  # Enable transparency
+                self.robot_tip_node.setAlphaScale(
+                    1 if self.robot_tip_visible else 0.5
+                )  # Set visibility
+
+        # If recording mode is enabled, capture the frame
+        if self.record_mode:
+            self.record_frame()
+
+        # Start the terminal update thread if it hasn't been started yet
+        if not hasattr(self, "terminal_thread"):
+            self.terminal_thread = threading.Thread(
+                target=self.update_terminal, daemon=True
+            )
+            self.terminal_thread.start()
+
+        return Task.cont
+
+    def update_terminal(self):
+
+        # Delay the start of the thread to allow the main thread to start
+        time.sleep(2)
+        while True:
+            if self.live_mode == True:
+                if hasattr(self, "c_T_w") and not np.array_equal(self.w_T_c, np.eye(4)):
+                    print(f"\rReceived: {self.w_T_c}\033[F", end="", flush=True)
+            else:
+                if self.autopilot:
+                    print(
+                        f"\rCurrent index: {self.current_index} / {len(self.interpolated_points)}",
+                        end="",
+                        flush=True,
+                    )
+                else:
+                    if hasattr(self, "current_ca") and self.all_branches_bool == "0":
+                        print(
+                            f"\rCurrent curvilinear abscissa: {self.current_ca:.2f} mm",
+                            end="",
+                            flush=True,
+                        )
+            # Add small delay to prevent high CPU usage
+            time.sleep(0.25)
+
     def update_tip_position_all_branches(self, dt, forward):
         """
         Automatically updates the robot tip position along the centerline for the
@@ -1105,105 +1205,6 @@ Viewer.ViewpointZ: -1.8
             )
         else:
             self.next_index = max(self.current_index - 1, 0)
-
-    def update_key_map(self, controlName, controlState):
-        self.keyMap[controlName] = controlState
-
-        if controlName == "robot_tip_forward":
-            if self.record_mode == False:
-                if controlState:
-                    highlight_arrow(self, "up")
-                else:
-                    unhighlight_arrow(self, "up")
-        elif controlName == "robot_tip_backward":
-            if self.record_mode == False:
-                if controlState:
-                    highlight_arrow(self, "down")
-                else:
-                    unhighlight_arrow(self, "down")
-
-    def update_scene(self, task):
-        dt = globalClock.getDt()  # type: ignore
-
-        # Update the robot tip position
-        if self.live_mode == False:
-            if self.autopilot:
-                if self.all_branches_bool == "1":
-                    self.update_tip_position_all_branches(dt, forward=True)
-                else:
-                    self.update_robot_tip_position(dt, forward=True)
-            else:
-                if self.keyMap["robot_tip_forward"]:
-                    if self.all_branches_bool == "1":
-                        self.update_tip_position_all_branches(dt, forward=True)
-                    else:
-                        self.update_robot_tip_position(dt, forward=True)
-                if self.keyMap["robot_tip_backward"]:
-                    if self.all_branches_bool == "1":
-                        self.update_tip_position_all_branches(dt, forward=False)
-                    else:
-                        self.update_robot_tip_position(dt, forward=False)
-        else:
-            self.update_robot_tip_position(dt)
-
-        # Update the camera position and orientation
-        if self.view_mode == "fp":
-            self.update_camera_to_robot_tip()
-
-            if self.draw_centerline_bool == "1":
-                # Update the trajectory
-                self.update_trajectory()
-
-        # Blinking logic
-        self.blink_timer += dt
-        if self.blink_timer >= self.blink_interval:
-            self.blink_timer = 0  # Reset timer
-            self.robot_tip_visible = not self.robot_tip_visible  # Toggle visibility
-            if self.robot_tip_node:
-                self.robot_tip_node.setTransparency(
-                    TransparencyAttrib.MDual  # type: ignore
-                )  # Enable transparency
-                self.robot_tip_node.setAlphaScale(
-                    1 if self.robot_tip_visible else 0.5
-                )  # Set visibility
-
-        # If recording mode is enabled, capture the frame
-        if self.record_mode:
-            self.record_frame()
-
-        # Start the terminal update thread if it hasn't been started yet
-        if not hasattr(self, "terminal_thread"):
-            self.terminal_thread = threading.Thread(
-                target=self.update_terminal, daemon=True
-            )
-            self.terminal_thread.start()
-
-        return Task.cont
-
-    def update_terminal(self):
-
-        # Delay the start of the thread to allow the main thread to start
-        time.sleep(2)
-        while True:
-            if self.live_mode == True:
-                if hasattr(self, "c_T_w") and not np.array_equal(self.w_T_c, np.eye(4)):
-                    print(f"\rReceived: {self.w_T_c}\033[F", end="", flush=True)
-            else:
-                if self.autopilot:
-                    print(
-                        f"\rCurrent index: {self.current_index} / {len(self.interpolated_points)}",
-                        end="",
-                        flush=True,
-                    )
-                else:
-                    if hasattr(self, "current_ca") and self.all_branches_bool == "0":
-                        print(
-                            f"\rCurrent curvilinear abscissa: {self.current_ca:.2f} mm",
-                            end="",
-                            flush=True,
-                        )
-            # Add small delay to prevent high CPU usage
-            time.sleep(0.25)
 
     def update_trajectory(self):
         # Draw the trajectory from the current robot tip position
