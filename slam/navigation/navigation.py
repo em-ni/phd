@@ -13,12 +13,9 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.spatial.transform import Rotation, Slerp
 import heapq
 
+from src.server import sim_server, start_server
 from src.draw import (
-    draw_FS_frames,
-    draw_base_frame,
-    draw_circles_around_points,
     draw_elements,
-    draw_origin_frame,
     draw_path,
     draw_results_trajectories,
     draw_robot_tip,
@@ -292,13 +289,15 @@ class BronchoSim(ShowBase):
         if self.live_mode == True:
 
             # Start the server in a thread
-            self.listen_thread = threading.Thread(target=self.start_server, daemon=True)
+            self.listen_thread = threading.Thread(
+                target=start_server, args=(self,), daemon=True
+            )
             self.listen_thread.start()
 
             if self.sim_server_bool == "1":
                 # Start the simulation server
                 self.sim_server_thread = threading.Thread(
-                    target=self.sim_server, daemon=True
+                    target=sim_server, args=(self,), daemon=True
                 )
                 self.sim_server_thread.start()
 
@@ -857,52 +856,6 @@ Viewer.ViewpointZ: -1.8
             print(f"[INFO] Recording frames to {self.record_dir}")
         else:
             self.record_dir = None
-
-    def sim_server(self, host="127.0.0.1", port=12345):
-        time.sleep(1)  # Give the server time to start
-        print("Starting sim_server...")
-        try:
-            # Create a socket and connect to the server
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect((host, port))
-
-            while True:
-
-                time.sleep(0.1)  # Add small delay between sends
-
-        except ConnectionRefusedError:
-            print("Could not connect to server. Is it running?")
-        except Exception as e:
-            print(f"Error in sim_server: {e}")
-        finally:
-            s.close()
-
-    def start_server(self, host="127.0.0.1", port=12345):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((host, port))
-            s.listen()
-            print(f"Server listening on {host}:{port}")
-
-            while True:
-                conn, addr = s.accept()
-                with conn:
-                    # print(f"Connected by {addr}")
-                    while True:
-                        data = conn.recv(1024)
-                        if not data:
-                            break
-                        # Parse the received data and update the transformation matrix
-                        w_T_c_string = data.decode()
-                        lines = w_T_c_string.splitlines()
-
-                        # Convert each line into a list of floats
-                        matrix = [list(map(float, line.split())) for line in lines]
-                        # Convert the list of lists into a NumPy array
-                        self.w_T_c = np.array(matrix)
-                        self.connected = True
-                        # print(f"Received: {self.w_T_c}")
-                        time.sleep(1)
-                    print("Connection closed")
 
     ## LINE UTILS
     def build_all_branches_path(self):
