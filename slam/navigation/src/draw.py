@@ -238,7 +238,7 @@ def draw_robot_tip(app):
         app.robot_tip_node = None  # Clear reference
 
     try:
-        robot_tip_visual = app.loader.loadModel("models/smiley")
+        robot_tip_visual = app.loader.loadModel("models/misc/sphere")
     except Exception as e:
         print(f"[ERROR] Could not load robot tip model: models/smiley. {e}")
         # Fallback to a simple sphere or just a NodePath if model fails
@@ -347,7 +347,7 @@ def draw_path(app, points, up_to_index):  # points are world coordinates
     # Create the line
     line = LineSegs()  # type: ignore
     line.setThickness(5.0)  # Set a reasonable thickness
-    line.setColor(1, 0, 0, 1)  # Red color
+    line.setColor(0, 0.8, 0, 1)  # A nice green color
 
     if len(points) == 0 or up_to_index < 0:
         app.path_line_node = parent_node.attachNewNode(
