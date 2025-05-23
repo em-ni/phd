@@ -1,0 +1,24 @@
+rot:
+  max: 153.61455560305401
+  mean: 148.56334687621938
+  median: 148.56334687621938
+  min: 143.51213814938475
+  num_samples: 2
+  rmse: 148.64919355538373
+  std: 5.051208726834631
+scale:
+  max: .inf
+  mean: .inf
+  median: .inf
+  min: .inf
+  num_samples: 2
+  rmse: .inf
+  std: .nan
+trans:
+  max: 9.151496826975547
+  mean: 9.108878671410267
+  median: 9.108878671410267
+  min: 9.066260515844984
+  num_samples: 2
+  rmse: 9.108978370687716
+  std: 0.04261815556528159

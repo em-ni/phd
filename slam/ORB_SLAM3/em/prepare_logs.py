@@ -56,7 +56,7 @@ def main():
     os.makedirs(alg_folder, exist_ok=True)
 
     # Regular expression to match record folders of the form: record_NAME_TIMESTAMP
-    record_pattern = re.compile(r"record_(.+)_\d+$")
+    record_pattern = re.compile(r"record_(.+)_[\d\.]+$")
     # Map identifier -> list of record folder paths
     datasets = {}
 
