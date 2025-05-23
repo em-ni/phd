@@ -7,8 +7,8 @@ L = 8*1e-3; % [m]
 
 % Get data from large bending experiment
 % Pressure [Bar], Force [g], Radius [px], Curvature [1/px], Arc Length [px], x_tip [px], y_tip [px], x_base [px], y_base [px]
-data = load("data/L_10cm_OD_1.5mm/characterization_and_scale_force/force_small_bending/cv_output.csv");
-% data = load("data/L_10cm_OD_1.5mm/characterization_and_scale_force/force_large_bending/cv_output.csv");
+% data = load("data/L_10cm_OD_1.5mm/characterization_and_scale_force/force_small_bending/cv_output.csv");
+data = load("data/L_10cm_OD_1.5mm/characterization_and_scale_force/force_large_bending/cv_output.csv");
 
 % [Bar] to [Pa]
 pressure_bar = data(:,1); % [Bar]
@@ -172,9 +172,17 @@ for i = 1:length(pressure)
     % alpha = 1e-5;
     % beta = 8.2e-3;
     % beta = 6.3e-3;
-    alpha = 1.4e-5;
-    beta = 9.3e-3;
-    force_pred(i) = force_pred(i) + alpha*pressure(i)*fy_epsilon(i)/curvature(i) - beta;
+
+    % alpha_small = 1.4e-5;
+    % beta_small = 9.3e-3;
+    % force_pred(i) = force_pred(i) + alpha_small*pressure(i)*fy_epsilon(i)/curvature(i) - beta_small;
+    % if force_pred(i) < 0
+    %     force_pred(i) = 0;
+    % end
+
+    alpha_large = 1e-5;
+    beta_large = 8.2e-3;
+    force_pred(i) = force_pred(i) + alpha_large*pressure(i)*fy_epsilon(i)/curvature(i) - beta_large;
     if force_pred(i) < 0
         force_pred(i) = 0;
     end
