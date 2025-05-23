@@ -1,0 +1,77 @@
+Algorithms:
+  rgbd-rd:
+    fn: traj_est
+    label: rgbd-rd
+Datasets:
+  b10p1:
+    label: b10p1
+  b10p2:
+    label: b10p2
+  b11p1:
+    label: b11p1
+  b11p2:
+    label: b11p2
+  b12p2:
+    label: b12p2
+  b13p1:
+    label: b13p1
+  b14p1:
+    label: b14p1
+  b14p2:
+    label: b14p2
+  b15p1:
+    label: b15p1
+  b15p2:
+    label: b15p2
+  b16p1:
+    label: b16p1
+  b16p2:
+    label: b16p2
+  b17p1:
+    label: b17p1
+  b17p2:
+    label: b17p2
+  b18p1:
+    label: b18p1
+  b18p2:
+    label: b18p2
+  b19p1:
+    label: b19p1
+  b19p2:
+    label: b19p2
+  b1p1:
+    label: b1p1
+  b1p2:
+    label: b1p2
+  b20p1:
+    label: b20p1
+  b21p1:
+    label: b21p1
+  b2p1:
+    label: b2p1
+  b2p2:
+    label: b2p2
+  b3p1:
+    label: b3p1
+  b3p2:
+    label: b3p2
+  b4p1:
+    label: b4p1
+  b4p2:
+    label: b4p2
+  b5p1:
+    label: b5p1
+  b6p1:
+    label: b6p1
+  b7p1:
+    label: b7p1
+  b7p2:
+    label: b7p2
+  b8p1:
+    label: b8p1
+  b8p2:
+    label: b8p2
+  b9p1:
+    label: b9p1
+RelDistancePercentages: []
+RelDistances: []
