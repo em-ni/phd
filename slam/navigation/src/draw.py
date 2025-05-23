@@ -68,7 +68,9 @@ def draw_circles_around_points(app, radius=1, num_segments=10):
         draw_circle(app, circle_points)
 
 
-def draw_circle(app, points):
+def draw_circle(app, points):  # points are list of np.array world coordinates
+    parent_node, offset_vec = app.get_scene_graph_parent_and_offset()
+
     circle = LineSegs()  # type: ignore
     circle.setThickness(5.0)  # Increased thickness
     circle.setColor(1, 1, 0, 1)  # Changed color to yellow for better visibility
@@ -76,20 +78,23 @@ def draw_circle(app, points):
     if not points:
         return
 
-    # Convert points to LVecBase3f and draw the circle
-    for i, point_np in enumerate(points):
-        point = LVector3f(point_np[0], point_np[1], point_np[2])  # type: ignore
+    # Convert points to LVecBase3f, make them local to parent_node, and draw the circle
+    for i, point_np_world in enumerate(points):
+        point_world = LVector3f(point_np_world[0], point_np_world[1], point_np_world[2])  # type: ignore
+        point_local = point_world - offset_vec
         if i == 0:
-            circle.moveTo(point)
+            circle.moveTo(point_local)
         else:
-            circle.drawTo(point)
+            circle.drawTo(point_local)
     # Connect back to the first point
-    first_point_np = points[0]
-    circle.drawTo(LVector3f(first_point_np[0], first_point_np[1], first_point_np[2]))  # type: ignore
+    first_point_np_world = points[0]
+    first_point_world = LVector3f(first_point_np_world[0], first_point_np_world[1], first_point_np_world[2])  # type: ignore
+    first_point_local = first_point_world - offset_vec
+    circle.drawTo(first_point_local)
 
     # Add the circle to the scene
-    circle_node = circle.create()
-    app.render.attachNewNode(circle_node)
+    circle_node_geom = circle.create()
+    parent_node.attachNewNode(circle_node_geom)
 
 
 def draw_FS_frames(
@@ -109,21 +114,27 @@ def draw_FS_frames(
         pass
 
 
-def draw_vector(app, point, direction, color):
+def draw_vector(app, point_world_np, direction_world_np, color):
     """Draw a vector from a point in a specified direction with a given color."""
+    parent_node, offset_vec = app.get_scene_graph_parent_and_offset()
+
     line = LineSegs()  # type: ignore
     line.setThickness(5.0)  # Increased thickness
     line.setColor(*color)  # Set the color
 
-    start = LVector3f(point[0], point[1], point[2])  # type: ignore
-    end = LVector3f(point[0] + direction[0], point[1] + direction[1], point[2] + direction[2])  # type: ignore
+    start_world = LVector3f(point_world_np[0], point_world_np[1], point_world_np[2])  # type: ignore
+    direction_vec_world = LVector3f(direction_world_np[0], direction_world_np[1], direction_world_np[2])  # type: ignore
 
-    line.moveTo(start)
-    line.drawTo(end)
+    start_local = start_world - offset_vec
+    # Direction vectors are not affected by the parent's translation for calculating the end point relative to start_local
+    end_local = start_local + direction_vec_world
+
+    line.moveTo(start_local)
+    line.drawTo(end_local)
 
     # Add the line to the scene
-    line_node = line.create()
-    app.render.attachNewNode(line_node)
+    line_node_geom = line.create()
+    parent_node.attachNewNode(line_node_geom)
 
 
 def draw_origin_frame(app):
@@ -207,8 +218,21 @@ def draw_base_frame(app):
 
 
 def draw_robot_tip(app):
+    if app.view_mode == "fp":  # Prevent drawing in first-person view
+        # If there was an old node, ensure it's removed
+        if hasattr(app, "robot_tip_node") and app.robot_tip_node:
+            app.robot_tip_node.removeNode()
+            app.robot_tip_node = None
+        if hasattr(app, "light_cone_geom_np") and app.light_cone_geom_np:
+            app.light_cone_geom_np.removeNode()
+            app.light_cone_geom_np = None
+        return
+
     if app.results_mode:
         return
+
+    parent_node, offset_vec = app.get_scene_graph_parent_and_offset()
+
     if hasattr(app, "robot_tip_node") and app.robot_tip_node:
         app.robot_tip_node.removeNode()  # Remove the old node if it exists
         app.robot_tip_node = None  # Clear reference
@@ -219,30 +243,34 @@ def draw_robot_tip(app):
         print(f"[ERROR] Could not load robot tip model: models/smiley. {e}")
         # Fallback to a simple sphere or just a NodePath if model fails
         vdata = GeomVertexData("fallback_tip_geom", GeomVertexFormat.getV3n3cpt2(), Geom.UHStatic)  # type: ignore
-        # Placeholder for actual geometry if needed, or just use an empty GeomNode
         geom = Geom(vdata)  # type: ignore
         tris = GeomTriangles(Geom.UHStatic)  # type: ignore
-        # geom.addPrimitive(tris) # Add primitives if you define vertices
         node = GeomNode("fallback_tip_node")  # type: ignore
         node.addGeom(geom)
         robot_tip_visual = NodePath(node)
 
     robot_tip_visual.setScale(1)  # Scale to appropriate size
     robot_tip_visual.setColor(0, 1, 0, 1)  # Set color to green
+
+    robot_tip_pos_world = LVector3f(0, 0, 0)  # type: ignore Default if tip not set
     if hasattr(app, "robot_tip") and app.robot_tip is not None:
-        robot_tip_visual.setPos(LVector3f(*app.robot_tip))  # type: ignore
-    else:
-        robot_tip_visual.setPos(LVector3f(0, 0, 0))  # type: ignore Default if tip not set
+        robot_tip_pos_world = LVector3f(*app.robot_tip)  # type: ignore
 
-    # Create a new node and parent the visual to it
-    app.robot_tip_node = app.render.attachNewNode("RobotTipNode")
-    robot_tip_visual.reparentTo(app.robot_tip_node)
+    # Create a new node parented to parent_node (render or pivot)
+    app.robot_tip_node = parent_node.attachNewNode("RobotTipNode")
+    robot_tip_visual.reparentTo(
+        app.robot_tip_node
+    )  # smiley is now child of RobotTipNode
 
-    # Draw the light cone geometry
-    draw_light_cone_geom(app)
+    # Position robot_tip_visual locally so its world position is robot_tip_pos_world
+    robot_tip_visual_local_pos = robot_tip_pos_world - offset_vec
+    robot_tip_visual.setPos(robot_tip_visual_local_pos)
+
+    # Draw the light cone geometry, passing the parent and offset
+    draw_light_cone_geom(app, parent_node, offset_vec)
 
 
-def draw_light_cone_geom(app):
+def draw_light_cone_geom(app, parent_node, offset_vec):
     """
     Draws a translucent cone geometry that starts at the robot tip
     and extends in the tangent direction.
@@ -258,7 +286,13 @@ def draw_light_cone_geom(app):
     cone_model.setTransparency(TransparencyAttrib.MAlpha)  # type: ignore
 
     # Find the index of the closest point to the robot tip on the centerline
-    if hasattr(app, "interpolated_points") and len(app.interpolated_points) > 0:
+    # This logic for tangent_vector is preserved from your snippet
+    if (
+        hasattr(app, "interpolated_points")
+        and len(app.interpolated_points) > 0
+        and hasattr(app, "robot_tip")
+        and app.robot_tip is not None
+    ):  # Added None check for app.robot_tip for safety before use
         distances = np.linalg.norm(app.interpolated_points - app.robot_tip, axis=1)
         closest_index = np.argmin(distances)
 
@@ -273,17 +307,24 @@ def draw_light_cone_geom(app):
         # Fallback if centerline data is not available
         tangent_vector = LVector3f(1, 0, 0)  # type: ignore
 
-    # Create a transformation node to handle the orientation
-    cone_np = app.render.attachNewNode("cone_transform")
+    # Create a transformation node to handle the orientation, parented to parent_node
+    cone_np = parent_node.attachNewNode("cone_transform")
 
-    # Position the cone at the robot tip
-    cone_np.setPos(LVector3f(*app.robot_tip))  # type: ignore
+    # Position the cone at the robot tip, local to parent_node
+    robot_tip_world_lvec = LVector3f(*app.robot_tip)  # type: ignore
+    cone_pos_local = robot_tip_world_lvec - offset_vec
+    cone_np.setPos(cone_pos_local)
 
-    # Calculate focal point
-    focal_point = app.robot_tip
+    # Calculate focal point (world) as per your snippet's structure
+    focal_point_world_np = app.robot_tip  # This is a numpy array
 
-    # cone_np.lookAt(LVector3f(*focal_point), -normal_vector if normal_vector else LVector3f(0, 0, 1))  # type: ignore
-    cone_np.lookAt(LVector3f(*focal_point), tangent_vector)  # type: ignore
+    # The point to lookAt, converted to LVector3f and made local to parent_node
+    lookat_point_local = LVector3f(*focal_point_world_np) - offset_vec
+
+    # lookAt uses the point (local to parent) and up-vector (local to parent)
+    # tangent_vector is already an LVector3f (world direction)
+    # For a parent that mainly scales/translates, world direction can often be used directly for 'up'
+    cone_np.lookAt(lookat_point_local, tangent_vector)
 
     # Parent the cone model to the transformation node
     cone_model.reparentTo(cone_np)
@@ -292,7 +333,8 @@ def draw_light_cone_geom(app):
     app.light_cone_geom_np = cone_np
 
 
-def draw_path(app, points, up_to_index):
+def draw_path(app, points, up_to_index):  # points are world coordinates
+    parent_node, offset_vec = app.get_scene_graph_parent_and_offset()
     # Ensure the up_to_index is within bounds
     if up_to_index >= len(points):
         up_to_index = len(points) - 1
@@ -307,24 +349,39 @@ def draw_path(app, points, up_to_index):
     line.setThickness(5.0)  # Set a reasonable thickness
     line.setColor(1, 0, 0, 1)  # Red color
 
-    # Start drawing the line from the first point
-    first_point = LVector3f(points[0][0], points[0][1], points[0][2])  # type: ignore
-    line.moveTo(first_point)
+    if len(points) == 0 or up_to_index < 0:
+        app.path_line_node = parent_node.attachNewNode(
+            line.create()
+        )  # Attach empty node if no points
+        return
+
+    # Start drawing the line from the first point (local to parent_node)
+    first_point_world_np = points[0]
+    first_point_world = LVector3f(first_point_world_np[0], first_point_world_np[1], first_point_world_np[2])  # type: ignore
+    current_point_local = first_point_world - offset_vec
+    line.moveTo(current_point_local)
 
     # Draw to the rest of the points up to the specified index
     for i in range(1, up_to_index + 1):
-        next_point = LVector3f(points[i][0], points[i][1], points[i][2])  # type: ignore
-        # Check for large jumps in the points and skip if necessary
-        if (next_point - first_point).length() < 1.0:  # Adjust this threshold as needed
-            line.drawTo(next_point)
-            first_point = next_point
+        next_point_world_np = points[i]
+        next_point_world = LVector3f(next_point_world_np[0], next_point_world_np[1], next_point_world_np[2])  # type: ignore
+
+        # Check for large jumps in the points (world space check before localization)
+        # This check might be less relevant if points are already smoothed centerline
+        # if (next_point_world - (current_point_local + offset_vec)).length() < 1.0: # Adjust this threshold as needed
+        next_point_local = next_point_world - offset_vec
+        line.drawTo(next_point_local)
+        current_point_local = (
+            next_point_local  # Update for next potential jump check (if re-enabled)
+        )
 
     # Add the line to the scene
-    line_node = line.create()
-    app.path_line_node = app.render.attachNewNode(line_node)
+    line_node_geom = line.create()
+    app.path_line_node = parent_node.attachNewNode(line_node_geom)
 
 
 def draw_trajectory(app):
+    parent_node, offset_vec = app.get_scene_graph_parent_and_offset()
     # Check if the trajectory line node already exists and remove it
     if hasattr(app, "trajectory_line_node") and app.trajectory_line_node:
         app.trajectory_line_node.removeNode()
@@ -335,39 +392,52 @@ def draw_trajectory(app):
     line.setThickness(5.0)
     line.setColor(8 / 255, 232 / 255, 222 / 255, 1)  # Same color as the arrow button
 
+    points_to_draw_world = []
     if app.live_mode == False:
         # Smooth a lot the line
-        points = app.points
-        points = interpolate_line(points, num_points=1000)
+        temp_points = app.points  # These are world coordinates
+        temp_points = interpolate_line(
+            temp_points, num_points=1000
+        )  # World coordinates
 
         # Start drawing the line from the robot tip
-        robot_tip = app.robot_tip
-        first_point = LVector3f(robot_tip[0], robot_tip[1], robot_tip[2])  # type: ignore
-        line.moveTo(first_point)
-
-        # Draw to the rest of the points
-        for i in range(1, len(points)):
-            next_point = LVector3f(points[i][0], points[i][1], points[i][2])  # type: ignore
-            if (next_point - first_point).length() < 1.0:
-                line.drawTo(next_point)
-                first_point = next_point
+        robot_tip_world_np = app.robot_tip  # World coordinate
+        points_to_draw_world.append(robot_tip_world_np)
+        points_to_draw_world.extend(temp_points)
 
     elif (
         app.live_mode
         and hasattr(app, "trajectory_history_position")
         and len(app.trajectory_history_position) > 0
     ):
-        # In live mode, draw the trajectory from history
-        first_point = LVector3f(*app.trajectory_history_position[0])  # type: ignore
-        line.moveTo(first_point)
+        # In live mode, draw the trajectory from history (these are world coordinates)
+        points_to_draw_world = app.trajectory_history_position
 
-        for i in range(1, len(app.trajectory_history_position)):
-            next_point = LVector3f(*app.trajectory_history_position[i])  # type: ignore
-            line.drawTo(next_point)
+    if not points_to_draw_world:
+        app.trajectory_line_node = parent_node.attachNewNode(
+            line.create()
+        )  # Attach empty if no points
+        return
+
+    # Draw the line using points_to_draw_world, converting to local space
+    first_point_world_np = points_to_draw_world[0]
+    first_point_world = LVector3f(first_point_world_np[0], first_point_world_np[1], first_point_world_np[2])  # type: ignore
+    current_point_local = first_point_world - offset_vec
+    line.moveTo(current_point_local)
+
+    for i in range(1, len(points_to_draw_world)):
+        next_point_world_np = points_to_draw_world[i]
+        next_point_world = LVector3f(next_point_world_np[0], next_point_world_np[1], next_point_world_np[2])  # type: ignore
+
+        # Optional: jump check in world space
+        # if (next_point_world - (current_point_local + offset_vec)).length() < 1.0: # Adjust threshold
+        next_point_local = next_point_world - offset_vec
+        line.drawTo(next_point_local)
+        current_point_local = next_point_local
 
     # Create the line node and attach it to the scene
-    line_node = line.create()
-    app.trajectory_line_node = app.render.attachNewNode(line_node)
+    line_node_geom = line.create()
+    app.trajectory_line_node = parent_node.attachNewNode(line_node_geom)
 
 
 def draw_trajectory_from_frames(

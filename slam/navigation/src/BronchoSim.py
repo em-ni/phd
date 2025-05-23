@@ -111,6 +111,35 @@ class BronchoSim(ShowBase):
         # Draw elements
         draw_elements(self)
 
+        # Start breathing task if enabled
+        if hasattr(self, "breathing_enabled") and self.breathing_enabled:
+            self.setup_breathing_task()
+
+    def get_scene_graph_parent_and_offset(self):
+        """
+        Returns the appropriate parent node for scene elements that should
+        participate in the breathing animation, and the offset to transform
+        world coordinates to that parent's local space.
+        """
+        if (
+            self.breathing_enabled
+            and hasattr(self, "breathing_pivot_node")
+            and self.breathing_pivot_node is not None
+            and hasattr(self, "start_point")
+            and self.start_point is not None
+        ):
+            # Pivot is active. Elements should be parented to it.
+            # The pivot node is positioned at self.start_point in world coordinates.
+            # The offset to subtract from world coordinates to make them local to the pivot is self.start_point.
+            offset = LVector3f(  # type: ignore
+                self.start_point[0], self.start_point[1], self.start_point[2]
+            )
+            return self.breathing_pivot_node, offset
+        else:
+            # No breathing, or pivot not set, or start_point not available.
+            # Parent to render, no offset needed.
+            return self.render, LVector3f(0, 0, 0)  # type: ignore
+
     ## SETUP METHODS
     def save_calibration_file(self, width, height, fx, fy, cx, cy, filename):
         """
@@ -328,6 +357,84 @@ Viewer.ViewpointZ: -1.8
         # Optionally store them so we can reference or tweak later
         self.ambientLightNP = ambientLightNP
 
+    def setup_breathing_pivot(self):
+        """
+        Sets up the pivot node for the breathing animation.
+        Assumes self.scene is loaded and self.start_point is available.
+        The scene will be reparented to this pivot node.
+        """
+        # self.breathing_pivot_node is initialized to None in setup_init
+        if (
+            self.breathing_enabled
+            and hasattr(self, "start_point")
+            and self.start_point is not None
+            and hasattr(self, "scene")
+            and self.scene is not None
+        ):
+
+            print(
+                f"[INFO] Setting up breathing pivot around start_point: {self.start_point} for scene: {self.scene.getName()}"
+            )
+
+            # Create pivot node, parented to render, and position it at start_point (world coordinates)
+            self.breathing_pivot_node = self.render.attachNewNode("breathing_pivot")
+            pivot_pos_world = LPoint3f(  # type: ignore
+                self.start_point[0], self.start_point[1], self.start_point[2]
+            )
+            self.breathing_pivot_node.setPos(pivot_pos_world)
+
+            # Reparent the scene to the pivot node.
+            # wrtReparentTo preserves the scene's current world transform by adjusting its local transform
+            # relative to the new parent (the pivot_node).
+            self.scene.wrtReparentTo(self.breathing_pivot_node)
+            print(
+                f"[INFO] Scene '{self.scene.getName()}' reparented to breathing_pivot_node. Pivot at {self.breathing_pivot_node.getPos(self.render)}"
+            )
+
+        elif self.breathing_enabled:
+            missing_details = []
+            if not (hasattr(self, "start_point") and self.start_point is not None):
+                missing_details.append("start_point not available")
+            if not (hasattr(self, "scene") and self.scene is not None):
+                missing_details.append("scene not available")
+            print(
+                f"[WARNING] Breathing effect enabled but prerequisites ({', '.join(missing_details)}) not met. Pivot not set up."
+            )
+            self.breathing_pivot_node = None  # Ensure it's None if setup fails
+
+        # Print breathing parameters
+        if self.breathing_enabled:
+            print("[INFO] Breathing parameters:")
+            print(f"  - Breathing enabled: {self.breathing_enabled}")
+            print(f"  - Breathing min scale: {self.breathing_min_scale}")
+            print(f"  - Breathing max scale: {self.breathing_max_scale}")
+            print(f"  - Breathing period: {self.breathing_period_seconds} seconds")
+
+    def setup_breathing_task(self):
+        prerequisites_met = True
+        missing_prerequisites = []
+
+        if not (hasattr(self, "start_point") and self.start_point is not None):
+            prerequisites_met = False
+            missing_prerequisites.append("start_point not available")
+        if not (hasattr(self, "scene") and self.scene is not None):
+            prerequisites_met = False
+            missing_prerequisites.append("scene not available")
+        if not (
+            hasattr(self, "breathing_pivot_node")
+            and self.breathing_pivot_node is not None
+        ):
+            prerequisites_met = False
+            missing_prerequisites.append("breathing_pivot_node not set up")
+
+        if prerequisites_met:
+            self.taskMgr.add(self.update_breathing_effect, "updateBreathingEffectTask")
+            print("[INFO] Breathing task started.")
+        else:
+            print(
+                f"[WARNING] Breathing effect enabled but prerequisites not met ({', '.join(missing_prerequisites)}). Breathing task not started."
+            )
+
     def setup_init(self):
         # Read the configuration file
         self.app_config = configparser.ConfigParser()
@@ -356,6 +463,23 @@ Viewer.ViewpointZ: -1.8
         # CAMERA
         self.depth_bool = self.app_config["CAMERA"]["depth_bool"]
         self.save_vis_depth = self.app_config["CAMERA"]["save_vis_depth_bool"]
+
+        # BREATHING
+        self.breathing_enabled = self.app_config["BREATHING"].getboolean(
+            "enabled", False
+        )
+        self.breathing_min_scale = self.app_config["BREATHING"].getfloat(
+            "min_scale", 0.98
+        )
+        self.breathing_max_scale = self.app_config["BREATHING"].getfloat(
+            "max_scale", 1.02
+        )
+        self.breathing_period_seconds = self.app_config["BREATHING"].getfloat(
+            "period_seconds", 5.0
+        )
+        if self.breathing_period_seconds <= 0:  # Prevent division by zero
+            self.breathing_period_seconds = 5.0
+            print("[WARNING] Breathing period must be positive. Defaulting to 5.0s.")
 
         # Define path of the .vtp file
         self.path_path = self.data_folder + self.path_name
@@ -394,6 +518,7 @@ Viewer.ViewpointZ: -1.8
         self.blink_timer = 0
         self.blink_interval = 1
         self.robot_tip_visible = False
+        self.breathing_pivot_node = None
 
         # Finish initial setup
         self.setup_points()
@@ -863,7 +988,43 @@ Viewer.ViewpointZ: -1.8
         elif self.view_mode == "tp":
             self.setup_tp()
 
+        self.setup_breathing_pivot()
+
+    # Add this new helper method and remove/replace the old get_scene_graph_parent
+
     ## UPDATE METHODS
+    def update_breathing_effect(self, task):
+        if (
+            not self.breathing_enabled
+            or self.breathing_pivot_node is None
+            or self.scene is None
+        ):
+            # If no pivot, or scene removed, or disabled, stop or don't run the task logic
+            return task.cont
+
+        elapsed_time = globalClock.getFrameTime()  # type: ignore
+
+        # Ensure period is not zero to avoid division by zero
+        if self.breathing_period_seconds <= 0:
+            return task.cont
+
+        cycle_time = elapsed_time % self.breathing_period_seconds
+        normalized_time = cycle_time / self.breathing_period_seconds  # 0 to 1
+
+        # Sin wave from -1 to 1
+        sin_value = math.sin(normalized_time * 2 * math.pi)
+
+        # Map sin_value [-1, 1] to [min_scale, max_scale]
+        # (sin_value + 1) / 2 maps to [0, 1]
+        scale_factor = (sin_value + 1) / 2
+        current_scale_value = self.breathing_min_scale + scale_factor * (
+            self.breathing_max_scale - self.breathing_min_scale
+        )
+
+        self.breathing_pivot_node.setScale(current_scale_value)
+
+        return task.cont
+
     def update_camera_to_robot_tip(self):
         # Find the index of the closest point to the robot tip
         distances = np.linalg.norm(self.interpolated_points - self.robot_tip, axis=1)
