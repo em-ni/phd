@@ -469,6 +469,25 @@ def draw_trajectory_from_frames(
     node = line_segs.create()
     path_node = app.render.attachNewNode(node)
     path_node.setName(node_name)
+
+    # Prevent color alteration when lines are behind/inside the transparent CAD model.
+    # 1. Ensure the line itself is treated as opaque.
+    path_node.setTransparency(TransparencyAttrib.MNone) # type: ignore
+
+    # 2. Place it in a render bin that's processed late (e.g., 'fixed' bin),
+    #    but ensure depth interactions are maintained.
+    #    'fixed' bin is drawn after 'opaque' and 'transparent' bins.
+    #    Sort order 0 means it's drawn relatively early among 'fixed' items.
+    path_node.setBin("fixed", 0)
+
+    # 3. Explicitly enable depth testing so lines are occluded by geometry.
+    #    This ensures lines correctly appear behind parts of the CAD model closer to the camera.
+    path_node.setDepthTest(True)
+
+    # 4. Enable depth writing. This allows lines to occlude each other correctly
+    #    and to be part of the depth scene for any subsequent rendering in the 'fixed' bin.
+    path_node.setDepthWrite(True)
+
     return path_node
 
 
@@ -477,10 +496,10 @@ def draw_results_trajectories(app):
     print("[INFO] Drawing results trajectories...")
 
     # Colors: (R, G, B, A)
-    color_centerline = (0.8, 0.8, 0.8, 1)  # Light Gray/White for centerline
-    color_gt = (0, 1, 0, 1)  # Green for Ground Truth
-    color_slam = (0, 0, 1, 1)  # Blue for SLAM
-    color_slam_snapped = (1, 0.5, 0, 1)  # Orange for Snapped SLAM
+    color_centerline = (0.9, 0.2, 0.2, 1)  # Red for centerline
+    color_gt = (0.2, 0.3, 0.9, 1)  # Blue for Ground Truth
+    color_slam = (0, 0, 1, 1)  # Original Blue for SLAM
+    color_slam_snapped = (0.1, 0.8, 0.1, 1)  # Green for Snapped SLAM
 
     # Store nodes to app if they need to be accessed/removed later
     if app.draw_centerline_bool == "1":

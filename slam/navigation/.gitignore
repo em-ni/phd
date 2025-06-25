@@ -1,4 +1,5 @@
 data/mesh/lungs/sim/videos
 data/mesh/easier_slam_test/videos
+*trajectories*
 recorded_frames/*
 utils/__pycache__/
