@@ -275,10 +275,10 @@ def draw_FS_frames(
     # Create a plotter
     plotter = pv.Plotter()
 
-    # Draw the origin of the world frame
-    plotter.add_arrows(np.zeros((1, 3)), np.array([[10, 0, 0]]), color="red", mag=1)
-    plotter.add_arrows(np.zeros((1, 3)), np.array([[0, 10, 0]]), color="green", mag=1)
-    plotter.add_arrows(np.zeros((1, 3)), np.array([[0, 0, 10]]), color="blue", mag=1)
+    # # Draw the origin of the world frame
+    # plotter.add_arrows(np.zeros((1, 3)), np.array([[10, 0, 0]]), color="red", mag=1)
+    # plotter.add_arrows(np.zeros((1, 3)), np.array([[0, 10, 0]]), color="green", mag=1)
+    # plotter.add_arrows(np.zeros((1, 3)), np.array([[0, 0, 10]]), color="blue", mag=1)
 
     for i in range(n_cells):
         # Extract the i-th cell (branch)
@@ -706,35 +706,185 @@ def parse_arguments():
     return parser.parse_args()
 
 
+def visualize_multiple_paths_with_frames(
+    folder_path,
+    num_frames_per_path=20,
+    draw_tangent=True,
+    draw_normal=True,
+    draw_binormal=True,
+    frame_scale=2.0,
+):
+    """
+    Process all .vtp files in a folder, compute their FS frames, and visualize all paths
+    with their assigned frames using pyvista.
+
+    Parameters:
+    - folder_path (str): Path to folder containing .vtp files
+    - num_frames_per_path (int): Number of frames to display per path
+    - draw_tangent (bool): Whether to draw tangent vectors (red)
+    - draw_normal (bool): Whether to draw normal vectors (green)
+    - draw_binormal (bool): Whether to draw binormal vectors (blue)
+    - frame_scale (float): Scale factor for frame vector lengths
+    """
+
+    if not os.path.isdir(folder_path):
+        print(f"Error: {folder_path} is not a valid directory")
+        return
+
+    # Find all .vtp files in the folder
+    vtp_files = [f for f in os.listdir(folder_path) if f.endswith(".vtp")]
+
+    if not vtp_files:
+        print(f"No .vtp files found in {folder_path}")
+        return
+
+    print(f"Found {len(vtp_files)} .vtp files: {vtp_files}")
+
+    # Create a plotter
+    plotter = pv.Plotter()
+
+    # Draw world origin frame
+    plotter.add_arrows(np.zeros((1, 3)), np.array([[5, 0, 0]]), color="red", mag=1)
+    plotter.add_arrows(np.zeros((1, 3)), np.array([[0, 5, 0]]), color="green", mag=1)
+    plotter.add_arrows(np.zeros((1, 3)), np.array([[0, 0, 5]]), color="blue", mag=1)
+
+    # Define colors for different paths
+    path_colors = [
+        "cyan",
+        "magenta",
+        "yellow",
+        "orange",
+        "purple",
+        "brown",
+        "pink",
+        "gray",
+    ]
+
+    for file_idx, vtp_file in enumerate(vtp_files):
+        file_path = os.path.join(folder_path, vtp_file)
+        print(f"\nProcessing {vtp_file}...")
+
+        try:
+            # Load the .vtp file
+            line_model = pv.read(file_path)
+            n_cells = line_model.n_cells
+            print(f"  Number of branches (cells): {n_cells}")
+
+            # Choose color for this path
+            path_color = path_colors[file_idx % len(path_colors)]
+
+            for cell_idx in range(n_cells):
+                # Extract the cell (branch)
+                single_line = line_model.extract_cells(cell_idx)
+                points = single_line.points
+                print(f"  Processing branch {cell_idx} with {len(points)} points")
+
+                if len(points) < 2:
+                    print(f"  Skipping branch {cell_idx} due to insufficient points.")
+                    continue
+
+                # Interpolate the line for smoothing
+                interpolated_points = interpolate_line(points)
+
+                if interpolated_points is None or len(interpolated_points) == 0:
+                    print(f"  Skipping branch {cell_idx} due to interpolation failure.")
+                    continue
+
+                # Compute FS frames
+                try:
+                    tangents = compute_tangent_vectors(interpolated_points)
+                    normals, binormals = compute_MRF(tangents)
+                except Exception as e:
+                    print(f"  Error computing FS frames for branch {cell_idx}: {e}")
+                    continue
+
+                # Add the path to the plotter
+                plotter.add_mesh(
+                    single_line,
+                    color=path_color,
+                    line_width=5,
+                    label=f"{vtp_file}_branch{cell_idx}",
+                )
+
+                # Add start point marker
+                plotter.add_points(
+                    interpolated_points[0], color=path_color, point_size=15
+                )
+
+                # Select points to display frames
+                if len(interpolated_points) <= num_frames_per_path:
+                    frame_indices = range(len(interpolated_points))
+                else:
+                    # Evenly distribute frames along the path
+                    frame_indices = np.linspace(
+                        0, len(interpolated_points) - 1, num_frames_per_path, dtype=int
+                    )
+
+                # Add FS frames at selected points
+                for idx in frame_indices:
+                    point = interpolated_points[idx]
+                    tangent = tangents[idx] * frame_scale
+                    normal = normals[idx] * frame_scale
+                    binormal = binormals[idx] * frame_scale
+
+                    # Draw the frame vectors
+                    if draw_tangent:
+                        plotter.add_arrows(
+                            point[np.newaxis], tangent[np.newaxis], color="red", mag=1
+                        )
+                    if draw_normal:
+                        plotter.add_arrows(
+                            point[np.newaxis], normal[np.newaxis], color="green", mag=1
+                        )
+                    if draw_binormal:
+                        plotter.add_arrows(
+                            point[np.newaxis], binormal[np.newaxis], color="blue", mag=1
+                        )
+
+        except Exception as e:
+            print(f"Error processing {vtp_file}: {e}")
+            continue
+
+    # Add legend
+    plotter.add_text(
+        "FS Frame Convention:\nRed = Tangent\nGreen = Normal\nBlue = Binormal",
+        position="upper_right",
+        font_size=12,
+    )
+
+    # Show the visualization
+    plotter.show()
+
+
 if __name__ == "__main__":
-    # args = parse_arguments()
+    args = parse_arguments()
 
-    # draw_only = False
+    draw_only = True
 
-    # if draw_only:
-    #     draw_FS_frames(path=args.i)
+    if draw_only:
+        draw_FS_frames(path=args.i)
 
-    # else:
-    #     # Check if input is a file or directory
-    #     if os.path.isfile(args.i) and args.i.endswith(".vtp"):
-    #         # Process single .vtp file
-    #         save_frames_single_branch(args.i)
-    #     elif os.path.isdir(args.i):
-    #         # Process all centerline_b*.vtp files in directory
-    #         vtp_files = [
-    #             os.path.join(args.i, f)
-    #             for f in os.listdir(args.i)
-    #             if f.startswith("b") and f.endswith(".vtp")
-    #         ]
+    else:
+        # Check if input is a file or directory
+        if os.path.isfile(args.i) and args.i.endswith(".vtp"):
+            # Process single .vtp file
+            save_frames_single_branch(args.i)
+        elif os.path.isdir(args.i):
+            # Process all centerline_b*.vtp files in directory
+            vtp_files = [
+                os.path.join(args.i, f)
+                for f in os.listdir(args.i)
+                if f.startswith("b") and f.endswith(".vtp")
+            ]
 
-    #         save_frames_all_branches(vtp_files)
+            save_frames_all_branches(vtp_files)
 
-    #     else:
-    #         print(
-    #             "Error: Input must be either a .vtp file or a directory containing .vtp files"
-    #         )
+        else:
+            print(
+                "Error: Input must be either a .vtp file or a directory containing .vtp files"
+            )
+
     # Temp test the tum to fs conversion
-
     # o_T_w = np.array(
     #     [
     #         [
@@ -758,11 +908,21 @@ if __name__ == "__main__":
     #         [0.0, 0.0, 0.0, 1.0],
     #     ]
     # )
-    input_file = "/home/emanuele/Desktop/github/phd/slam/navigation/utils/tum.txt"
-    output_file = "/home/emanuele/Desktop/github/phd/slam/navigation/utils/fs.txt"
-    ref_centerline_fs_file = "/home/emanuele/Desktop/github/phd/slam/navigation/data/mesh/lungs/sim/centerlines/b1_fs.txt"
-    print(
-        convert_tum_to_fs(
-            input_file, output_file, ref_centerline_fs_file, convention="wTc"
-        )
-    )
+    # input_file = "/home/emanuele/Desktop/github/phd/slam/navigation/utils/tum.txt"
+    # output_file = "/home/emanuele/Desktop/github/phd/slam/navigation/utils/fs.txt"
+    # ref_centerline_fs_file = "/home/emanuele/Desktop/github/phd/slam/navigation/data/mesh/lungs/sim/centerlines/b1_fs.txt"
+    # print(
+    #     convert_tum_to_fs(
+    #         input_file, output_file, ref_centerline_fs_file, convention="wTc"
+    #     )
+    # )
+
+    # all_vtp = "/home/emanuele/Desktop/github/phd/slam/navigation/data/mesh/lungs/sim/centerlines"
+    # visualize_multiple_paths_with_frames(
+    #     all_vtp,
+    #     num_frames_per_path=50,
+    #     draw_tangent=True,
+    #     draw_normal=True,
+    #     draw_binormal=True,
+    #     frame_scale=2.0,
+    # )
