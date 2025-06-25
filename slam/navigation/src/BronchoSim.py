@@ -26,7 +26,7 @@ loadPrcFileData("", "window-title Bronchoscopy Simulation")  # type: ignore
 loadPrcFileData("", "load-file-type p3assimp")  # type: ignore
 
 from direct.task import Task  # type: ignore
-from direct.gui.DirectGui import DirectLabel  # type: ignore
+from direct.gui.DirectGui import DirectLabel, OnscreenText  # type: ignore
 
 # src import
 from src.server import sim_server, start_server
@@ -934,6 +934,41 @@ Viewer.ViewpointZ: -1.8
                 "[WARNING] Cannot snap SLAM trajectory: SLAM or centerline trajectory is empty."
             )
 
+        # Add legend for trajectories
+        self.legend_nodes = []
+        legend_start_pos = (-1.8, 0, 0.9)
+        legend_offset = 0.07
+        text_scale = 0.05
+
+        # Define legend items: (text, color_tuple_rgba)
+        # Colors should match those in draw_results_trajectories from draw.py
+        legend_items = []
+        if self.draw_centerline_bool == "1" and self.res_centerline_frames:
+            legend_items.append(("Centerline (GT Path)", (0.9, 0.2, 0.2, 1)))  # Red
+        if self.draw_gt_bool == "1" and self.res_gt_aligned_frames:
+            legend_items.append(
+                ("Ground Truth (Aligned to Centerline)", (0.2, 0.3, 0.9, 1))
+            )  # Blue
+        if self.draw_original_slam_bool == "1" and self.res_slam_aligned_frames:
+            legend_items.append(
+                ("SLAM Output (Aligned to GT)", (0, 0, 1, 1))
+            )  # Original Blue
+        if self.draw_snapped_slam_bool == "1" and self.res_slam_snapped_frames:
+            legend_items.append(
+                ("SLAM Snapped (to Centerline)", (0.1, 0.8, 0.1, 1))
+            )  # Green
+
+        for i, (text, color) in enumerate(legend_items):
+            label = OnscreenText(
+                text=text,
+                pos=(legend_start_pos[0], legend_start_pos[2] - i * legend_offset),
+                scale=text_scale,
+                fg=color,
+                align=TextNode.ALeft,  # type: ignore
+                mayChange=False,
+            )
+            self.legend_nodes.append(label)
+
     def setup_tp(self):
         print("[INFO] Initializinig Third Person View Mode...")
 
@@ -1515,6 +1550,12 @@ Viewer.ViewpointZ: -1.8
         print("[INFO] Quitting the app now.")
         # Stop the Panda3D main loop.
         self.taskMgr.stop()
+
+        # Clean up legend if it exists
+        if hasattr(self, "legend_nodes"):
+            for node in self.legend_nodes:
+                node.destroy()
+            self.legend_nodes = []
 
         # Save record
         if self.record_mode and hasattr(self, "record_dir"):
