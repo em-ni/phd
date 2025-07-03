@@ -55,30 +55,48 @@ def main():
     alg_folder = os.path.join(output_root, alg)
     os.makedirs(alg_folder, exist_ok=True)
 
-    # Regular expression to match record folders of the form: record_NAME_TIMESTAMP
-    record_pattern = re.compile(r"record_(.+)_[\d\.]+$")
-    # Map identifier -> list of record folder paths
+    # Original code for record_NAME_TIMESTAMP pattern (commented out)
+    # # Regular expression to match record folders of the form: record_NAME_TIMESTAMP
+    # record_pattern = re.compile(r"record_(.+)_[\d\.]+$")
+    # # Map identifier -> list of record folder paths
+    # datasets = {}
+    #
+    # # Iterate over items in the slam_logs_folder to find record folders.
+    # for item in os.listdir(slam_logs_folder):
+    #     item_path = os.path.join(slam_logs_folder, item)
+    #     if os.path.isdir(item_path):
+    #         match = record_pattern.match(item)
+    #         if match:
+    #             branch_raw = match.group(
+    #                 1
+    #             )  # e.g., "b001" or "real_seq_000_part_1_dif_1"
+    #             # Normalize branch name if it's in "b<digits>" format, otherwise use raw.
+    #             if (
+    #                 branch_raw.startswith("b")
+    #                 and branch_raw[1:].isdigit()
+    #                 and len(branch_raw) > 1
+    #             ):
+    #                 branch_normalized = "b" + str(int(branch_raw[1:]))
+    #             else:
+    #                 branch_normalized = branch_raw
+    #             datasets.setdefault(branch_normalized, []).append(item_path)
+
+    # New code to handle sim_all_chunks structure with chunk_ball_XXX folders
+    # Regular expression to match chunk folders of the form: chunk_ball_XXX
+    chunk_pattern = re.compile(r"chunk_ball_(\d+)$")
+    # Map identifier -> list of chunk folder paths
     datasets = {}
 
-    # Iterate over items in the slam_logs_folder to find record folders.
+    # Iterate over items in the slam_logs_folder to find chunk folders.
     for item in os.listdir(slam_logs_folder):
         item_path = os.path.join(slam_logs_folder, item)
         if os.path.isdir(item_path):
-            match = record_pattern.match(item)
+            match = chunk_pattern.match(item)
             if match:
-                branch_raw = match.group(
-                    1
-                )  # e.g., "b001" or "real_seq_000_part_1_dif_1"
-                # Normalize branch name if it's in "b<digits>" format, otherwise use raw.
-                if (
-                    branch_raw.startswith("b")
-                    and branch_raw[1:].isdigit()
-                    and len(branch_raw) > 1
-                ):
-                    branch_normalized = "b" + str(int(branch_raw[1:]))
-                else:
-                    branch_normalized = branch_raw
-                datasets.setdefault(branch_normalized, []).append(item_path)
+                chunk_number = match.group(1)  # e.g., "000", "001", "002"
+                # Normalize chunk name to remove leading zeros
+                chunk_normalized = "chunk_ball_" + str(int(chunk_number))
+                datasets.setdefault(chunk_normalized, []).append(item_path)
 
     if not datasets:
         print("No record folders found in the slam logs folder.")

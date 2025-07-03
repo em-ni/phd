@@ -1,0 +1,15 @@
+Algorithms:
+  rgbd:
+    fn: traj_est
+    label: rgbd
+Datasets:
+  chunk_ball_0:
+    label: chunk_ball_0
+  chunk_ball_1:
+    label: chunk_ball_1
+  chunk_ball_2:
+    label: chunk_ball_2
+  chunk_ball_3:
+    label: chunk_ball_3
+RelDistancePercentages: []
+RelDistances: []
