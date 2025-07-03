@@ -1061,23 +1061,48 @@ Viewer.ViewpointZ: -1.8
         return task.cont
 
     def update_camera_to_robot_tip(self):
-        # Find the index of the closest point to the robot tip
-        distances = np.linalg.norm(self.interpolated_points - self.robot_tip, axis=1)
-        closest_index = np.argmin(distances)
+        # Use the current and next indices from the movement logic
+        current_index = self.current_index
+        next_index = self.next_index
 
-        # Get the corresponding tangent, normal, and binormal vectors
-        tangent = LVector3f(*self.tangents[closest_index])  # type: ignore
-        normal = LVector3f(*self.normals[closest_index])  # type: ignore
-        binormal = LVector3f(*self.binormals[closest_index])  # type: ignore
+        # Get the positions of the current and next points
+        current_pos = self.interpolated_points[current_index]
+        next_pos = self.interpolated_points[next_index]
+
+        # Get the orientation vectors for the current and next points
+        tangent_current = self.tangents[current_index]
+        normal_current = self.normals[current_index]
+        tangent_next = self.tangents[next_index]
+        normal_next = self.normals[next_index]
+
+        # Calculate the interpolation factor (alpha)
+        segment_vec = next_pos - current_pos
+        segment_len = np.linalg.norm(segment_vec)
+        tip_vec = self.robot_tip - current_pos
+        dist_on_segment = np.linalg.norm(tip_vec)
+
+        if segment_len > 1e-5:
+            alpha = dist_on_segment / segment_len
+            alpha = np.clip(alpha, 0.0, 1.0)  # Clamp between 0 and 1
+        else:
+            alpha = 0.0
+
+        # Interpolate the tangent and normal vectors
+        tangent = tangent_current * (1 - alpha) + tangent_next * alpha
+        normal = normal_current * (1 - alpha) + normal_next * alpha
+
+        # Normalize the interpolated vectors
+        tangent = tangent / np.linalg.norm(tangent)
+        normal = normal / np.linalg.norm(normal)
 
         # Set the camera position at the robot tip
         self.camera.setPos(LVector3f(*self.robot_tip))  # type: ignore
 
-        # Calculate the focal point using the tangent vector
+        # Calculate the focal point using the interpolated tangent vector
         focal_point = self.robot_tip + tangent
 
-        # Set the camera to look at the focal point with the binormal as the up vector
-        self.camera.lookAt(LVector3f(*focal_point), -normal)  # type: ignore
+        # Set the camera to look at the focal point with the interpolated normal as the up vector
+        self.camera.lookAt(LVector3f(*focal_point), LVector3f(*-normal))  # type: ignore
 
         # Update the directional light's orientation to match the camera's orientation
         # if in first-person view mode
@@ -1094,7 +1119,7 @@ Viewer.ViewpointZ: -1.8
 
         if self.live_mode == False:
             # Define the speed of movement along the line
-            movement_speed = 5  # Adjust as needed
+            movement_speed = 1  # Adjust as needed
 
             # Calculate distances from self.robot_tip to each point in self.interpolated_points
             distances = np.linalg.norm(
@@ -1341,16 +1366,24 @@ Viewer.ViewpointZ: -1.8
             # Normal update: move toward next point along the translation.
             direction = delta_pos / dist  # Safe normalization
             # Define a movement step (you can adjust movement_speed as needed)
-            movement_speed = 5000  # units per second
+            # movement_speed = 5000  # units per second
+            movement_speed = 2
             step = movement_speed * dt
+
+            # Calculate the distance of the robot tip from the start of the current segment
+            dist_from_start = np.linalg.norm(self.robot_tip - current_pos)
+            new_dist_on_segment = dist_from_start + step
+
             # Don't overshoot the next point.
-            if step > dist:
-                step = dist
-            new_pos = self.robot_tip + direction * step
+            if new_dist_on_segment > dist:
+                new_dist_on_segment = dist
+
+            # Calculate new position from the start of the segment
+            new_pos = current_pos + direction * new_dist_on_segment
             self.robot_tip = new_pos
 
             # When we've nearly reached the next point, snap to it and reset interpolation.
-            if np.linalg.norm(new_pos - next_pos) < 1e-3:
+            if dist - new_dist_on_segment < 1e-3:
                 self.robot_tip = next_pos
                 self.interp_alpha = 0.0  # reset orientation interpolation
                 self.current_index = next_index
