@@ -93,6 +93,12 @@ parser.add_argument(
     action="store_true",
     help="Enable results visualization mode",
 )
+parser.add_argument(
+    "-random",
+    type=int,
+    default=None,
+    help="Randomly pick N centerlines to combine (overrides all_branches_bool)",
+)
 
 args = parser.parse_args()
 
@@ -700,7 +706,37 @@ Viewer.ViewpointZ: -1.8
         return o_T_c0
 
     def setup_points(self):
-        if self.all_branches_bool == "1":
+        import random
+
+        if hasattr(args, "random") and args.random is not None:
+            # Randomly select N centerlines from the folder
+            centerline_folder_name = self.app_config["PATHS"]["all_branches_folder"]
+            centerline_folder_path = os.path.join(
+                self.data_folder, centerline_folder_name
+            )
+            all_files = [
+                f for f in os.listdir(centerline_folder_path) if f.endswith(".vtp")
+            ]
+            if len(all_files) < args.random:
+                print(
+                    f"[ERROR] Not enough centerlines to pick {args.random} random ones."
+                )
+                sys.exit(1)
+            selected = random.sample(all_files, args.random)
+            selected_rel = [os.path.join(centerline_folder_name, f) for f in selected]
+            print(f"[INFO] Randomly selected centerlines: {selected_rel}")
+            from src.utils import build_random_branches_path
+
+            fs_frames, points = build_random_branches_path(
+                selected_rel, self.data_folder
+            )
+            if not fs_frames:
+                print("[ERROR] No branches found. Exiting...")
+                sys.exit(1)
+            self.setup_line_multibranch(fs_frames)
+            print("[INFO] Random path built successfully")
+            self.points = points
+        elif self.all_branches_bool == "1":
             # Crate a trajectory traversing all the branches in the folder forward and backward
             print("[INFO] Building final path combining all branches...")
             fs_frames, points = build_all_branches_path(
@@ -1367,7 +1403,7 @@ Viewer.ViewpointZ: -1.8
             direction = delta_pos / dist  # Safe normalization
             # Define a movement step (you can adjust movement_speed as needed)
             # movement_speed = 5000  # units per second
-            movement_speed = 2
+            movement_speed = 0.5
             step = movement_speed * dt
 
             # Calculate the distance of the robot tip from the start of the current segment
