@@ -1,0 +1,82 @@
+if something like this happend
+
+(trajeval) emanuele@asus:~/Desktop/github/phd/slam/rpg_trajectory_evaluation$ python scripts/analyze_trajectories.py paper_rgbd_config.yaml --output_dir=./em/broncho --results_dir ./em/broncho --platform paper --odometry_error_per_dataset --plot_trajectories --rmse_table --rmse_boxplot --mul_trials=1
+Arguments:
+- mul_trials: 1
+- plot_side: True
+- write_time_statistics: False
+- recalculate_errors: False
+- plot_trajectories: True
+- rmse_table: True
+- odometry_error_per_dataset: True
+- sort_names: True
+- results_dir: ./em/broncho
+- dpi: 300
+- platform: paper
+- rmse_boxplot: True
+- output_dir: ./em/broncho
+- plot_traj_per_alg: True
+- time_statistics: False
+- rmse_median_only: False
+- overall_odometry_error: False
+- plot_aligned: True
+- config: paper_rgbd_config.yaml
+- png: False
+Will analyze results from ./em/broncho and output will be in ./em/broncho
+Parsing evaluation configuration /home/emanuele/Desktop/github/phd/slam/rpg_trajectory_evaluation/scripts/../analyze_trajectories_config/paper_rgbd_config.yaml...
+=== Evaluation Configuration Summary ===
+Datasests to evaluate: 
+- b1: b1
+- b10: b10
+- b11: b11
+- b12: b12
+- b13: b13
+- b14: b14
+- b15: b15
+- b16: b16
+- b17: b17
+- b18: b18
+- b19: b19
+- b2: b2
+- b20: b20
+- b21: b21
+- b22: b22
+- b23: b23
+- b3: b3
+- b4: b4
+- b5: b5
+- b6: b6
+- b7: b7
+- b8: b8
+- b9: b9
+Algorithms to evaluate: 
+- rgbd: rgbd, traj_est, [1. 0. 0.]
+We will ananlyze multiple trials #1
+Will calculate odometry errors
+#####################################
+>>> Loading and calculating errors....
+#####################################
+--- Processing rgbd-b1... ---
+### Trial 0 ###
+Find evaluation configuration, will overwrite default.
+The current evaluation configuration is {'align_type': 'sim3', 'align_num_frames': -1}
+Loading stamped_groundtruth.txt and stamped_traj_estimate.txt...
+Either groundtruth or estimate does not exist
+Loading data failed.
+Trials 0 fails, will not count.
+===> MulTrajError: summarized 0 trajectories.
+- Successs indices: []
+Traceback (most recent call last):
+  File "scripts/analyze_trajectories.py", line 672, in <module>
+    mt_error.cache_current_error()
+  File "/home/emanuele/Desktop/github/phd/slam/rpg_trajectory_evaluation/scripts/../src/rpg_trajectory_evaluation/multiple_traj_errors.py", line 141, in cache_current_error
+    self.align_str+'.pickle'), 'wb') as f:
+TypeError: cannot concatenate 'str' and 'NoneType' objects
+
+
+all the stamped_traj_estimate0 must be renamed to stamped_traj_estimate.txt
+
+use this script from terminal
+
+#!/bin/bash
+for d in /home/emanuele/Desktop/github/phd/slam/rpg_trajectory_evaluation/em/broncho/paper/rgbd/paper_rgbd_b*/; do if [ -f "$d/stamped_traj_estimate0.txt" ]; then mv "$d/stamped_traj_estimate0.txt" "$d/stamped_traj_estimate.txt"; fi; done
