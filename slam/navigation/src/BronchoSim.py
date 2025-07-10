@@ -708,6 +708,8 @@ Viewer.ViewpointZ: -1.8
     def setup_points(self):
         import random
 
+        self.selected_branch_names = None  # Track selected branch names for -random
+
         if hasattr(args, "random") and args.random is not None:
             # Randomly select N centerlines from the folder
             centerline_folder_name = self.app_config["PATHS"]["all_branches_folder"]
@@ -726,6 +728,11 @@ Viewer.ViewpointZ: -1.8
             selected_rel = [os.path.join(centerline_folder_name, f) for f in selected]
             print(f"[INFO] Randomly selected centerlines: {selected_rel}")
             from src.utils import build_random_branches_path
+
+            # Store just the branch names (e.g., b4, b9, b1) for output
+            self.selected_branch_names = [
+                os.path.splitext(os.path.basename(f))[0] for f in selected
+            ]
 
             fs_frames, points = build_random_branches_path(
                 selected_rel, self.data_folder
@@ -1402,8 +1409,8 @@ Viewer.ViewpointZ: -1.8
             # Normal update: move toward next point along the translation.
             direction = delta_pos / dist  # Safe normalization
             # Define a movement step (you can adjust movement_speed as needed)
-            # movement_speed = 5000  # units per second
-            movement_speed = 0.5
+            movement_speed = 5000  # units per second
+            # movement_speed = 0.5
             step = movement_speed * dt
 
             # Calculate the distance of the robot tip from the start of the current segment
@@ -1628,6 +1635,12 @@ Viewer.ViewpointZ: -1.8
 
         # Save record
         if self.record_mode and hasattr(self, "record_dir"):
+            # If random branches were used, write their names to a file in the output folder
+            if hasattr(self, "selected_branch_names") and self.selected_branch_names:
+                branches_txt = os.path.join(self.record_dir, "selected_branches.txt")
+                with open(branches_txt, "w") as f:
+                    f.write(", ".join(self.selected_branch_names) + "\n")
+                print(f"[INFO] Written selected branches to {branches_txt}")
             # Extract centerline name from path (for naming purposes).
             if self.all_branches_bool == "1":
                 centerline_name = "ball"
