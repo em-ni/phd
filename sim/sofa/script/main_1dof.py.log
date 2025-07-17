@@ -1,0 +1,45 @@
+
+--- NEW SESSION: 01/03/2024 16:02:57 ---
+/wall/MechanicalObject.showColor = 1 1 1 1
+
+--- NEW SESSION: 01/03/2024 16:06:40 ---
+/wall/MechanicalObject.showColor = 1 1 1 1
+/wall/MechanicalObject.showColor = 1 1 1 1
+
+--- NEW SESSION: 01/03/2024 16:11:31 ---
+/wall/wallCollis/MechanicalObject.constraint = 0 3 159 0 -2.48837e-16 0.0700413  160 0 -1.11929e-15 0.315053  178 0 -2.18458e-15 0.614905  
+1 3 159 0.0700413 -8.84045e-31 -3.14076e-45  160 0.315053 -3.97653e-30 -1.41275e-44  178 0.614905 -7.7612e-30 -2.75733e-44  
+2 3 159 -8.84045e-31 -0.0700413 -2.48837e-16  160 -3.97653e-30 -0.315053 -1.11929e-15  178 -7.7612e-30 -0.614905 -2.18458e-15  
+3 3 160 0 -1.03388e-15 0.314543  178 0 -2.01478e-15 0.612967  180 0 -2.38269e-16 0.0724898  
+4 3 160 0.314543 -3.39831e-30 -1.117e-44  178 0.612967 -6.62247e-30 -2.17676e-44  180 0.0724898 -7.83176e-31 -2.57425e-45  
+5 3 160 -3.39831e-30 -0.314543 -1.03388e-15  178 -6.62247e-30 -0.612967 -2.01478e-15  180 -7.83176e-31 -0.0724898 -2.38269e-16  
+6 3 160 0 0 0.362228  178 0 0 0.634613  180 0 0 0.00315829  
+7 3 160 0.362228 -0 -0  178 0.634613 -0 -0  180 0.00315829 -0 -0  
+8 3 160 -0 -0.362228 -0  178 -0 -0.634613 -0  180 -0 -0.00315829 -0  
+
+/wall/wallCollis/MechanicalObject.showColor = 1 1 1 1
+
+--- NEW SESSION: 01/03/2024 16:22:03 ---
+/wall/wallCollis/TriangleCollisionModel-PointCollisionModel/$1#!8!1#9127548.constraint = 0 1 0 0 7.10543e-15 1  
+1 1 0 1 -5.04871e-29 3.58732e-43  
+2 1 0 -5.04871e-29 -1 7.10543e-15  
+3 1 1 0 -3.5383e-15 1  
+4 1 1 1 -1.25196e-29 -4.42981e-44  
+5 1 1 -1.25196e-29 -1 -3.5383e-15  
+
+/wall/wallCollis/TriangleCollisionModel-PointCollisionModel/$1#!8!1#9127548.showColor = 1 1 1 1
+/wall/wallCollis/TriangleCollisionModel-PointCollisionModel.time = 3.63
+/wall/wallCollis/TriangleCollisionModel.color = 1 0.498039 0 1
+/wall/wallCollis/LineCollisionModel.color = 1 0.498039 0 1
+/wall/wallCollis/MechanicalObject.constraint = 0 3 159 0 -3.18332e-16 0.0896026  160 0 -7.657e-16 0.215525  178 0 -2.46868e-15 0.694872  
+1 3 159 0.0896026 -1.13094e-30 -4.01792e-45  160 0.215525 -2.72031e-30 -9.6645e-45  178 0.694872 -8.77052e-30 -3.11591e-44  
+2 3 159 -1.13094e-30 -0.0896026 -3.18332e-16  160 -2.72031e-30 -0.215525 -7.657e-16  178 -8.77052e-30 -0.694872 -2.46868e-15  
+3 3 159 0 0 0.130422  160 0 0 0.174396  178 0 0 0.695182  
+4 3 159 0.130422 -0 -0  160 0.174396 -0 -0  178 0.695182 -0 -0  
+5 3 159 -0 -0.130422 -0  160 -0 -0.174396 -0  178 -0 -0.695182 -0  
+
+/wall/wallCollis/MechanicalObject.showColor = 1 1 1 1
+/wall/wallCollis/TriangleCollisionModel-PointCollisionModel.time = 6.28
+
+--- NEW SESSION: 05/03/2024 14:34:19 ---
+/wall/wallCollis/MechanicalObject.showColor = 1 1 1 1
