@@ -1,3 +1,5 @@
+*__pycache__
+
 vision/object_detection/data_collection/data/labelImg
 vision/object_detection/data/formatted_bronchoscopy.zip 
 vision/object_detection/object_detection_YOLOv3/PASCAL_VOC
@@ -12,3 +14,14 @@ slam/ORB_SLAM3/Thirdparty/DBoW2/build
 slam/ORB_SLAM3/Thirdparty/g2o/build
 slam/ORB_SLAM3/Thirdparty/Sophus/build
 slam/ORB_SLAM3/Vocabulary/ORBvoc.txt
+slam/live-vlam/*.mp4
+
+vision/data/
+vision/data_collection/
+vision/object_detection_YOLOv3/
+vision/runs/
+vision/yolov10l.pt
+vision/yolov10n.pt
+vision/yolov10x.pt
+vision/yolov3u.pt
+vision/yolov8n.pt
