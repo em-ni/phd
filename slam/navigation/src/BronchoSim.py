@@ -1409,8 +1409,8 @@ Viewer.ViewpointZ: -1.8
             # Normal update: move toward next point along the translation.
             direction = delta_pos / dist  # Safe normalization
             # Define a movement step (you can adjust movement_speed as needed)
-            movement_speed = 5000  # units per second
-            # movement_speed = 0.5
+            # movement_speed = 5000  # units per second
+            movement_speed = 0.5
             step = movement_speed * dt
 
             # Calculate the distance of the robot tip from the start of the current segment
