@@ -20,7 +20,7 @@ Camera1.p2: 0.0
 File.version: '1.0'
 ORBextractor.iniThFAST: 1
 ORBextractor.minThFAST: 1
-ORBextractor.nFeatures: 2800
+ORBextractor.nFeatures: 1000
 ORBextractor.nLevels: 10
 ORBextractor.scaleFactor: 1.2
 Viewer.CameraLineWidth: 3.0
