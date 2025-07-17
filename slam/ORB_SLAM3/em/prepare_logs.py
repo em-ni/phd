@@ -55,10 +55,10 @@ def main():
     alg_folder = os.path.join(output_root, alg)
     os.makedirs(alg_folder, exist_ok=True)
 
-    # Regular expression to match record folders of the form: record_NAME_TIMESTAMP
+    # Modified code for datasets with identical names (e.g., record_ball_<timestamp>)
     record_pattern = re.compile(r"record_(.+)_[\d\.]+$")
-    # Map identifier -> list of record folder paths
     datasets = {}
+    record_counter = 1
 
     # Iterate over items in the slam_logs_folder to find record folders.
     for item in os.listdir(slam_logs_folder):
@@ -66,18 +66,17 @@ def main():
         if os.path.isdir(item_path):
             match = record_pattern.match(item)
             if match:
-                branch_raw = match.group(
-                    1
-                )  # e.g., "b001" or "real_seq_000_part_1_dif_1"
-                # Normalize branch name if it's in "b<digits>" format, otherwise use raw.
-                if (
-                    branch_raw.startswith("b")
-                    and branch_raw[1:].isdigit()
-                    and len(branch_raw) > 1
-                ):
-                    branch_normalized = "b" + str(int(branch_raw[1:]))
-                else:
-                    branch_normalized = branch_raw
+                # Assign a unique sequential name for each record as b1, b2, ...
+                branch_normalized = f"b{record_counter}"
+                datasets[branch_normalized] = [item_path]
+                record_counter += 1
+
+    if not datasets:
+        print("No record folders found, checking for other directories...")
+        for item in os.listdir(slam_logs_folder):
+            item_path = os.path.join(slam_logs_folder, item)
+            if os.path.isdir(item_path):
+                branch_normalized = item  # Use directory name as branch
                 datasets.setdefault(branch_normalized, []).append(item_path)
 
     if not datasets:
