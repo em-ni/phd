@@ -6,6 +6,7 @@ from scipy.interpolate import CubicSpline
 from scipy.interpolate import interp1d
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
+import re
 
 """
 This script reads a centerline .vtp file and computes the Frenet-Serret frame at each point.
@@ -764,6 +765,12 @@ def visualize_multiple_paths_with_frames(
         file_path = os.path.join(folder_path, vtp_file)
         print(f"\nProcessing {vtp_file}...")
 
+        # Extract centerline number from filename
+        centerline_number = None
+        number_match = re.search(r"\d+", vtp_file)
+        if number_match:
+            centerline_number = number_match.group()
+
         try:
             # Load the .vtp file
             line_model = pv.read(file_path)
@@ -799,17 +806,38 @@ def visualize_multiple_paths_with_frames(
                     continue
 
                 # Add the path to the plotter
+                label_text = f"{vtp_file}_branch{cell_idx}"
+                if centerline_number:
+                    label_text = f"Centerline_{centerline_number}_branch{cell_idx}"
+
                 plotter.add_mesh(
                     single_line,
                     color=path_color,
                     line_width=5,
-                    label=f"{vtp_file}_branch{cell_idx}",
+                    label=label_text,
                 )
 
                 # Add start point marker
-                plotter.add_points(
-                    interpolated_points[0], color=path_color, point_size=15
-                )
+                start_point = interpolated_points[0]
+                plotter.add_points(start_point, color=path_color, point_size=15)
+
+                # Add end point marker with centerline number as text
+                end_point = interpolated_points[-1]
+                plotter.add_points(end_point, color=path_color, point_size=15)
+
+                # Add text label near the end point showing centerline number
+                if centerline_number:
+                    label_position = end_point + np.array(
+                        [1.0, 1.0, 1.0]
+                    )  # Offset for visibility
+                    plotter.add_point_labels(
+                        [end_point],
+                        [f"C{centerline_number}"],
+                        point_size=8,
+                        font_size=12,
+                        text_color=path_color,
+                        always_visible=True,
+                    )
 
                 # Select points to display frames
                 if len(interpolated_points) <= num_frames_per_path:
@@ -859,30 +887,30 @@ def visualize_multiple_paths_with_frames(
 if __name__ == "__main__":
     args = parse_arguments()
 
-    draw_only = True
+    # draw_only = True
 
-    if draw_only:
-        draw_FS_frames(path=args.i)
+    # if draw_only:
+    #     draw_FS_frames(path=args.i)
 
-    else:
-        # Check if input is a file or directory
-        if os.path.isfile(args.i) and args.i.endswith(".vtp"):
-            # Process single .vtp file
-            save_frames_single_branch(args.i)
-        elif os.path.isdir(args.i):
-            # Process all centerline_b*.vtp files in directory
-            vtp_files = [
-                os.path.join(args.i, f)
-                for f in os.listdir(args.i)
-                if f.startswith("b") and f.endswith(".vtp")
-            ]
+    # else:
+    #     # Check if input is a file or directory
+    #     if os.path.isfile(args.i) and args.i.endswith(".vtp"):
+    #         # Process single .vtp file
+    #         save_frames_single_branch(args.i)
+    #     elif os.path.isdir(args.i):
+    #         # Process all centerline_b*.vtp files in directory
+    #         vtp_files = [
+    #             os.path.join(args.i, f)
+    #             for f in os.listdir(args.i)
+    #             if f.startswith("b") and f.endswith(".vtp")
+    #         ]
 
-            save_frames_all_branches(vtp_files)
+    #         save_frames_all_branches(vtp_files)
 
-        else:
-            print(
-                "Error: Input must be either a .vtp file or a directory containing .vtp files"
-            )
+    #     else:
+    #         print(
+    #             "Error: Input must be either a .vtp file or a directory containing .vtp files"
+    #         )
 
     # Temp test the tum to fs conversion
     # o_T_w = np.array(
@@ -917,12 +945,12 @@ if __name__ == "__main__":
     #     )
     # )
 
-    # all_vtp = "/home/emanuele/Desktop/github/phd/slam/navigation/data/mesh/lungs/sim/centerlines"
-    # visualize_multiple_paths_with_frames(
-    #     all_vtp,
-    #     num_frames_per_path=50,
-    #     draw_tangent=True,
-    #     draw_normal=True,
-    #     draw_binormal=True,
-    #     frame_scale=2.0,
-    # )
+    all_vtp = "/home/emanuele/Desktop/github/phd/slam/navigation/data/mesh/lungs/sim/centerlines"
+    visualize_multiple_paths_with_frames(
+        all_vtp,
+        num_frames_per_path=50,
+        draw_tangent=True,
+        draw_normal=True,
+        draw_binormal=True,
+        frame_scale=2.0,
+    )

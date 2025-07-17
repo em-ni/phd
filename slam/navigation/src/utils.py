@@ -298,6 +298,94 @@ def build_all_branches_path(app_config, data_folder):
     return final_frames_reduced, all_points_reduced
 
 
+def build_random_branches_path(branch_files, data_folder):
+    """
+    Given a list of relative branch .vtp files, computes the FS frame for every point,
+    and stacks them together (forward and then reverse for each branch).
+    Returns a list of 4x4 FS frame matrices and a list of all points.
+    """
+    import pyvista as pv
+    from utils.set_FS_frame import (
+        interpolate_line,
+        compute_tangent_vectors,
+        compute_MRF,
+        smooth_vectors,
+        interpolate_fs_frames,
+    )
+    import numpy as np
+    import os
+
+    final_frames = []
+    all_points_collected = []
+    for branch_file_relative in branch_files:
+        branch_file_relative = branch_file_relative.strip()
+        branch_path_abs = os.path.join(data_folder, branch_file_relative)
+        print(f"[INFO] Processing branch file: {branch_path_abs}")
+        try:
+            branch_model = pv.read(branch_path_abs)
+        except Exception as e:
+            print(f"[ERROR] Could not read VTP file {branch_path_abs}: {e}")
+            continue
+        n_d = 0
+        if len(branch_model.points) > n_d:
+            branch_points_list = [tuple(point) for point in branch_model.points[n_d:]]
+        else:
+            print(
+                f"[WARNING] Branch {branch_file_relative} has fewer than {n_d} points ({len(branch_model.points)}). Skipping branch."
+            )
+            continue
+        if not branch_points_list:
+            print(
+                f"[WARNING] Branch {branch_file_relative} resulted in an empty list of points after discarding. Skipping."
+            )
+            continue
+        interp_points = interpolate_line(branch_points_list, num_points=1000)
+        if interp_points is None or len(interp_points) == 0:
+            print(
+                f"[WARNING] Interpolation failed or yielded no points for branch {branch_file_relative}. Skipping."
+            )
+            continue
+        branch_tangents = compute_tangent_vectors(interp_points)
+        branch_tangents = smooth_vectors(branch_tangents, 10, 10)
+        branch_normals, branch_binormals = compute_MRF(branch_tangents)
+        # FORWARD TRAVEL
+        for i, pt in enumerate(interp_points):
+            fs_frame = np.eye(4)
+            fs_frame[:3, 0] = branch_tangents[i]
+            fs_frame[:3, 1] = branch_normals[i]
+            fs_frame[:3, 2] = branch_binormals[i]
+            fs_frame[:3, 3] = pt
+            if len(final_frames) > 0 and i == 0:
+                extra_frames = interpolate_fs_frames(
+                    final_frames[-1], fs_frame, num_points=10
+                )
+                final_frames.extend(extra_frames)
+                all_points_collected.extend([f[:3, 3] for f in extra_frames])
+            else:
+                final_frames.append(fs_frame)
+                all_points_collected.append(pt)
+        # RETURN TRAVEL (skip the last point of forward)
+        if len(interp_points) > 1:
+            for i, pt in enumerate(interp_points[-2::-1]):
+                idx = len(interp_points) - 2 - i
+                fs_frame = np.eye(4)
+                fs_frame[:3, 0] = branch_tangents[idx]
+                fs_frame[:3, 1] = branch_normals[idx]
+                fs_frame[:3, 2] = branch_binormals[idx]
+                fs_frame[:3, 3] = pt
+                final_frames.append(fs_frame)
+                all_points_collected.append(pt)
+    if not final_frames:
+        print("[WARNING] No frames were generated from any branch.")
+        return [], []
+    print(f"[INFO] Initial number of points: {len(final_frames)}")
+    divide_factor = 4
+    final_frames_reduced = final_frames[::divide_factor]
+    all_points_reduced = all_points_collected[::divide_factor]
+    print(f"[INFO] Reduced number of points: {len(final_frames_reduced)}")
+    return final_frames_reduced, all_points_reduced
+
+
 def curvilinear_abscissa(
     current_point_arr, interpolated_points_arr, all_branches_bool_str, record_mode_bool
 ):
