@@ -1,12 +1,6 @@
 *__pycache__
 
-vision/object_detection/data_collection/data/labelImg
-vision/object_detection/data/formatted_bronchoscopy.zip 
-vision/object_detection/object_detection_YOLOv3/PASCAL_VOC
-vision/object_detection/object_detection_YOLOv3/checkpoints.pth.tar
-vision/object_detection/object_detection_YOLOv3/ignore
-vision/object_detection/yolo*.pt
-vision/object_detection/runs
+magnetic_tracking/videos*
 
 slam/ORB_SLAM3/em/run/datasets
 slam/ORB_SLAM3/build
@@ -25,3 +19,10 @@ vision/yolov10n.pt
 vision/yolov10x.pt
 vision/yolov3u.pt
 vision/yolov8n.pt
+vision/object_detection/data_collection/data/labelImg
+vision/object_detection/data/formatted_bronchoscopy.zip 
+vision/object_detection/object_detection_YOLOv3/PASCAL_VOC
+vision/object_detection/object_detection_YOLOv3/checkpoints.pth.tar
+vision/object_detection/object_detection_YOLOv3/ignore
+vision/object_detection/yolo*.pt
+vision/object_detection/runs
