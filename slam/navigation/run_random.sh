@@ -10,6 +10,6 @@ fi
 N=$1
 for ((i=1; i<=N; i++)); do
   echo "Run $i/$N:"
-  python main.py -view fp -random 2 -autopilot -record True
+  python main.py -view fp -random 3 -autopilot -record True
   echo "---"
 done
