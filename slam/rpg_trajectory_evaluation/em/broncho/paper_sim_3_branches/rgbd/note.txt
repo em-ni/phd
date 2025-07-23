@@ -1,0 +1,1 @@
+the last 10 trajectories are run with ORBextractor.nFeatures: 1800 or 2000 to avoid going out of memory, and the results are way worse than the first 10
