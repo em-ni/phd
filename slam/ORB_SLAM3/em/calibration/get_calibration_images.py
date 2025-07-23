@@ -6,10 +6,10 @@ import time
 # camera_name = 'Misumi_200x200p'
 # camera_name = "Misumi_400x380p"
 # camera_name = "videoscope_1280x720p"
-camera_name = "olympusBronchoscope_640x480p"
+camera_name = "olympusBronchoscope_1280x720p"
 
 # Camera settings
-camera_index = 2
+camera_index = 4
 # camera_index = "rtsp://:@192.168.1.1:8554/session0.mpg"
 capture_interval = 0.2  # Time in seconds between captures
 setting_time = 5  # Time in seconds to adjust camera settings

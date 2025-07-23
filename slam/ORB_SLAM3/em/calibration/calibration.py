@@ -7,7 +7,8 @@ import yaml
 # camera_name = "Misumi_400x380p"
 # camera_name = "videoscope_1280x720p"
 # camera_name = "videoscope_940x970p"
-camera_name = "olympusBronchoscope_640x480p"
+# camera_name = "olympusBronchoscope_640x480p"
+camera_name = "olympusBronchoscope_1280x720p"
 
 # Define the chessboard size
 chessboard_size = (9, 6)
@@ -16,7 +17,7 @@ frame_size = (
     int(camera_name.split("_")[1].split("x")[0]),
     int(camera_name.split("_")[1].split("x")[1].split("p")[0]),
 )
-FPS = 30
+FPS = 10
 # Termination criteria
 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -31,11 +32,11 @@ imgpoints = []
 # Folder name calibration_images + camera name
 folder_name = "calibration_images_" + camera_name
 first = 1
-last = 15
+last = 20
 
 # Capture images of the calibration pattern
 images = [
-    cv2.imread(f"{folder_name}/image_{i}.jpg") for i in range(first, last + 1)
+    cv2.imread(f"{folder_name}/image_{i}.png") for i in range(first, last + 1)
 ]  # Assuming 20 images
 
 for img in images:
@@ -87,7 +88,7 @@ calibration_data = {
     # Indicates whether the camera outputs RGB color images (1 for true, 0 for false).
     "Camera.RGB": 1,
     # Represents the baseline times focal length, used in stereo cameras for depth perception.
-    "Camera.bf": "SET"
+    "Camera.bf": "SET",
     # Is the depth threshold, which might be used to determine how far objects can be from the camera to be considered for processing
     "Camera.ThDepth": 40.0,
     # The number of features to be extracted by the ORB algorithm.
