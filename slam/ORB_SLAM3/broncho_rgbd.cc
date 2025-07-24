@@ -205,7 +205,7 @@ int main(int argc, char **argv)
     string timeSuffix(timeStr);
     SLAM.SaveKeyFrameTrajectoryTUM(logsPath + "/KeyFrameTrajectory_" + timeSuffix + ".txt");
     SLAM.SaveTrajectoryTUM(logsPath + "/CameraTrajectory_" + timeSuffix + ".txt");
-    SLAM.SavePointCloud(logsPath + "/PointCloud_" + timeSuffix + ".txt");
+    // SLAM.SavePointCloud(logsPath + "/PointCloud_" + timeSuffix + ".txt");
 
     // Stop all threads
     SLAM.Shutdown();
@@ -223,7 +223,7 @@ int main(int argc, char **argv)
     cout << "mean tracking time: " << totaltime/nImages << endl << endl;
 
     // Sleep for a while
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::this_thread::sleep_for(std::chrono::seconds(5));
     cout << endl << "End of the program" << endl << endl;
 
     return 0;
