@@ -17,5 +17,5 @@ def convert_pdfs_to_pngs(root_folder):
                     print(f"Error converting {pdf_path}: {e}")
 
 if __name__ == "__main__":
-    input_folder = r"C:\Users\z5440219\OneDrive - UNSW\Desktop\github\phd\slam\rpg_trajectory_evaluation\em\broncho\paper_sim_2_branches\rgbd\results"  # Change this to your folder path
+    input_folder = r"C:\Users\z5440219\OneDrive - UNSW\Desktop\github\phd\slam\rpg_trajectory_evaluation\em\broncho\paper_sim_3_branches"  # Change this to your folder path
     convert_pdfs_to_pngs(input_folder)
