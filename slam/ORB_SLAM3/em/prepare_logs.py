@@ -113,7 +113,8 @@ def main():
         for record_folder in record_folders:
             # Look for all CameraTrajectory files in the record folder's logs subfolder.
             traj_files = glob.glob(
-                os.path.join(record_folder, "logs", "CameraTrajectory_*.txt")
+                # os.path.join(record_folder, "logs", "CameraTrajectory_*.txt")
+                os.path.join(record_folder, "logs", "KeyFrameTrajectory_*.txt")
             )
             if not traj_files:
                 print(
