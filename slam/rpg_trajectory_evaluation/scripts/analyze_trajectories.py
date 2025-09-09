@@ -22,7 +22,7 @@ from fn_constants import kNsToEstFnMapping, kNsToMatchFnMapping, kFnExt
 init(autoreset=True)
 
 rc("font", **{"family": "serif", "serif": ["Cardo"]})
-rc("text", usetex=True)
+rc("text", usetex=False)
 
 FORMAT = ".pdf"
 

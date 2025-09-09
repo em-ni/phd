@@ -11,7 +11,7 @@ import matplotlib as mpl
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import rc
 rc('font', **{'family': 'serif', 'serif': ['Cardo']})
-rc('text', usetex=True)
+rc('text', usetex=False)
 
 FORMAT = '.pdf'
 

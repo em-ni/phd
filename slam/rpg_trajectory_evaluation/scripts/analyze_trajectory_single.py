@@ -17,7 +17,7 @@ from multiple_traj_errors import MulTrajError
 
 init(autoreset=True)
 rc('font', **{'family': 'serif', 'serif': ['Cardo']})
-rc('text', usetex=True)
+rc('text', usetex=False)
 
 FORMAT = '.pdf'
 

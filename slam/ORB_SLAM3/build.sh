@@ -28,7 +28,7 @@ cd Thirdparty/DBoW2
 mkdir -p build
 cd build
 cmake .. -DCMAKE_BUILD_TYPE="Release"
-make
+make -j100
 
 cd ../../g2o
 
@@ -37,7 +37,7 @@ echo "Configuring and building Thirdparty/g2o ..."
 mkdir -p build
 cd build
 cmake .. -DCMAKE_BUILD_TYPE="Release"
-make
+make -j100
 
 cd ../../Sophus
 
@@ -46,7 +46,7 @@ echo "Configuring and building Thirdparty/Sophus ..."
 mkdir -p build
 cd build
 cmake .. -DCMAKE_BUILD_TYPE="Release"
-make
+make -j100
 
 cd ../../../
 
@@ -65,7 +65,7 @@ echo "Configuring and building ORB_SLAM3 ..."
 mkdir -p build
 cd build
 cmake .. -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE
-make
+make -j100
 
 if [ "$ROS_BUILD" -eq 1 ]; then
     echo "Building ROS nodes"
@@ -74,5 +74,5 @@ if [ "$ROS_BUILD" -eq 1 ]; then
     mkdir -p build
     cd build
     cmake .. -DROS_BUILD_TYPE=Release
-    make
+    make -j100
 fi
