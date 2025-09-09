@@ -77,9 +77,9 @@ def plot_aligned_top(ax, p_gt, p_es, n_align_frames):
     # p_gt_0 = p_gt - p_gt[0, :]
     # ax.plot(p_es[0:n_align_frames, 0], p_es[0:n_align_frames, 1],
         # 'g-', linewidth=2, label='aligned')
-    for (x1, y1, z1), (x2, y2, z2) in zip(
-            p_es[:n_align_frames:10, :], p_gt[:n_align_frames:10, :]):
-        # ax.plot([x1, x2], [y1, y2], '-', color="gray")  # Commented out: do not draw grey lines connecting groundtruth to estimate
+    # for (x1, y1, z1), (x2, y2, z2) in zip(
+    #         p_es[:n_align_frames:10, :], p_gt[:n_align_frames:10, :]):
+    #     ax.plot([x1, x2], [y1, y2], '-', color="gray")  # Commented out: do not draw grey lines connecting groundtruth to estimate
 
 
 def plot_error_n_dim(ax, distances, errors, results_dir,

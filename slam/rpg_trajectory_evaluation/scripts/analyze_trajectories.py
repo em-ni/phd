@@ -244,34 +244,34 @@ def plot_trajectories(
         if dataset_nm in plot_settings["datasets_titles"]:
             ax.set_title(plot_settings["datasets_titles"][dataset_nm])
         for alg in algorithm_names:
-            # if plot_traj_per_alg:
-            #     fig_i = plt.figure(figsize=(6, 5.5))
-            #     ax_i = fig_i.add_subplot(
-            #         111, aspect="equal", xlabel="x [m]", ylabel="y [m]"
-            #     )
-            #     pu.plot_trajectory_top(
-            #         ax_i,
-            #         p_es_0[alg],
-            #         "b",
-            #         "Estimate " + plot_settings["algo_labels"][alg],
-            #         0.5,
-            #     )
-            #     pu.plot_trajectory_top(ax_i, p_gt_0[alg], "m", "Groundtruth")
-            #     if plot_aligned:
-            #         pu.plot_aligned_top(ax_i, p_es_0[alg], p_gt_0[alg], -1)
-            #     plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.0)
-            #     fig_i.tight_layout()
-            #     fig_i.savefig(
-            #         output_dir
-            #         + "/"
-            #         + dataset_nm
-            #         + "_trajectory_top_"
-            #         + plot_settings["algo_labels"][alg]
-            #         + FORMAT,
-            #         bbox_inches="tight",
-            #         dpi=args.dpi,
-            #     )
-            #     plt.close(fig_i)
+            if plot_traj_per_alg:
+                fig_i = plt.figure(figsize=(6, 5.5))
+                ax_i = fig_i.add_subplot(
+                    111, aspect="equal", xlabel="x [m]", ylabel="y [m]"
+                )
+                pu.plot_trajectory_top(
+                    ax_i,
+                    p_es_0[alg],
+                    "b",
+                    "Estimate " + plot_settings["algo_labels"][alg],
+                    0.5,
+                )
+                pu.plot_trajectory_top(ax_i, p_gt_0[alg], "m", "Groundtruth")
+                if plot_aligned:
+                    pu.plot_aligned_top(ax_i, p_es_0[alg], p_gt_0[alg], -1)
+                plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.0)
+                fig_i.tight_layout()
+                fig_i.savefig(
+                    output_dir
+                    + "/"
+                    + dataset_nm
+                    + "_trajectory_top_"
+                    + plot_settings["algo_labels"][alg]
+                    + FORMAT,
+                    bbox_inches="tight",
+                    dpi=args.dpi,
+                )
+                plt.close(fig_i)
             pu.plot_trajectory_top(
                 ax,
                 p_es_0[alg],
