@@ -73,13 +73,14 @@ class SphericalJoint:
         self.joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0))
         self.joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
 
-        # Configure joint drives for Y and Z rotation if enabled
-        if self.enable_drives:
-            for axis in ["rotY", "rotZ"]:
-                limitAPI = UsdPhysics.LimitAPI.Apply(joint_prim, axis)
-                limitAPI.CreateLowAttr(-1)
-                limitAPI.CreateHighAttr(1)
+        # Add angular limits to prevent excessive coiling (±45 degrees = ±0.785 radians)
+        max_angle = 0.785  # 45 degrees in radians
+        for axis in ["rotY", "rotZ"]:
+            limitAPI = UsdPhysics.LimitAPI.Apply(joint_prim, axis)
+            limitAPI.CreateLowAttr(-max_angle)
+            limitAPI.CreateHighAttr(max_angle)
 
+            if self.enable_drives:
                 driveAPI = UsdPhysics.DriveAPI.Apply(joint_prim, axis)
                 driveAPI.CreateTypeAttr("force")
                 driveAPI.CreateDampingAttr(self.damping)
@@ -320,10 +321,10 @@ rope_creator = RopeCreator(stage,
                            default_prim_path, 
                            physics_material_path, 
                            pivot_point=Gf.Vec3f(0.5, 0.0, pivot_z),
-                           rope_length=40.0,
+                           rope_length=10.0,
                            link_half_length=rope_link_half_length,
                            num_ropes=1,
-                           rope_spacing=0.1,
+                           rope_spacing=1.0,
                            rope_damping=10e6,
                            rope_stiffness=0,
                            rope_segment_mass=10e-6,
