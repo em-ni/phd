@@ -1,0 +1,11 @@
+Follow this: https://docs.universal-robots.com/Universal_Robots_ROS2_Documentation/doc/ur_robot_driver/ur_robot_driver/doc/installation/robot_setup.html
+On the robot I set: 192.168.56.2
+On the laptop network I set 192.168.56.1
+
+Test connection with ping
+ping 192.168.56.2
+
+Start the driver
+ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur5e robot_ip:=192.168.56.2 kinematics_params_file:=/home/emanuele/Desktop/github/phd/ur5/my_robot_calibration.yaml headless_mode:=true
+
+
