@@ -24,6 +24,7 @@ from omni.physx.scripts import physicsUtils
 from omni.timeline import get_timeline_interface
 from isaacsim.core.api import World
 from isaacsim.core.utils.prims import get_prim_at_path
+import omni.ui as ui
 
 # Set Light stage to Grey Studio
 stage = simulation_app.context.get_stage()
@@ -368,14 +369,51 @@ print("Simulation started. Press Ctrl+C to exit")
 position1 = 0.0
 position2 = 0.0
 
+# Control variables for cylinder rotation
+cylinder_speed = 0.0  # Speed control (-5 to 5)
+cylinder_direction = 1.0  # Direction multiplier
+
+# Create GUI window for controls
+window = ui.Window("Cylinder Controls", width=300, height=150)
+with window.frame:
+    with ui.VStack():
+        ui.Label("Cylinder Rotation Control")
+        ui.Spacer(height=10)
+        
+        # Speed slider
+        ui.Label("Speed (-50 to 50):")
+        speed_slider = ui.FloatSlider(
+            min=-50.0, 
+            max=50.0, 
+            step=0.1,
+            width=250
+        )
+        
+        ui.Spacer(height=10)
+        
+        # Direction button
+        direction_button = ui.Button("Direction: Same", width=150, height=30)
+        
+        def on_speed_change(model):
+            global cylinder_speed
+            cylinder_speed = model.as_float
+
+        def on_direction_click():
+            global cylinder_direction
+            cylinder_direction *= -1
+            direction_button.text = f"Direction: {'Opposite' if cylinder_direction == 1 else 'Same'}"
+        
+        speed_slider.model.add_value_changed_fn(on_speed_change)
+        direction_button.set_clicked_fn(on_direction_click)
+
 time_iter_to_cut = 5*100
 loop_counter = 0
 try:
     while timeline.is_playing():
         loop_counter += 1
-        # Continuously increment the joint drive position for both cylinders
-        position1 -= 1.  # Rotate bottom cylinder
-        position2 += 1.  # Rotate top cylinder in the opposite direction
+        # Update cylinder positions based on slider controls
+        position1 += cylinder_speed * 0.1  # Bottom cylinder
+        position2 += cylinder_speed * 0.1 * cylinder_direction  # Top cylinder with direction control
         drive1.CreateTargetPositionAttr().Set(position1)
         drive2.CreateTargetPositionAttr().Set(position2)
 
