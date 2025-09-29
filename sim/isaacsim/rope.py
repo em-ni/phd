@@ -92,8 +92,8 @@ class SphericalJoint:
 
 class RopeCreator:
     def __init__(self, stage, default_prim_path, physics_material_path, pivot_point=None, 
-                 link_half_length=0.1, rope_length=2.0, num_ropes=1, rope_spacing=0.1,
-                 rope_color=None, rope_damping=2.0, rope_stiffness=0.0, contact_offset=0.01,
+                 link_half_length=0.1, rope_length=2.0,
+                 rope_color=None, rope_damping=2.0, rope_stiffness=0.0,
                  enable_joint_drives=True, rope_segment_mass=0.00005):
         self.stage = stage
         self.default_prim_path = default_prim_path
@@ -104,12 +104,10 @@ class RopeCreator:
         self.link_half_length = link_half_length
         self.link_radius = 0.5 * self.link_half_length
         self.rope_length = rope_length
-        self.num_ropes = num_ropes
-        self.rope_spacing = rope_spacing
         self.rope_color = rope_color if rope_color is not None else Gf.Vec3f(0.2, 0.6, 0.8)  # Blue-ish color
         self.rope_damping = rope_damping
         self.rope_stiffness = rope_stiffness
-        self.contact_offset = contact_offset
+        self.contact_offset = link_half_length / 100.0
         self.enable_joint_drives = enable_joint_drives
         self.rope_segment_mass = rope_segment_mass
         
@@ -157,37 +155,34 @@ class RopeCreator:
         # Calculate spacing and dimensions
         link_length = 2.0 * self.link_half_length
         num_links = int(self.rope_length / link_length)
-        y_start = -(self.num_ropes // 2) * self.rope_spacing
 
-        for rope_ind in range(self.num_ropes):
-            scope_path = self.default_prim_path.AppendChild(f"Rope{rope_ind}")
-            UsdGeom.Scope.Define(self.stage, scope_path)
+        scope_path = self.default_prim_path.AppendChild("Rope")
+        UsdGeom.Scope.Define(self.stage, scope_path)
+        
+        z = self.pivot_point[2]  # Use pivot point's z coordinate
+        
+        # Create all capsule links
+        for link_ind in range(num_links):
+            x = self.pivot_point[0] + link_ind * link_length  # Start from pivot point's x coordinate
+            position = Gf.Vec3f(x, self.pivot_point[1], z)
             
-            y = y_start + rope_ind * self.rope_spacing
-            z = self.pivot_point[2]  # Use pivot point's z coordinate
+            capsule_path = scope_path.AppendChild(f"capsule_{link_ind}")
+            capsule_geom = self.create_capsule(capsule_path, position)
+            self.segments.append(capsule_geom.GetPrim())
+        
+        # Create joints between consecutive capsules
+        joint_x = self.link_half_length * 0.5
+        for link_ind in range(num_links - 1):
+            joint_path = scope_path.AppendChild(f"joint_{link_ind}")
             
-            # Create all capsule links
-            for link_ind in range(num_links):
-                x = self.pivot_point[0] + link_ind * link_length  # Start from pivot point's x coordinate
-                position = Gf.Vec3f(x, self.pivot_point[1] + y, z)  # Add y offset for multiple ropes
-                
-                capsule_path = scope_path.AppendChild(f"capsule_{link_ind}")
-                capsule_geom = self.create_capsule(capsule_path, position)
-                self.segments.append(capsule_geom.GetPrim())
+            body0_path = self.segments[link_ind].GetPath()
+            body1_path = self.segments[link_ind + 1].GetPath()
             
-            # Create joints between consecutive capsules
-            joint_x = self.link_half_length
-            for link_ind in range(num_links - 1):
-                joint_path = scope_path.AppendChild(f"joint_{link_ind}")
-                
-                body0_path = self.segments[link_ind].GetPath()
-                body1_path = self.segments[link_ind + 1].GetPath()
-                
-                local_pos0 = Gf.Vec3f(joint_x, 0, 0)
-                local_pos1 = Gf.Vec3f(-joint_x, 0, 0)
-                
-                joint = self.create_joint(joint_path, body0_path, body1_path, local_pos0, local_pos1)
-                self.joints.append(joint)
+            local_pos0 = Gf.Vec3f(joint_x, 0, 0)
+            local_pos1 = Gf.Vec3f(-joint_x, 0, 0)
+            
+            joint = self.create_joint(joint_path, body0_path, body1_path, local_pos0, local_pos1)
+            self.joints.append(joint)
 
     def get_segments(self):
         """Get all segment prims for the rope"""
@@ -287,54 +282,49 @@ default_prim_path = Sdf.Path("/World")
 UsdGeom.Xform.Define(stage, default_prim_path)
 stage.SetDefaultPrim(stage.GetPrimAtPath(default_prim_path))
 
-# Create the cylinder using the helper function
-cylinder_radius = 0.3
-cylinder_height = 2.0
-# The rope is made of capsules, get the radius to calculate the gap
-rope_link_half_length = 0.02
-rope_creator_temp = RopeCreator(stage, default_prim_path, Sdf.Path(), link_half_length=rope_link_half_length)
-rope_link_radius = rope_creator_temp.link_radius
-
-# Position for the first cylinder (bottom)
-cylinder1_pos = Gf.Vec3f(0.0, 0.0, 1.0)
+# Step 1: Set the first cylinder with origin to desired position and orientation
+cylinder_radius = 0.01
+cylinder_height = 0.1
+cylinder1_pos = Gf.Vec3f(0.0, 0.0, 1.0)  # Desired position for first cylinder
 cylinder_path, joint_path, drive1 = create_cylinder(
     stage, default_prim_path, "cylinder", radius=cylinder_radius, height=cylinder_height, position=cylinder1_pos
 )
 
-# Position for the second cylinder (top), with a gap for the rope
-cylinder2_pos = Gf.Vec3f(0.0, 0.0, cylinder1_pos[2] + 2 * cylinder_radius + 2 * rope_link_radius)
-cylinder2_path, joint2_path, drive2 = create_cylinder(
-    stage, default_prim_path, "cylinder2", radius=cylinder_radius, height=cylinder_height, position=cylinder2_pos
-)
+# Step 2: Create the rope with first segment on the perimeter of cylinder1
+rope_link_half_length = 0.004
+rope_link_radius = 0.004
 
+# Calculate rope pivot point
+rope_pivot_point = Gf.Vec3f(cylinder_radius + rope_link_half_length + cylinder1_pos[0], cylinder1_pos[1], cylinder1_pos[2])
 
-# Create the rope creator and generate ropes
 physics_material_path = default_prim_path.AppendChild("PhysicsMaterial")
 UsdShade.Material.Define(stage, physics_material_path)
 material = UsdPhysics.MaterialAPI.Apply(stage.GetPrimAtPath(physics_material_path))
 material.CreateStaticFrictionAttr().Set(0.5)
-material.CreateDynamicFrictionAttr().Set(0.5)
+material.CreateDynamicFrictionAttr().Set(0.0)
 material.CreateRestitutionAttr().Set(0)
 
-# Set the rope pivot point to be between the two cylinders
-pivot_z = cylinder1_pos[2] + cylinder_radius + rope_link_radius
 rope_creator = RopeCreator(stage, 
                            default_prim_path, 
                            physics_material_path, 
-                           pivot_point=Gf.Vec3f(0.5, 0.0, pivot_z),
-                           rope_length=10.0,
+                           pivot_point=rope_pivot_point,
+                           rope_length=0.5,
                            link_half_length=rope_link_half_length,
-                           num_ropes=1,
-                           rope_spacing=1.0,
-                           rope_damping=10e6,
-                           rope_stiffness=0,
-                           rope_segment_mass=10e-6,
-                           enable_joint_drives=False)  # Set to False to disable joint drives
+                           rope_damping=1e10,
+                           rope_stiffness=1e6,
+                           rope_segment_mass=1e-12,
+                           enable_joint_drives=True)
 rope_creator.create_ropes()
+
+# Step 3: Set second cylinder such that gap from first cylinder is exactly the rope diameter
+cylinder2_pos = Gf.Vec3f(cylinder1_pos[0], cylinder1_pos[1], cylinder1_pos[2] + 2 * cylinder_radius + 2 * rope_link_radius)
+cylinder2_path, joint2_path, drive2 = create_cylinder(
+    stage, default_prim_path, "cylinder2", radius=cylinder_radius, height=cylinder_height, position=cylinder2_pos
+)
 
 # Create a spherical joint between the cylinder perimeter and the first capsule of the rope
 # Get the first capsule path
-first_capsule_path = "/World/Rope0/capsule_0"
+first_capsule_path = "/World/Rope/capsule_0"
 
 # Create the spherical joint
 attachment_joint_path = default_prim_path.AppendChild("cylinder_rope_attachment")
@@ -344,14 +334,20 @@ attachment_joint = UsdPhysics.SphericalJoint.Define(stage, attachment_joint_path
 attachment_joint.GetBody0Rel().SetTargets([cylinder_path])
 attachment_joint.GetBody1Rel().SetTargets([first_capsule_path])
 
-# Set local positions - attach at cylinder perimeter (radius 0.5) and capsule center
-attachment_joint.CreateLocalPos0Attr().Set(Gf.Vec3f(cylinder_radius, 0.0, 0.0))  # At cylinder perimeter
-attachment_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(-0.1, 0.0, 0.0))  # At capsule edge
+# Set local positions - attach at cylinder perimeter and well inside capsule to prevent penetration
+# Move attachment point further inside the capsule (closer to center) to ensure clearance
+attachment_joint.CreateLocalPos0Attr().Set(Gf.Vec3f(cylinder_radius + rope_link_radius, 0.0, 0.0))  # At cylinder surface
+attachment_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))  # At capsule surface
 
 # Set local rotations (identity quaternions)
 attachment_joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
 attachment_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
 
+# Set the attachment joint to be rigid with very high stiffness and damping
+attachment_drive = UsdPhysics.DriveAPI.Apply(attachment_joint.GetPrim(), "angular")
+attachment_drive.CreateTypeAttr().Set("force")
+attachment_drive.CreateDampingAttr().Set(1e10)
+attachment_drive.CreateStiffnessAttr().Set(1e10)
 
 # Initial setup for the simulation
 timeline = get_timeline_interface()
