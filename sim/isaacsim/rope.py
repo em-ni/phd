@@ -25,6 +25,7 @@ from omni.timeline import get_timeline_interface
 from isaacsim.core.api import World
 from isaacsim.core.utils.prims import get_prim_at_path
 import omni.ui as ui
+import math
 
 # Set Light stage to Grey Studio
 stage = simulation_app.context.get_stage()
@@ -200,21 +201,11 @@ class RopeCreator:
         """Get the last segment prim for the rope"""
         return self.segments[-1] if self.segments else None
 
-def create_cylinder(stage, parent_path, name, radius=0.5, height=1.0, position=None, rotation_y=90.0):
+def create_cylinder(stage, parent_path, name, radius=0.5, height=1.0, position=None):
     """
-    Create a cylinder with physics properties and a revolute joint.
-    
-    Args:
-        stage: The USD stage
-        parent_path: Path to the parent prim
-        name: Name for the cylinder prim
-        radius: Radius of the cylinder in meters
-        height: Height of the cylinder in meters
-        position: Position of the cylinder (Gf.Vec3f), defaults to (0, 0, 2)
-        rotation_y: Rotation around Y axis in degrees, defaults to 90
-    
-    Returns:
-        tuple: (cylinder_path, joint_path) - Paths to the created cylinder and joint
+    Create a cylinder with physics properties.
+    No joint created here - will be added separately.
+    Orientation will be set through joints.
     """
     if position is None:
         position = Gf.Vec3f(0.0, 0.0, 1.0)
@@ -226,41 +217,182 @@ def create_cylinder(stage, parent_path, name, radius=0.5, height=1.0, position=N
     cylinder_geom.CreateHeightAttr().Set(height)
     cylinder_geom.CreateAxisAttr().Set(UsdGeom.Tokens.z)
     
-    # Set position and rotation
+    # Set position only - rotation handled by joints
     cylinder_geom.AddTranslateOp().Set(position)
-    cylinder_geom.AddRotateYOp().Set(rotation_y)
     
     # Add physics properties
     UsdPhysics.CollisionAPI.Apply(cylinder_geom.GetPrim())
     UsdPhysics.RigidBodyAPI.Apply(cylinder_geom.GetPrim())
     
-    # Create revolute joint
-    joint_path = parent_path.AppendChild(f"{name}_joint")
-    joint = UsdPhysics.RevoluteJoint.Define(stage, joint_path)
+    return cylinder_path
+
+
+def create_rope_mechanism(stage, default_prim_path, mechanism_name, position, orientation_degrees):
+    """
+    Create a rope mechanism designed to be attached to a robot end-effector.
+    Uses a kinematic anchor with fixed joints to dynamic cylinders (siblings, not children).
+    """
+    # Create a parent transform for the entire mechanism
+    mechanism_path = default_prim_path.AppendChild(mechanism_name)
+    mechanism_xform = UsdGeom.Xform.Define(stage, mechanism_path)
+    mechanism_xform.AddTranslateOp().Set(position)
+    mechanism_xform.AddRotateXOp().Set(90.0)  # Rotate to make cylinders parallel to floor
+    mechanism_xform.AddRotateYOp().Set(orientation_degrees)
     
-    # Set joint bodies
-    joint.CreateBody0Rel().SetTargets([parent_path])  # World
-    joint.CreateBody1Rel().SetTargets([cylinder_path])  # Cylinder
+    # Create a kinematic anchor body - this will be the attachment point for the robot
+    anchor_path = mechanism_path.AppendChild("KinematicAnchor")
+    anchor_xform = UsdGeom.Xform.Define(stage, anchor_path)
+    anchor_xform.AddTranslateOp().Set(Gf.Vec3f(0.0, 0.0, 0.0))
     
-    # Set joint axis
-    joint.CreateAxisAttr().Set("Y")
+    # Make the anchor a kinematic rigid body
+    UsdPhysics.CollisionAPI.Apply(anchor_xform.GetPrim())
+    anchor_rigid_body = UsdPhysics.RigidBodyAPI.Apply(anchor_xform.GetPrim())
+    anchor_rigid_body.CreateKinematicEnabledAttr().Set(True)
     
-    # Set local positions
-    joint.CreateLocalPos0Attr().Set(position)
-    joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    # Cylinder parameters
+    cylinder_radius = 0.01
+    cylinder_height = 0.1
     
-    # Set local rotations
-    joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
-    joint.CreateLocalRot1Attr().Set(Gf.Quatf(0.707, 0.707, 0.0, 0.0))
+    # Rope parameters - define early to calculate cylinder spacing
+    rope_link_half_length = 0.004
+    rope_link_radius = 0.004
+    rope_length = 0.5
+    rope_weight = 0.1
+    rope_segment_mass = rope_weight / (rope_length / (2 * rope_link_half_length))
     
-    # Add joint drive
-    drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), "angular")
-    drive.CreateTypeAttr().Set("force")
-    drive.CreateTargetVelocityAttr().Set(1.0)  # Rotate at 1 rad/s
-    drive.CreateDampingAttr().Set(1.0)
-    drive.CreateStiffnessAttr().Set(10.0)
+    # Calculate cylinder spacing based on rope thickness
+    cylinder_spacing = 2 * cylinder_radius + 2 * rope_link_radius
     
-    return cylinder_path, joint_path, drive
+    # Create cylinders as SIBLINGS to the anchor (under mechanism_path)
+    # Cylinder 1 at origin
+    cylinder1_pos = Gf.Vec3f(0.0, 0.0, 0.0)
+    cylinder_path = create_cylinder(
+        stage, mechanism_path, "cylinder", radius=cylinder_radius, height=cylinder_height, 
+        position=cylinder1_pos
+    )
+
+    # Create fixed joint between kinematic anchor and cylinder1
+    joint1_path = mechanism_path.AppendChild("cylinder_joint")
+    joint1 = UsdPhysics.FixedJoint.Define(stage, joint1_path)
+    joint1.CreateBody0Rel().SetTargets([anchor_path])
+    joint1.CreateBody1Rel().SetTargets([cylinder_path])
+    joint1.CreateLocalPos0Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    joint1.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    joint1.CreateLocalRot0Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+    joint1.CreateLocalRot1Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+    
+    # Add revolute joint drive for cylinder rotation around its axis
+    revolute_joint1_path = mechanism_path.AppendChild("cylinder_revolute")
+    revolute_joint1 = UsdPhysics.RevoluteJoint.Define(stage, revolute_joint1_path)
+    revolute_joint1.CreateBody0Rel().SetTargets([anchor_path])
+    revolute_joint1.CreateBody1Rel().SetTargets([cylinder_path])
+    revolute_joint1.CreateAxisAttr().Set("Y")
+    revolute_joint1.CreateLocalPos0Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    revolute_joint1.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    revolute_joint1.CreateLocalRot0Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+    revolute_joint1.CreateLocalRot1Attr().Set(Gf.Quatf(0.707, 0.707, 0.0, 0.0))
+    
+    drive1 = UsdPhysics.DriveAPI.Apply(revolute_joint1.GetPrim(), "angular")
+    drive1.CreateTypeAttr().Set("force")
+    drive1.CreateTargetVelocityAttr().Set(1.0)
+    drive1.CreateDampingAttr().Set(1.0)
+    drive1.CreateStiffnessAttr().Set(10.0)
+
+    # Rope pivot point in local coordinates (on the edge of cylinder 1)
+    rope_pivot_point = Gf.Vec3f(cylinder_radius + rope_link_half_length, 0.0, 0.0)
+
+    physics_material_path = mechanism_path.AppendChild("PhysicsMaterial")
+    UsdShade.Material.Define(stage, physics_material_path)
+    material = UsdPhysics.MaterialAPI.Apply(stage.GetPrimAtPath(physics_material_path))
+    material.CreateStaticFrictionAttr().Set(0.5)
+    material.CreateDynamicFrictionAttr().Set(0.0)
+    material.CreateRestitutionAttr().Set(0)
+
+    rope_creator = RopeCreator(stage, 
+                               mechanism_path,
+                               physics_material_path, 
+                               pivot_point=rope_pivot_point,
+                               rope_length=rope_length,
+                               link_half_length=rope_link_half_length,
+                               rope_damping=1e10,
+                               rope_stiffness=1e6,
+                               rope_segment_mass=rope_segment_mass,
+                               enable_joint_drives=True)
+    rope_creator.create_ropes()
+
+    # Create second cylinder - OFFSET in X direction by spacing
+    # This puts it parallel to cylinder1 with rope gap between them
+    cylinder2_pos = Gf.Vec3f(cylinder_spacing, 0.0, 0.0)
+    cylinder2_path = create_cylinder(
+        stage, mechanism_path, "cylinder2", radius=cylinder_radius, height=cylinder_height, 
+        position=cylinder2_pos
+    )
+    
+    # Create fixed joint between kinematic anchor and cylinder2
+    joint2_path = mechanism_path.AppendChild("cylinder2_joint")
+    joint2 = UsdPhysics.FixedJoint.Define(stage, joint2_path)
+    joint2.CreateBody0Rel().SetTargets([anchor_path])
+    joint2.CreateBody1Rel().SetTargets([cylinder2_path])
+    joint2.CreateLocalPos0Attr().Set(cylinder2_pos)
+    joint2.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    joint2.CreateLocalRot0Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+    joint2.CreateLocalRot1Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+    
+    # Add revolute joint drive for cylinder2 rotation
+    revolute_joint2_path = mechanism_path.AppendChild("cylinder2_revolute")
+    revolute_joint2 = UsdPhysics.RevoluteJoint.Define(stage, revolute_joint2_path)
+    revolute_joint2.CreateBody0Rel().SetTargets([anchor_path])
+    revolute_joint2.CreateBody1Rel().SetTargets([cylinder2_path])
+    revolute_joint2.CreateAxisAttr().Set("Y")
+    revolute_joint2.CreateLocalPos0Attr().Set(cylinder2_pos)
+    revolute_joint2.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    revolute_joint2.CreateLocalRot0Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+    revolute_joint2.CreateLocalRot1Attr().Set(Gf.Quatf(0.707, 0.707, 0.0, 0.0))
+    
+    drive2 = UsdPhysics.DriveAPI.Apply(revolute_joint2.GetPrim(), "angular")
+    drive2.CreateTypeAttr().Set("force")
+    drive2.CreateTargetVelocityAttr().Set(1.0)
+    drive2.CreateDampingAttr().Set(1.0)
+    drive2.CreateStiffnessAttr().Set(10.0)
+
+    # Create attachment joint between cylinder and first rope segment
+    first_capsule_path = mechanism_path.AppendChild("Rope").AppendChild("capsule_0")
+
+    attachment_joint_path = mechanism_path.AppendChild("cylinder_rope_attachment")
+    attachment_joint = UsdPhysics.SphericalJoint.Define(stage, attachment_joint_path)
+
+    attachment_joint.GetBody0Rel().SetTargets([cylinder_path])
+    attachment_joint.GetBody1Rel().SetTargets([first_capsule_path])
+
+    attachment_joint.CreateLocalPos0Attr().Set(Gf.Vec3f(cylinder_radius + rope_link_radius, 0.0, 0.0))
+    attachment_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+
+    attachment_joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+    attachment_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+
+    attachment_drive = UsdPhysics.DriveAPI.Apply(attachment_joint.GetPrim(), "angular")
+    attachment_drive.CreateTypeAttr().Set("force")
+    attachment_drive.CreateDampingAttr().Set(1e10)
+    attachment_drive.CreateStiffnessAttr().Set(1e10)
+    
+    return {
+        'mechanism_path': mechanism_path,
+        'mechanism_xform': mechanism_xform,
+        'anchor_path': anchor_path,
+        'anchor_rigid_body': anchor_rigid_body,
+        'cylinder1_path': cylinder_path,
+        'cylinder2_path': cylinder2_path,
+        'drive1': drive1,
+        'drive2': drive2,
+        'rope_creator': rope_creator
+    }
+
+
+
+
+
+
+
 
 
 # Create a world
@@ -282,72 +414,10 @@ default_prim_path = Sdf.Path("/World")
 UsdGeom.Xform.Define(stage, default_prim_path)
 stage.SetDefaultPrim(stage.GetPrimAtPath(default_prim_path))
 
-# Step 1: Set the first cylinder with origin to desired position and orientation
-cylinder_radius = 0.01
-cylinder_height = 0.1
-cylinder1_pos = Gf.Vec3f(0.0, 0.0, 1.0)  # Desired position for first cylinder
-cylinder_path, joint_path, drive1 = create_cylinder(
-    stage, default_prim_path, "cylinder", radius=cylinder_radius, height=cylinder_height, position=cylinder1_pos
-)
-
-# Step 2: Create the rope with first segment on the perimeter of cylinder1
-rope_link_half_length = 0.004
-rope_link_radius = 0.004
-
-# Calculate rope pivot point
-rope_pivot_point = Gf.Vec3f(cylinder_radius + rope_link_half_length + cylinder1_pos[0], cylinder1_pos[1], cylinder1_pos[2])
-
-physics_material_path = default_prim_path.AppendChild("PhysicsMaterial")
-UsdShade.Material.Define(stage, physics_material_path)
-material = UsdPhysics.MaterialAPI.Apply(stage.GetPrimAtPath(physics_material_path))
-material.CreateStaticFrictionAttr().Set(0.5)
-material.CreateDynamicFrictionAttr().Set(0.0)
-material.CreateRestitutionAttr().Set(0)
-
-rope_creator = RopeCreator(stage, 
-                           default_prim_path, 
-                           physics_material_path, 
-                           pivot_point=rope_pivot_point,
-                           rope_length=0.5,
-                           link_half_length=rope_link_half_length,
-                           rope_damping=1e10,
-                           rope_stiffness=1e6,
-                           rope_segment_mass=1e-12,
-                           enable_joint_drives=True)
-rope_creator.create_ropes()
-
-# Step 3: Set second cylinder such that gap from first cylinder is exactly the rope diameter
-cylinder2_pos = Gf.Vec3f(cylinder1_pos[0], cylinder1_pos[1], cylinder1_pos[2] + 2 * cylinder_radius + 2 * rope_link_radius)
-cylinder2_path, joint2_path, drive2 = create_cylinder(
-    stage, default_prim_path, "cylinder2", radius=cylinder_radius, height=cylinder_height, position=cylinder2_pos
-)
-
-# Create a spherical joint between the cylinder perimeter and the first capsule of the rope
-# Get the first capsule path
-first_capsule_path = "/World/Rope/capsule_0"
-
-# Create the spherical joint
-attachment_joint_path = default_prim_path.AppendChild("cylinder_rope_attachment")
-attachment_joint = UsdPhysics.SphericalJoint.Define(stage, attachment_joint_path)
-
-# Connect the cylinder and first capsule
-attachment_joint.GetBody0Rel().SetTargets([cylinder_path])
-attachment_joint.GetBody1Rel().SetTargets([first_capsule_path])
-
-# Set local positions - attach at cylinder perimeter and well inside capsule to prevent penetration
-# Move attachment point further inside the capsule (closer to center) to ensure clearance
-attachment_joint.CreateLocalPos0Attr().Set(Gf.Vec3f(cylinder_radius + rope_link_radius, 0.0, 0.0))  # At cylinder surface
-attachment_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))  # At capsule surface
-
-# Set local rotations (identity quaternions)
-attachment_joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
-attachment_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
-
-# Set the attachment joint to be rigid with very high stiffness and damping
-attachment_drive = UsdPhysics.DriveAPI.Apply(attachment_joint.GetPrim(), "angular")
-attachment_drive.CreateTypeAttr().Set("force")
-attachment_drive.CreateDampingAttr().Set(1e10)
-attachment_drive.CreateStiffnessAttr().Set(1e10)
+# Create the rope mechanism
+mechanism_position = Gf.Vec3f(0.0, 0.0, 1.0)
+mechanism_orientation = 0.0
+mechanism = create_rope_mechanism(stage, default_prim_path, "RopeMechanism", mechanism_position, mechanism_orientation)
 
 # Initial setup for the simulation
 timeline = get_timeline_interface()
@@ -366,15 +436,21 @@ position1 = 0.0
 position2 = 0.0
 
 # Control variables for cylinder rotation
-cylinder_speed = 0.0  # Speed control (-5 to 5)
-cylinder_direction = 1.0  # Direction multiplier
+cylinder_speed = 0.0
+cylinder_direction = 1.0
+
+# Control variables for mechanism position
+mechanism_x = mechanism_position[0]
+mechanism_y = mechanism_position[1]
+mechanism_z = mechanism_position[2]
+mechanism_rot_y = mechanism_orientation
 
 # Create GUI window for controls
-window = ui.Window("Cylinder Controls", width=300, height=150)
+window = ui.Window("Mechanism Controls", width=350, height=400)
 with window.frame:
-    with ui.VStack():
-        ui.Label("Cylinder Rotation Control")
-        ui.Spacer(height=10)
+    with ui.VStack(spacing=5):
+        ui.Label("Cylinder Rotation Control", height=20)
+        ui.Spacer(height=5)
         
         # Speed slider
         ui.Label("Speed (-50 to 50):")
@@ -382,13 +458,57 @@ with window.frame:
             min=-50.0, 
             max=50.0, 
             step=0.1,
-            width=250
+            width=300
         )
         
-        ui.Spacer(height=10)
+        ui.Spacer(height=5)
         
         # Direction button
         direction_button = ui.Button("Direction: Same", width=150, height=30)
+        
+        ui.Spacer(height=20)
+        ui.Label("Mechanism Position Control", height=20)
+        ui.Spacer(height=5)
+        
+        # Position X slider
+        ui.Label("Position X (-2 to 2):")
+        pos_x_slider = ui.FloatSlider(
+            min=-2.0,
+            max=2.0,
+            step=0.01,
+            width=300
+        )
+        pos_x_slider.model.set_value(mechanism_x)
+        
+        # Position Y slider
+        ui.Label("Position Y (-2 to 2):")
+        pos_y_slider = ui.FloatSlider(
+            min=-2.0,
+            max=2.0,
+            step=0.01,
+            width=300
+        )
+        pos_y_slider.model.set_value(mechanism_y)
+        
+        # Position Z slider
+        ui.Label("Position Z (0 to 3):")
+        pos_z_slider = ui.FloatSlider(
+            min=0.0,
+            max=3.0,
+            step=0.01,
+            width=300
+        )
+        pos_z_slider.model.set_value(mechanism_z)
+        
+        # Rotation Y slider
+        ui.Label("Rotation Y (0 to 360):")
+        rot_y_slider = ui.FloatSlider(
+            min=0.0,
+            max=360.0,
+            step=1.0,
+            width=300
+        )
+        rot_y_slider.model.set_value(mechanism_rot_y)
         
         def on_speed_change(model):
             global cylinder_speed
@@ -399,24 +519,49 @@ with window.frame:
             cylinder_direction *= -1
             direction_button.text = f"Direction: {'Opposite' if cylinder_direction == 1 else 'Same'}"
         
+        def on_pos_x_change(model):
+            global mechanism_x
+            mechanism_x = model.as_float
+            
+        def on_pos_y_change(model):
+            global mechanism_y
+            mechanism_y = model.as_float
+            
+        def on_pos_z_change(model):
+            global mechanism_z
+            mechanism_z = model.as_float
+            
+        def on_rot_y_change(model):
+            global mechanism_rot_y
+            mechanism_rot_y = model.as_float
+        
         speed_slider.model.add_value_changed_fn(on_speed_change)
         direction_button.set_clicked_fn(on_direction_click)
+        pos_x_slider.model.add_value_changed_fn(on_pos_x_change)
+        pos_y_slider.model.add_value_changed_fn(on_pos_y_change)
+        pos_z_slider.model.add_value_changed_fn(on_pos_z_change)
+        rot_y_slider.model.add_value_changed_fn(on_rot_y_change)
 
 time_iter_to_cut = 5*100
 loop_counter = 0
 try:
     while timeline.is_playing():
         loop_counter += 1
+        
         # Update cylinder positions based on slider controls
-        position1 += cylinder_speed * 0.1  # Bottom cylinder
-        position2 += cylinder_speed * 0.1 * cylinder_direction  # Top cylinder with direction control
-        drive1.CreateTargetPositionAttr().Set(position1)
-        drive2.CreateTargetPositionAttr().Set(position2)
+        position1 += cylinder_speed * 0.1
+        position2 += cylinder_speed * 0.1 * cylinder_direction
+        mechanism['drive1'].CreateTargetPositionAttr().Set(position1)
+        mechanism['drive2'].CreateTargetPositionAttr().Set(position2)
+        
+        # Update mechanism position and orientation
+        # Index 0: translate, Index 1: rotateX (fixed at 90), Index 2: rotateY
+        mechanism['mechanism_xform'].GetOrderedXformOps()[0].Set(Gf.Vec3f(mechanism_x, mechanism_y, mechanism_z))
+        mechanism['mechanism_xform'].GetOrderedXformOps()[2].Set(mechanism_rot_y)  # Changed from [1] to [2]
 
         # if loop_counter == time_iter_to_cut:
-
         #     print("Cutting the rope")
-        #     rope_creator.get_joints()[5].GetPrim().GetAttribute('physics:jointEnabled').Set(False)
+        #     mechanism['rope_creator'].get_joints()[5].GetPrim().GetAttribute('physics:jointEnabled').Set(False)
         
         simulation_app.update()
         time.sleep(0.01)
