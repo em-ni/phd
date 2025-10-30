@@ -40,7 +40,7 @@ sofa/
 ## Configure and Build
 ~~~
 cd sofa
-cmake -S "./src/sofa/src" -B "./build/v23.12" -DSOFA_FETCH_SOFAPYTHON3=ON -DPLUGIN_SOFAPYTHON3=ON -DSOFA_EXTERNAL_DIRECTORIES=${HOME}/Desktop/github/sim/sofa/ext_plugin_repo -DPLUGIN_STLIB=ON -DPLUGIN_BEAMADAPTER=ON -DPLUGIN_COSSERAT=ON -DPLUGIN_COLLISIONOBBCAPSULE=ON -DPLUGIN_MODELORDERREDUCTION=ON -DPLUGIN_SOFTROBOTS=ON
+cmake -S "./src/sofa/src" -B "./build/v23.12" -DSOFA_FETCH_SOFAPYTHON3=ON -DPLUGIN_SOFAPYTHON3=ON -DSOFA_EXTERNAL_DIRECTORIES=${HOME}/Desktop/github/phd/sim/sofa/ext_plugin_repo -DPLUGIN_STLIB=ON -DPLUGIN_BEAMADAPTER=ON -DPLUGIN_COSSERAT=ON -DPLUGIN_COLLISIONOBBCAPSULE=ON -DPLUGIN_MODELORDERREDUCTION=ON -DPLUGIN_SOFTROBOTS=ON
 ~~~
 Be sure conda env is activated and build 
 ~~~
@@ -54,18 +54,18 @@ runSofa.exe
 ~~~
 If it works, add to ~/.bashrc
 ~~~
-export PATH="$HOME/Desktop/github/sim/sofa/build/v22.12/bin:$PATH"
+export PATH="$HOME/Desktop/github/phd/sim/sofa/build/v22.12/bin:$PATH"
 ~~~
 
 ### Alternatives and possible problems:</br>
 From https://github.com/StanfordASL/soft-robot-control  (without fetching SofaPython3)
 ~~~
-cmake -S "./src/sofa/src" -B "./build/v22.12" -DPLUGIN_SOFAPYTHON3=ON -DSOFA_EXTERNAL_DIRECTORIES=${HOME}/Desktop/github/sim/sofa/ext_plugin_repo -DPLUGIN_SPLIB=ON -DPLUGIN_STLIB=ON -DPLUGIN_BEAMADAPTER=ON -DPLUGIN_COSSERAT=ON -DPLUGIN_COLLISIONOBBCAPSULE=ON -DPLUGIN_MODELORDERREDUCTION=ON -DPLUGIN_SOFTROBOTS=ON -DSOFA_BUILD_METIS=ON -DSOFTROBOTS_IGNORE_ERRORS=ON -DCMAKE_PREFIX_PATH=${HOME}/Desktop/github/sim/sofa/src/sofa/src/applications/plugins/SofaPython3/Testing
+cmake -S "./src/sofa/src" -B "./build/v22.12" -DPLUGIN_SOFAPYTHON3=ON -DSOFA_EXTERNAL_DIRECTORIES=${HOME}/Desktop/github/phd/sim/sofa/ext_plugin_repo -DPLUGIN_SPLIB=ON -DPLUGIN_STLIB=ON -DPLUGIN_BEAMADAPTER=ON -DPLUGIN_COSSERAT=ON -DPLUGIN_COLLISIONOBBCAPSULE=ON -DPLUGIN_MODELORDERREDUCTION=ON -DPLUGIN_SOFTROBOTS=ON -DSOFA_BUILD_METIS=ON -DSOFTROBOTS_IGNORE_ERRORS=ON -DCMAKE_PREFIX_PATH=${HOME}/Desktop/github/phd/sim/sofa/src/sofa/src/applications/plugins/SofaPython3/Testing
 ~~~
 
 If problem with SofaPython3testing add
 ~~~
--DCMAKE_PREFIX_PATH=/home/emanuele/Desktop/github/sim/sofa/src/sofa/src/applications/plugins/SofaPython3/Testing
+-DCMAKE_PREFIX_PATH=/home/emanuele/Desktop/github/phd/sim/sofa/src/sofa/src/applications/plugins/SofaPython3/Testing
 ~~~
 and be sure the folder exists. </br>
 If it does not exists it happens after fetching SofaPython3, since apparently the last verision does not contain the folder Testing.
@@ -81,7 +81,7 @@ it can be solved with linker option for cmake. First locate the library (ex from
 
 
 If you get:</br>
-runSofa: /home/emanuele/anaconda3/envs/sofa/lib/libstdc++.so.6: version `GLIBCXX_3.4.30' not found (required by /home/emanuele/Desktop/github/sim/sofa/build/v22.12/lib/libSofa.Simulation.Core.so.22.12.00)  </br>
+runSofa: /home/emanuele/anaconda3/envs/sofa/lib/libstdc++.so.6: version `GLIBCXX_3.4.30' not found (required by /home/emanuele/Desktop/github/phd/sim/sofa/build/v22.12/lib/libSofa.Simulation.Core.so.22.12.00)  </br>
 try:
 ~~~
 conda install -c conda-forge gcc
@@ -96,7 +96,7 @@ or conda uninstall gcc and the build again. Once built, you can install gcc agai
 
 Building with SofaCUDA plugin requieres g++-10
 ~~~
-cmake -S "./src/sofa/src" -B "./build/v23.12" -DSOFA_FETCH_SOFAPYTHON3=ON -DPLUGIN_SOFAPYTHON3=ON -DSOFA_EXTERNAL_DIRECTORIES=${HOME}/Desktop/github/sim/sofa/ext_plugin_repo -DPLUGIN_STLIB=ON -DPLUGIN_BEAMADAPTER=OFF -DPLUGIN_COSSERAT=ON -DPLUGIN_COLLISIONOBBCAPSULE=ON -DPLUGIN_MODELORDERREDUCTION=ON -DPLUGIN_SOFTROBOTS=ON -DPLUGIN_SOFACUDA=ON -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-11 -DSOFACUDA_DOUBLE=ON -DSOFACUDA_PRECISE=ON -DSOFACUDA_DOUBLE_PRECISE=ON -DSOFACUDA_CUBLAS=ON -DSOFACUDA_CUDPP=OFF -DSOFACUDA_THRUST=ON -DSOFACUDA_VERBOSE_PTXAS=ON -DPLUGIN_SOFADISTANCEGRID=ON -DPLUGIN_MULTITHREADING=ON -DCUDA_SPARSE_LIBRARY=/usr/local/cuda-12.0/targets/x86_64-linux/lib/libcusparse.so -DCMAKE_LIBRARY_PATH="/home/emanuele/anaconda3/envs/sofa/x86_64-conda-linux-gnu/sysroot/lib64;/home/emanuele/anaconda3/envs/sofa/x86_64-conda-linux-gnu/sysroot/usr/lib64"  -DCMAKE_EXE_LINKER_FLAGS="-lpthread" -DCMAKE_CXX_COMPILER=/usr/bin/g++-11
+cmake -S "./src/sofa/src" -B "./build/v23.12" -DSOFA_FETCH_SOFAPYTHON3=ON -DPLUGIN_SOFAPYTHON3=ON -DSOFA_EXTERNAL_DIRECTORIES=${HOME}/Desktop/github/phd/sim/sofa/ext_plugin_repo -DPLUGIN_STLIB=ON -DPLUGIN_BEAMADAPTER=OFF -DPLUGIN_COSSERAT=ON -DPLUGIN_COLLISIONOBBCAPSULE=ON -DPLUGIN_MODELORDERREDUCTION=ON -DPLUGIN_SOFTROBOTS=ON -DPLUGIN_SOFACUDA=ON -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-11 -DSOFACUDA_DOUBLE=ON -DSOFACUDA_PRECISE=ON -DSOFACUDA_DOUBLE_PRECISE=ON -DSOFACUDA_CUBLAS=ON -DSOFACUDA_CUDPP=OFF -DSOFACUDA_THRUST=ON -DSOFACUDA_VERBOSE_PTXAS=ON -DPLUGIN_SOFADISTANCEGRID=ON -DPLUGIN_MULTITHREADING=ON -DCUDA_SPARSE_LIBRARY=/usr/local/cuda-12.0/targets/x86_64-linux/lib/libcusparse.so -DCMAKE_LIBRARY_PATH="/home/emanuele/anaconda3/envs/sofa/x86_64-conda-linux-gnu/sysroot/lib64;/home/emanuele/anaconda3/envs/sofa/x86_64-conda-linux-gnu/sysroot/usr/lib64"  -DCMAKE_EXE_LINKER_FLAGS="-lpthread" -DCMAKE_CXX_COMPILER=/usr/bin/g++-11
 ~~~
 if it can't find cc1plus use
 ~~~
