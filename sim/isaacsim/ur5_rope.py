@@ -327,7 +327,7 @@ def create_rope_mechanism_at_ee(stage, tool0_path: Sdf.Path, env_idx=0, local_of
     # Roller parameters
     cylinder_radius = 0.012
     cylinder_height = 0.05
-    offset_from_ee = 0.028
+    offset_from_ee = -0.024
     rope_link_half_length = 0.005
     rope_link_radius = rope_link_half_length * 0.5
     gap_between_cylinders = 2 * rope_link_radius + 0.001  # small gap for rope to fit through
@@ -353,7 +353,12 @@ def create_rope_mechanism_at_ee(stage, tool0_path: Sdf.Path, env_idx=0, local_of
     joint1.CreateBody0Rel().SetTargets([tool0_path])
     joint1.CreateBody1Rel().SetTargets([cylinder1_path])
     joint1.CreateAxisAttr().Set("Z")
-    joint1.CreateLocalPos0Attr().Set(cylinder1_pos)
+    # LocalPos0 must be expressed in tool0's local frame. The cylinder position is specified
+    # relative to the mechanism (which is parented under tool0), so add the mechanism local_offset
+    # to get the anchor expressed in tool0 frame to avoid disjointed transforms.
+    joint1.CreateLocalPos0Attr().Set(Gf.Vec3f(local_offset[0] + cylinder1_pos[0],
+                                             local_offset[1] + cylinder1_pos[1],
+                                             local_offset[2] + cylinder1_pos[2]))
     joint1.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
     joint1.CreateLocalRot0Attr().Set(Gf.Quatf(1.0))
     joint1.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
@@ -378,7 +383,9 @@ def create_rope_mechanism_at_ee(stage, tool0_path: Sdf.Path, env_idx=0, local_of
     joint2.CreateBody0Rel().SetTargets([tool0_path])
     joint2.CreateBody1Rel().SetTargets([cylinder2_path])
     joint2.CreateAxisAttr().Set("Z")
-    joint2.CreateLocalPos0Attr().Set(cylinder2_pos)
+    joint2.CreateLocalPos0Attr().Set(Gf.Vec3f(local_offset[0] + cylinder2_pos[0],
+                                             local_offset[1] + cylinder2_pos[1],
+                                             local_offset[2] + cylinder2_pos[2]))
     joint2.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
     joint2.CreateLocalRot0Attr().Set(Gf.Quatf(1.0))
     joint2.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
@@ -536,6 +543,30 @@ def main():
     
     scene_cfg = TableTopSceneCfg(num_envs=args_cli.num_envs, env_spacing=2.0)
     scene = InteractiveScene(scene_cfg)
+    
+    # Optional: filter collisions across environments when not using GPU replicate physics
+    try:
+        # Avoid duplicate global_group creation by skipping if it already exists
+        collisions_group_path = Sdf.Path("/World/collisions/global_group")
+        if not sim.stage.GetPrimAtPath(collisions_group_path).IsValid():
+            env_roots = [f"/World/envs/env_{i}" for i in range(scene.num_envs)]
+            scene.filter_collisions(env_roots)
+        else:
+            print("[INFO] Cross-env collision group already present; skipping filter_collisions.")
+    except Exception as e:
+        print(f"[WARN] Could not apply cross-env collision filtering:\n\t{e}")
+    
+    # Fix invalid mass/inertia warnings on robot flange and tool0 by setting a positive mass
+    try:
+        for env_idx in range(scene.num_envs):
+            for link_name in ["flange", "tool0"]:
+                link_path = Sdf.Path(f"/World/envs/env_{env_idx}/Robot/{link_name}")
+                prim = sim.stage.GetPrimAtPath(link_path)
+                if prim.IsValid():
+                    mass_api = UsdPhysics.MassAPI.Apply(prim)
+                    mass_api.CreateMassAttr().Set(1.0)
+    except Exception as e:
+        print(f"[WARN] Could not set mass on robot links: {e}")
     
     # Enable physics
     UsdPhysics.Scene.Define(sim.stage, "/physicsScene")
