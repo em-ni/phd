@@ -94,8 +94,8 @@ class SphericalJoint:
 class RopeCreator:
     def __init__(self, stage, default_prim_path, physics_material_path, pivot_point=None, 
                  link_half_length=0.1, rope_length=2.0, num_ropes=1, rope_spacing=0.1,
-                 rope_color=None, rope_damping=2.0, rope_stiffness=0.0, contact_offset=0.01,
-                 enable_joint_drives=True, rope_segment_mass=0.00005):
+                 rope_color=None, rope_damping=2.0, rope_stiffness=0.0, contact_offset=0.001,
+                 enable_joint_drives=True, rope_segment_mass=0.00005, rope_axis="X"):
         self.stage = stage
         self.default_prim_path = default_prim_path
         self.physics_material_path = physics_material_path
@@ -113,6 +113,7 @@ class RopeCreator:
         self.contact_offset = contact_offset
         self.enable_joint_drives = enable_joint_drives
         self.rope_segment_mass = rope_segment_mass
+        self.rope_axis = rope_axis  # 'X', 'Y', or 'Z'
         
         # Store segment prims and joints for the rope
         self.segments = []  # List of segment prims
@@ -122,7 +123,12 @@ class RopeCreator:
         capsule_geom = UsdGeom.Capsule.Define(self.stage, path)
         capsule_geom.CreateHeightAttr(self.link_half_length)
         capsule_geom.CreateRadiusAttr(self.link_radius)
-        capsule_geom.CreateAxisAttr("X")
+        axis_token = {
+            "X": UsdGeom.Tokens.x,
+            "Y": UsdGeom.Tokens.y,
+            "Z": UsdGeom.Tokens.z,
+        }.get(self.rope_axis, UsdGeom.Tokens.x)
+        capsule_geom.CreateAxisAttr(axis_token)
         capsule_geom.CreateDisplayColorAttr().Set([self.rope_color])
         
         # Set position
@@ -167,10 +173,18 @@ class RopeCreator:
             y = y_start + rope_ind * self.rope_spacing
             z = self.pivot_point[2]  # Use pivot point's z coordinate
             
-            # Create all capsule links
+            # Create all capsule links along the selected axis
             for link_ind in range(num_links):
-                x = self.pivot_point[0] + link_ind * link_length  # Start from pivot point's x coordinate
-                position = Gf.Vec3f(x, self.pivot_point[1] + y, z)  # Add y offset for multiple ropes
+                if self.rope_axis == "X":
+                    x = self.pivot_point[0] + link_ind * link_length
+                    position = Gf.Vec3f(x, self.pivot_point[1] + y, z)
+                elif self.rope_axis == "Y":
+                    # Grow downward along -Y from pivot
+                    y_pos = self.pivot_point[1] - link_ind * link_length
+                    position = Gf.Vec3f(self.pivot_point[0], y_pos, z)
+                else:  # 'Z'
+                    z_pos = self.pivot_point[2] + link_ind * link_length
+                    position = Gf.Vec3f(self.pivot_point[0], self.pivot_point[1] + y, z_pos)
                 
                 capsule_path = scope_path.AppendChild(f"capsule_{link_ind}")
                 capsule_geom = self.create_capsule(capsule_path, position)
@@ -184,8 +198,15 @@ class RopeCreator:
                 body0_path = self.segments[link_ind].GetPath()
                 body1_path = self.segments[link_ind + 1].GetPath()
                 
-                local_pos0 = Gf.Vec3f(joint_x, 0, 0)
-                local_pos1 = Gf.Vec3f(-joint_x, 0, 0)
+                if self.rope_axis == "X":
+                    local_pos0 = Gf.Vec3f(joint_x, 0, 0)
+                    local_pos1 = Gf.Vec3f(-joint_x, 0, 0)
+                elif self.rope_axis == "Y":
+                    local_pos0 = Gf.Vec3f(0, joint_x, 0)
+                    local_pos1 = Gf.Vec3f(0, -joint_x, 0)
+                else:
+                    local_pos0 = Gf.Vec3f(0, 0, joint_x)
+                    local_pos1 = Gf.Vec3f(0, 0, -joint_x)
                 
                 joint = self.create_joint(joint_path, body0_path, body1_path, local_pos0, local_pos1)
                 self.joints.append(joint)
@@ -206,7 +227,7 @@ class RopeCreator:
         """Get the last segment prim for the rope"""
         return self.segments[-1] if self.segments else None
 
-def create_cylinder(stage, parent_path, name, radius=0.5, height=1.0, position=None, rotation_y=90.0):
+def create_cylinder(stage, parent_path, name, radius=0.5, height=1.0, position=None, body0_path=None):
     """
     Create a cylinder with physics properties and a revolute joint.
     
@@ -217,7 +238,6 @@ def create_cylinder(stage, parent_path, name, radius=0.5, height=1.0, position=N
         radius: Radius of the cylinder in meters
         height: Height of the cylinder in meters
         position: Position of the cylinder (Gf.Vec3f), defaults to (0, 0, 2)
-        rotation_y: Rotation around Y axis in degrees, defaults to 90
     
     Returns:
         tuple: (cylinder_path, joint_path) - Paths to the created cylinder and joint
@@ -232,10 +252,6 @@ def create_cylinder(stage, parent_path, name, radius=0.5, height=1.0, position=N
     cylinder_geom.CreateHeightAttr().Set(height)
     cylinder_geom.CreateAxisAttr().Set(UsdGeom.Tokens.z)
     
-    # Set position and rotation
-    cylinder_geom.AddTranslateOp().Set(position)
-    cylinder_geom.AddRotateYOp().Set(rotation_y)
-    
     # Add physics properties
     UsdPhysics.CollisionAPI.Apply(cylinder_geom.GetPrim())
     UsdPhysics.RigidBodyAPI.Apply(cylinder_geom.GetPrim())
@@ -245,24 +261,19 @@ def create_cylinder(stage, parent_path, name, radius=0.5, height=1.0, position=N
     joint = UsdPhysics.RevoluteJoint.Define(stage, joint_path)
     
     # Set joint bodies
-    joint.CreateBody0Rel().SetTargets([parent_path])  # World
-    joint.CreateBody1Rel().SetTargets([cylinder_path])  # Cylinder
+    # Anchor the cylinder to the specified body0 (e.g., Robot tool0). If not provided, fall back to parent_path.
+    if body0_path is None:
+        body0_path = parent_path
+    joint.CreateBody0Rel().SetTargets([body0_path])
+    joint.CreateBody1Rel().SetTargets([cylinder_path])
     
     # Set joint axis
-    joint.CreateAxisAttr().Set("Y")
-    
-    # Set local positions
-    joint.CreateLocalPos0Attr().Set(position)
-    joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
-    
-    # Set local rotations
-    joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
-    joint.CreateLocalRot1Attr().Set(Gf.Quatf(0.707, 0.707, 0.0, 0.0))
+    joint.CreateAxisAttr().Set("X")
     
     # Add joint drive
     drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), "angular")
     drive.CreateTypeAttr().Set("force")
-    drive.CreateTargetVelocityAttr().Set(1.0)  # Rotate at 1 rad/s
+    drive.CreateTargetVelocityAttr().Set(10.0)  # Rotate at 1 rad/s
     drive.CreateDampingAttr().Set(1.0)
     drive.CreateStiffnessAttr().Set(10.0)
     
@@ -294,80 +305,135 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     robot.actuators["arm"].stiffness = 400.0
     robot.actuators["arm"].damping = 40.0
 
-def create_rope_mechanism_at_ee(stage, ee_transform, env_idx=0):
-    """Create rope mechanism attached to end effector transform"""
-    
-    # Create environment-specific path
-    env_path = Sdf.Path(f"/World/envs/env_{env_idx}")
-    mechanism_path = env_path.AppendChild("RopeMechanism")
+def create_rope_mechanism_at_ee(stage, tool0_path: Sdf.Path, env_idx=0, local_offset=Gf.Vec3f(0.0, 0.0, 0.05)):
+    """Create two cylinders (rollers) and a rope between them, all aligned to tool0 Z axis.
+
+    - Cylinders long axis: Z
+    - Revolute joint axis: Z
+    - Rope built from capsules along +X starting at gap between cylinders.
+    """
+    mechanism_path = tool0_path.AppendChild("RopeMechanism")
     UsdGeom.Xform.Define(stage, mechanism_path)
-    
-    # Set mechanism transform to match end effector
-    mechanism_xform = UsdGeom.Xform.Get(stage, mechanism_path)
-    mechanism_xform.AddTransformOp().Set(ee_transform)
-    
-    # Create physics material
+    UsdGeom.Xform.Get(stage, mechanism_path).AddTranslateOp().Set(local_offset)
+
+    # Physics material (kept minimal)
     physics_material_path = mechanism_path.AppendChild("PhysicsMaterial")
     UsdShade.Material.Define(stage, physics_material_path)
     material = UsdPhysics.MaterialAPI.Apply(stage.GetPrimAtPath(physics_material_path))
     material.CreateStaticFrictionAttr().Set(0.5)
     material.CreateDynamicFrictionAttr().Set(0.5)
-    material.CreateRestitutionAttr().Set(0)
-    
-    # Create cylinders - made much smaller
-    cylinder_radius = 0.005  # Reduced from 0.05
-    cylinder_height = 0.04  # Reduced from 0.4
-    rope_link_half_length = 0.005  # Keep same
+    material.CreateRestitutionAttr().Set(0.0)
+
+    # Roller parameters
+    cylinder_radius = 0.012
+    cylinder_height = 0.05
+    offset_from_ee = -0.024
+    rope_link_half_length = 0.005
     rope_link_radius = rope_link_half_length * 0.5
-    
-    # Position cylinders along the end-effector's Z-axis (forward direction)
-    # Offset forward from the end-effector center to avoid penetration
-    offset_from_ee = 0.05  # Distance forward from end-effector
-    gap_between_cylinders = 2 * rope_link_radius  # Just rope thickness
-    
-    cylinder1_pos = Gf.Vec3f(0.0, 0.0, offset_from_ee)
-    cylinder2_pos = Gf.Vec3f(0.0, 0.0, offset_from_ee + cylinder_height + gap_between_cylinders)
-    
-    cylinder_path, joint_path, drive1 = create_cylinder(
-        stage, mechanism_path, "cylinder1", radius=cylinder_radius, 
-        height=cylinder_height, position=cylinder1_pos
+    gap_between_cylinders = 2 * rope_link_radius + 0.001  # small gap for rope to fit through
+
+    # Place cylinders side-by-side along X with a gap, axes parallel (Z)
+    half_gap = 0.5 * gap_between_cylinders
+    x_offset_to_center = cylinder_radius + half_gap
+    cylinder1_pos = Gf.Vec3f(-x_offset_to_center, 0.0, offset_from_ee)
+    cylinder2_pos = Gf.Vec3f(+x_offset_to_center, 0.0, offset_from_ee)
+
+    # Cylinder 1
+    cylinder1_path = mechanism_path.AppendChild("cylinder1")
+    cyl1 = UsdGeom.Cylinder.Define(stage, cylinder1_path)
+    cyl1.CreateRadiusAttr().Set(cylinder_radius)
+    cyl1.CreateHeightAttr().Set(cylinder_height)
+    cyl1.CreateAxisAttr().Set(UsdGeom.Tokens.z)
+    cyl1.AddTranslateOp().Set(cylinder1_pos)
+    UsdPhysics.CollisionAPI.Apply(cyl1.GetPrim())
+    UsdPhysics.RigidBodyAPI.Apply(cyl1.GetPrim())
+
+    joint1_path = mechanism_path.AppendChild("cylinder1_joint")
+    joint1 = UsdPhysics.RevoluteJoint.Define(stage, joint1_path)
+    joint1.CreateBody0Rel().SetTargets([tool0_path])
+    joint1.CreateBody1Rel().SetTargets([cylinder1_path])
+    joint1.CreateAxisAttr().Set("Z")
+    # LocalPos0 must be expressed in tool0's local frame. The cylinder position is specified
+    # relative to the mechanism (which is parented under tool0), so add the mechanism local_offset
+    # to get the anchor expressed in tool0 frame to avoid disjointed transforms.
+    joint1.CreateLocalPos0Attr().Set(Gf.Vec3f(local_offset[0] + cylinder1_pos[0],
+                                             local_offset[1] + cylinder1_pos[1],
+                                             local_offset[2] + cylinder1_pos[2]))
+    joint1.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    joint1.CreateLocalRot0Attr().Set(Gf.Quatf(1.0))
+    joint1.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
+    drive1 = UsdPhysics.DriveAPI.Apply(joint1.GetPrim(), "angular")
+    drive1.CreateTypeAttr().Set("force")
+    drive1.CreateTargetVelocityAttr().Set(5.0)
+    drive1.CreateDampingAttr().Set(1.0)
+    drive1.CreateStiffnessAttr().Set(5.0)
+
+    # Cylinder 2
+    cylinder2_path = mechanism_path.AppendChild("cylinder2")
+    cyl2 = UsdGeom.Cylinder.Define(stage, cylinder2_path)
+    cyl2.CreateRadiusAttr().Set(cylinder_radius)
+    cyl2.CreateHeightAttr().Set(cylinder_height)
+    cyl2.CreateAxisAttr().Set(UsdGeom.Tokens.z)
+    cyl2.AddTranslateOp().Set(cylinder2_pos)
+    UsdPhysics.CollisionAPI.Apply(cyl2.GetPrim())
+    UsdPhysics.RigidBodyAPI.Apply(cyl2.GetPrim())
+
+    joint2_path = mechanism_path.AppendChild("cylinder2_joint")
+    joint2 = UsdPhysics.RevoluteJoint.Define(stage, joint2_path)
+    joint2.CreateBody0Rel().SetTargets([tool0_path])
+    joint2.CreateBody1Rel().SetTargets([cylinder2_path])
+    joint2.CreateAxisAttr().Set("Z")
+    joint2.CreateLocalPos0Attr().Set(Gf.Vec3f(local_offset[0] + cylinder2_pos[0],
+                                             local_offset[1] + cylinder2_pos[1],
+                                             local_offset[2] + cylinder2_pos[2]))
+    joint2.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    joint2.CreateLocalRot0Attr().Set(Gf.Quatf(1.0))
+    joint2.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
+    drive2 = UsdPhysics.DriveAPI.Apply(joint2.GetPrim(), "angular")
+    drive2.CreateTypeAttr().Set("force")
+    drive2.CreateTargetVelocityAttr().Set(5.0)
+    drive2.CreateDampingAttr().Set(1.0)
+    drive2.CreateStiffnessAttr().Set(5.0)
+
+    # Physics material for rope contact
+    physics_material_path = mechanism_path.AppendChild("PhysicsMaterial")
+    UsdShade.Material.Define(stage, physics_material_path)
+    material = UsdPhysics.MaterialAPI.Apply(stage.GetPrimAtPath(physics_material_path))
+    material.CreateStaticFrictionAttr().Set(0.7)
+    material.CreateDynamicFrictionAttr().Set(0.6)
+    material.CreateRestitutionAttr().Set(0.0)
+
+    # Rope starting at the midpoint between cylinders, then going downward along -Y
+    pivot_z = offset_from_ee
+    rope_creator = RopeCreator(
+        stage,
+        mechanism_path,
+        physics_material_path,
+        pivot_point=Gf.Vec3f(0.0, 0.0, pivot_z),
+        rope_length=0.4,
+        link_half_length=rope_link_half_length,
+        num_ropes=1,
+        rope_spacing=0.0,
+        rope_damping=1e5,
+        rope_stiffness=0.0,
+        rope_segment_mass=1e-5,
+        enable_joint_drives=False,
+        rope_axis="Y",
     )
-    
-    cylinder2_path, joint2_path, drive2 = create_cylinder(
-        stage, mechanism_path, "cylinder2", radius=cylinder_radius, 
-        height=cylinder_height, position=cylinder2_pos
-    )
-    
-    # Create rope between cylinders - position it to extend from cylinder gap
-    pivot_z = cylinder1_pos[2] + cylinder_height + rope_link_radius
-    rope_creator = RopeCreator(stage, 
-                               mechanism_path, 
-                               physics_material_path, 
-                               pivot_point=Gf.Vec3f(0.0, 0.0, pivot_z),  # Centered on Z-axis
-                               rope_length=1.0,  # Shorter rope length
-                               link_half_length=rope_link_half_length,
-                               num_ropes=1,
-                               rope_spacing=1.0,
-                               rope_damping=10e6,
-                               rope_stiffness=0,
-                               rope_segment_mass=10e-6,
-                               enable_joint_drives=False)
     rope_creator.create_ropes()
-    
-    # Attach rope to first cylinder - adjust attachment point
+
+    # Attach rope to cylinder1 inner rim via FixedJoint
     rope_scope_path = mechanism_path.AppendChild("Rope0")
     first_capsule_path = rope_scope_path.AppendChild("capsule_0")
-    attachment_joint_path = mechanism_path.AppendChild("cylinder_rope_attachment")
-    attachment_joint = UsdPhysics.SphericalJoint.Define(stage, attachment_joint_path)
-    
-    attachment_joint.GetBody0Rel().SetTargets([cylinder_path])
-    attachment_joint.GetBody1Rel().SetTargets([first_capsule_path])
-    # Attach at cylinder's bottom face (along Z-axis)
-    attachment_joint.CreateLocalPos0Attr().Set(Gf.Vec3f(0.0, 0.0, cylinder_height/2))
-    attachment_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, -rope_link_half_length))
-    attachment_joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
-    attachment_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
-    
+    attach_path = mechanism_path.AppendChild("cylinder1_rope_attachment")
+    attach_joint = UsdPhysics.FixedJoint.Define(stage, attach_path)
+    attach_joint.GetBody0Rel().SetTargets([cylinder1_path])
+    attach_joint.GetBody1Rel().SetTargets([first_capsule_path])
+    attach_joint.CreateLocalPos0Attr().Set(Gf.Vec3f(cylinder_radius + rope_link_radius, 0.0, 0.0))
+    attach_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    attach_joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0))
+    attach_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
+
     return mechanism_path, drive1, drive2
 
 
@@ -400,6 +466,15 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                     model = ui.FloatSlider(min=-2*math.pi, max=2*math.pi, step=0.01).model
                     model.set_value(joint_value)
                     model.add_value_changed_fn(on_value_changed)
+            # Additional slider to control both cylinders together (opposite directions)
+            cylinder_control = {"pos": 0.0}
+            with ui.HStack():
+                ui.Label("rollers", width=150)
+                def on_cyl_value_changed(model):
+                    cylinder_control["pos"] = model.get_value_as_float()
+                cyl_model = ui.FloatSlider(min=-1000.0, max=1000.0, step=1).model
+                cyl_model.set_value(0.0)
+                cyl_model.add_value_changed_fn(on_cyl_value_changed)
 
     # Robot entity configuration
     robot_entity_cfg = SceneEntityCfg(
@@ -417,23 +492,23 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     drives2 = []
     
     for env_idx in range(scene.num_envs):
-        # Initial end effector pose
-        initial_transform = Gf.Matrix4d()
-        initial_transform.SetTranslate(Gf.Vec3d(0.5, 0.0, 0.5))
-        
-        mechanism_path, drive1, drive2 = create_rope_mechanism_at_ee(stage, initial_transform, env_idx)
-        mechanisms.append(mechanism_path)
-        drives1.append(drive1)
-        drives2.append(drive2)
+        # Get tool0 prim path for this env and ensure it exists
+        tool0_path = Sdf.Path(f"/World/envs/env_{env_idx}/Robot/tool0")
+        if not stage.GetPrimAtPath(tool0_path).IsValid():
+            print(f"[WARN] tool0 prim not found at {tool0_path}. Rope mechanism skipped for env {env_idx}.")
+            continue
 
-    # Don't create fixed joints - let the mechanism be independent
+    # Create mechanism parented to tool0 with a small forward offset
+    mechanism_path, drive1, drive2 = create_rope_mechanism_at_ee(stage, tool0_path, env_idx)
+    mechanisms.append(mechanism_path)
+    drives1.append(drive1)
+    drives2.append(drive2)
 
     sim_dt = sim.get_physics_dt()
     count = 0
     position1 = 0.0
     position2 = 0.0
     cylinder_speed = 5.0
-    cylinder_direction = 1.0
 
     while simulation_app.is_running():
         # robot control
@@ -443,11 +518,16 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
         # Update cylinder positions
         position1 += cylinder_speed * 0.01
-        position2 += cylinder_speed * 0.01 * cylinder_direction
-        
-        for drive1, drive2 in zip(drives1, drives2):
-            drive1.CreateTargetPositionAttr().Set(position1)
-            drive2.CreateTargetPositionAttr().Set(position2)
+        position2 -= cylinder_speed * 0.01  # opposite direction
+        # If user moves the GUI slider, adjust joint target VELOCITIES (opposite directions)
+        if 'cylinder_control' in locals():
+            slider_vel = cylinder_control["pos"]
+            for d1, d2 in zip(drives1, drives2):
+                d1.CreateTargetVelocityAttr().Set(slider_vel)
+                d2.CreateTargetVelocityAttr().Set(-slider_vel)
+        for d1, d2 in zip(drives1, drives2):
+            d1.CreateTargetPositionAttr().Set(position1)
+            d2.CreateTargetPositionAttr().Set(position2)
 
         scene.write_data_to_sim()
         sim.step()
@@ -463,6 +543,30 @@ def main():
     
     scene_cfg = TableTopSceneCfg(num_envs=args_cli.num_envs, env_spacing=2.0)
     scene = InteractiveScene(scene_cfg)
+    
+    # Optional: filter collisions across environments when not using GPU replicate physics
+    try:
+        # Avoid duplicate global_group creation by skipping if it already exists
+        collisions_group_path = Sdf.Path("/World/collisions/global_group")
+        if not sim.stage.GetPrimAtPath(collisions_group_path).IsValid():
+            env_roots = [f"/World/envs/env_{i}" for i in range(scene.num_envs)]
+            scene.filter_collisions(env_roots)
+        else:
+            print("[INFO] Cross-env collision group already present; skipping filter_collisions.")
+    except Exception as e:
+        print(f"[WARN] Could not apply cross-env collision filtering:\n\t{e}")
+    
+    # Fix invalid mass/inertia warnings on robot flange and tool0 by setting a positive mass
+    try:
+        for env_idx in range(scene.num_envs):
+            for link_name in ["flange", "tool0"]:
+                link_path = Sdf.Path(f"/World/envs/env_{env_idx}/Robot/{link_name}")
+                prim = sim.stage.GetPrimAtPath(link_path)
+                if prim.IsValid():
+                    mass_api = UsdPhysics.MassAPI.Apply(prim)
+                    mass_api.CreateMassAttr().Set(1.0)
+    except Exception as e:
+        print(f"[WARN] Could not set mass on robot links: {e}")
     
     # Enable physics
     UsdPhysics.Scene.Define(sim.stage, "/physicsScene")
