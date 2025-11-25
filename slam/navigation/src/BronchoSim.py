@@ -475,6 +475,10 @@ Viewer.ViewpointZ: -1.8
         # CAMERA
         self.depth_bool = self.app_config["CAMERA"]["depth_bool"]
         self.save_vis_depth = self.app_config["CAMERA"]["save_vis_depth_bool"]
+        self.orientation_smoothing = self.app_config["CAMERA"].getfloat(
+            "orientation_smoothing", fallback=0.2
+        )
+        self.orientation_smoothing = min(max(self.orientation_smoothing, 0.0), 1.0)
 
         # BREATHING
         self.breathing_enabled = self.app_config["BREATHING"].getboolean(
@@ -554,6 +558,10 @@ Viewer.ViewpointZ: -1.8
         # Compute the Frenet-Serret frame using the MRF algorithm
         self.normals, self.binormals = compute_MRF(self.tangents)
 
+        # Initialize smoothed orientation vectors for camera smoothing
+        self.smoothed_tangent = self.tangents[0].copy() if len(self.tangents) > 0 else None
+        self.smoothed_normal = self.normals[0].copy() if len(self.normals) > 0 else None
+
         # Set first and end point
         self.start_point = self.interpolated_points[0]
         self.end_point = self.interpolated_points[-1]
@@ -563,6 +571,10 @@ Viewer.ViewpointZ: -1.8
             0
         ]  # Setting the first point as the start
         self.robot_tip_node = None
+
+        # Initialize traversal indices for camera/robot updates
+        self.current_index = 0
+        self.next_index = 1 if len(self.interpolated_points) > 1 else 0
 
         # Compute line length
         self.line_length = curvilinear_abscissa(
@@ -579,6 +591,10 @@ Viewer.ViewpointZ: -1.8
         self.tangents = np.array([fs[:3, 0] for fs in fs_frames])
         self.normals = np.array([fs[:3, 1] for fs in fs_frames])
         self.binormals = np.array([fs[:3, 2] for fs in fs_frames])
+
+    # Initialize smoothed orientation vectors for camera smoothing
+        self.smoothed_tangent = self.tangents[0].copy() if len(self.tangents) > 0 else None
+        self.smoothed_normal = self.normals[0].copy() if len(self.normals) > 0 else None
 
         # Set first and end point
         self.start_point = self.interpolated_points[0]
@@ -1141,9 +1157,48 @@ Viewer.ViewpointZ: -1.8
         tangent = tangent_current * (1 - alpha) + tangent_next * alpha
         normal = normal_current * (1 - alpha) + normal_next * alpha
 
-        # Normalize the interpolated vectors
-        tangent = tangent / np.linalg.norm(tangent)
-        normal = normal / np.linalg.norm(normal)
+        # Apply exponential smoothing to reduce jitter when indices change rapidly
+        smoothing = getattr(self, "orientation_smoothing", 0.0)
+        if smoothing > 0.0:
+            if not hasattr(self, "smoothed_tangent") or self.smoothed_tangent is None:
+                self.smoothed_tangent = tangent
+            else:
+                self.smoothed_tangent = (
+                    (1 - smoothing) * self.smoothed_tangent + smoothing * tangent
+                )
+
+            if not hasattr(self, "smoothed_normal") or self.smoothed_normal is None:
+                self.smoothed_normal = normal
+            else:
+                self.smoothed_normal = (
+                    (1 - smoothing) * self.smoothed_normal + smoothing * normal
+                )
+
+            tangent = self.smoothed_tangent
+            normal = self.smoothed_normal
+
+        # Normalize and orthogonalize the interpolated vectors
+        tangent_norm = np.linalg.norm(tangent)
+        if tangent_norm > 1e-6:
+            tangent = tangent / tangent_norm
+        else:
+            tangent = np.array([1.0, 0.0, 0.0])
+
+        # Ensure the normal vector remains orthogonal to the tangent
+        normal = normal - tangent * np.dot(normal, tangent)
+        normal_norm = np.linalg.norm(normal)
+        if normal_norm > 1e-6:
+            normal = normal / normal_norm
+        else:
+            fallback = np.array([0.0, 0.0, 1.0])
+            if abs(np.dot(fallback, tangent)) > 0.9:
+                fallback = np.array([0.0, 1.0, 0.0])
+            normal = np.cross(tangent, np.cross(fallback, tangent))
+            normal = normal / np.linalg.norm(normal)
+
+        if smoothing > 0.0:
+            self.smoothed_tangent = tangent
+            self.smoothed_normal = normal
 
         # Set the camera position at the robot tip
         self.camera.setPos(LVector3f(*self.robot_tip))  # type: ignore
@@ -1215,7 +1270,28 @@ Viewer.ViewpointZ: -1.8
             distances = np.linalg.norm(
                 self.interpolated_points - self.robot_tip, axis=1
             )
-            closest_index = np.argmin(distances)
+            closest_index = int(np.argmin(distances))
+
+            # Keep shared traversal indices in sync for camera/orientation logic with monotonic updates
+            if not hasattr(self, "current_index"):
+                self.current_index = closest_index
+
+            if forward:
+                if closest_index >= self.current_index:
+                    self.current_index = closest_index
+            else:
+                if closest_index <= self.current_index:
+                    self.current_index = closest_index
+
+            self.current_index = int(
+                np.clip(self.current_index, 0, len(self.interpolated_points) - 1)
+            )
+            if forward:
+                self.next_index = min(
+                    self.current_index + 1, len(self.interpolated_points) - 1
+                )
+            else:
+                self.next_index = max(self.current_index - 1, 0)
 
             if self.view_mode == "tp" and self.live_mode == False:
                 # Redraw the path up to the robot tip
@@ -1577,9 +1653,7 @@ Viewer.ViewpointZ: -1.8
         self.dataset_buffer_pose.append(pose_data)
         
         self.dataset_frame_count += 1
-        if self.dataset_frame_count % 100 == 0:
-            print(f"\r[DATASET] Collected {self.dataset_frame_count} frames...", end="", flush=True)
-
+        
     def collect_sequence_dataset_finalize(self):
         """
         Saves the buffered data to .npy files and cleans up.
