@@ -9,87 +9,102 @@ import numpy as np
 # CONFIGURATIONS
 # ==============================================================================
 MODEL_CONFIGS = {
-    'tiny': {
-        'embed_dim': 16,       # Small dimension for fast debugging
+    's': {
+        'embed_dim': 16,
         'num_heads': 2,
         'vi_layers': 1,
         'gat_heads': 2,
-        'lstm_hidden': 32
+        'lstm_hidden': 32,
+        'num_particles': 20  
     },
-    'big': {
-        'embed_dim': 512,      # Standard dimension for deployment
-        'num_heads': 8,
-        'vi_layers': 6,
-        'gat_heads': 4,
-        'lstm_hidden': 256
+    'm': {
+        'embed_dim': 256,   
+        'num_heads': 4,   
+        'vi_layers': 4,
+        'gat_heads': 4,     
+        'lstm_hidden': 128,
+        'num_particles': 20
+    },
+    'l': {
+        'embed_dim': 1024,
+        'num_heads': 16,
+        'vi_layers': 12,
+        'gat_heads': 8,
+        'lstm_hidden': 512,
+        'num_particles': 20
     }
 }
 
 # ==============================================================================
-# PART 1: DIFFERENTIABLE PHYSICS LAYER (The "BREA" Constraint)
+# PART 1: DIFFERENTIABLE PHYSICS LAYER (SDF + Gravity Patch)
 # ==============================================================================
 class DifferentiableSDFConstraint(nn.Module):
     """
-    This layer enforces the geometric prior: "The bronchoscope must be inside the lungs."
-    It calculates wall violations and pushes predictions back inside using gradients.
+    Enforces geometric priors. 
+    Patch: Adds 'Gravity Well' for points outside the voxel grid.
     """
     def __init__(self, sdf_volume_tensor, grid_transform_matrix):
-        """
-        sdf_volume_tensor: (D, H, W) float32 tensor from lung_sdf.pt
-        grid_transform_matrix: (4, 4) float32 matrix from grid_transform.npy
-        """
         super().__init__()
         
-        # Ensure shape is (1, 1, D, H, W) for grid_sample
         if sdf_volume_tensor.dim() == 3:
             sdf_volume_tensor = sdf_volume_tensor.unsqueeze(0).unsqueeze(0)
             
         self.register_buffer('sdf', sdf_volume_tensor)
         
-        # We need World (mm) -> Voxel Index. Input is usually Voxel -> World.
+        # World (mm) -> Voxel Index
         inv_transform = torch.linalg.inv(grid_transform_matrix)
         self.register_buffer('world_to_vox_transform', inv_transform)
         
-        # Store grid dimensions to normalize coordinates to [-1, 1]
         depth, height, width = sdf_volume_tensor.shape[2:]
         self.grid_dims = torch.tensor([width, height, depth], device=sdf_volume_tensor.device)
 
     def world_to_norm_grid(self, points):
+        # points: (B * K, 3)
         B = points.shape[0]
         ones = torch.ones(B, 1, device=points.device)
         pts_homo = torch.cat([points, ones], dim=1)
         
-        # World -> Voxel
         vox_coords = (self.world_to_vox_transform @ pts_homo.T).T
         vox_xyz = vox_coords[:, :3]
         
-        # Normalize to [-1, 1]
+        # Normalize to [-1, 1] for grid_sample
         norm_coords = 2.0 * (vox_xyz / (self.grid_dims - 1.0)) - 1.0
         return norm_coords.view(1, 1, 1, B, 3)
 
     def forward(self, pred_positions):
-        # Enable gradient calculation for the "Push" logic
         if not pred_positions.requires_grad:
             pred_positions.requires_grad_(True)
         
         # 1. Map World -> Grid
-        grid_coords = self.world_to_norm_grid(pred_positions)
+        grid_coords_raw = self.world_to_norm_grid(pred_positions) # (1, 1, 1, BK, 3)
         
-        # 2. Sample SDF
-        # padding_mode='zeros' is differentiable and safe.
-        # 'border' caused the double-backward error.
-        sdf_val = F.grid_sample(self.sdf, grid_coords, mode='bilinear', padding_mode='zeros', align_corners=True)
-        sdf_val = sdf_val.view(-1, 1)
+        # --- PATCH: GRAVITY WELL FOR OUT-OF-BOUNDS ---
+        # grid_sample returns 0 gradient for points outside [-1, 1].
+        # We manually calculate a penalty distance for these points.
+        
+        # Squeeze to (BK, 3) for distance calc
+        coords_flat = grid_coords_raw.view(-1, 3)
+        
+        # Calculate how far outside the [-1, 1] box we are
+        # max(0, |x| - 1)
+        dist_outside = torch.clamp(torch.abs(coords_flat) - 1.0, min=0.0)
+        gravity_force = torch.norm(dist_outside, dim=1, keepdim=True) # (BK, 1)
+        
+        # Create a gradient direction pointing back to center (0,0,0)
+        # We assume 0,0,0 is the center of the lung volume.
+        # This acts as a "rubber band" pulling lost particles back.
+        gravity_grad = -1.0 * coords_flat * (gravity_force > 0).float()
+        
+        # 2. Sample SDF (Standard Collision)
+        sdf_val = F.grid_sample(self.sdf, grid_coords_raw, mode='bilinear', padding_mode='zeros', align_corners=True)
+        sdf_val = sdf_val.view(-1, 1) # (BK, 1)
 
         # 3. Collision Logic (SDF > 0 is OUTSIDE)
-        violation = F.relu(sdf_val) 
+        violation = F.relu(sdf_val)
         
-        # 4. Compute Gradient (Wall Normal)
+        # 4. Compute Wall Normal
         grad_outputs = torch.ones_like(violation)
-        
         if violation.requires_grad:
-            # CRITICAL FIX: create_graph=False because we detach the result anyway.
-            # This avoids the "derivative for grid_sampler_3d_backward not implemented" error.
             sdf_grad = torch.autograd.grad(
                 outputs=violation, 
                 inputs=pred_positions, 
@@ -101,14 +116,24 @@ class DifferentiableSDFConstraint(nn.Module):
         else:
             sdf_grad = torch.zeros_like(pred_positions)
         
-        # 5. Apply Hard Constraint
-        # We detach() sdf_grad to treat the wall normal as a fixed geometric property.
-        # The network learns to minimize 'violation' (which is differentiable).
-        correction = violation * sdf_grad.detach() 
+        # 5. Apply Hard Constraints
+        # Correction A: Wall Push (Local SDF)
+        wall_correction = violation * sdf_grad.detach() 
         
-        constrained_pos = pred_positions - correction
+        # Correction B: Gravity Pull (Global Bounds)
+        # If far outside, sdf_grad is 0, so gravity takes over.
+        # We detach the direction but keep magnitude differentiable if needed, 
+        # or just treat it as a hard update step. Here we mimic the wall push logic.
+        gravity_correction = gravity_force * -gravity_grad.detach() # Push back towards center
+
+        # Combine
+        total_correction = wall_correction + (0.5 * gravity_correction)
+        constrained_pos = pred_positions - total_correction
         
-        return constrained_pos, violation
+        # Return violations for loss (include gravity penalty)
+        total_violation = violation + gravity_force
+        
+        return constrained_pos, total_violation
 
 # ==============================================================================
 # PART 2: VISUAL STREAM (Genie ST-ViViT Adaptation)
@@ -126,27 +151,17 @@ class SpatioTemporalBlock(nn.Module):
 
     def forward(self, x):
         # x: (B*T, N_patches, D)
-        
-        # 1. Spatial Attention
         attn_out, _ = self.spatial_attn(x, x, x)
         x = self.norm1(x + attn_out)
         
-        # 2. Reshape for Temporal Attention
-        # (B*T, N, D) -> (B, T, N, D) -> (B, N, T, D) -> (B*N, T, D)
         bt, n, d = x.shape
         b = bt // self.t_frames
-        
-        # Correct reshape logic for temporal dimension
         x = rearrange(x, '(b t) n d -> (b n) t d', b=b, t=self.t_frames)
         
-        # 3. Temporal Attention
         attn_out, _ = self.temporal_attn(x, x, x)
         x = self.norm2(x + attn_out)
         
-        # 4. Restore Shape
         x = rearrange(x, '(b n) t d -> (b t) n d', b=b)
-        
-        # 5. MLP
         x = self.norm3(x + self.mlp(x))
         return x
 
@@ -160,11 +175,11 @@ class STViViT(nn.Module):
         self.patch_size = 16
         self.patch_embed = nn.Conv2d(3, dim, kernel_size=self.patch_size, stride=self.patch_size)
         
-        # Calculate expected patches
+        # Calculate expected patches for the default config
         self.num_patches = (img_size // self.patch_size) ** 2
         
         # Learnable Positional Embeddings: (1, T, N, D)
-        # We initialize for the config img_size, but will interpolate if input differs
+        # We initialize for 128x128, but the forward pass will interpolate if input is larger
         self.pos_embed = nn.Parameter(torch.randn(1, t_frames, self.num_patches, dim))
         
         self.blocks = nn.ModuleList([
@@ -182,7 +197,7 @@ class STViViT(nn.Module):
         # Patch Embedding
         x = self.patch_embed(x) # (BT, D, h_patches, w_patches)
         
-        # Dynamic Positional Embedding Interpolation
+        # --- FIX: Dynamic Positional Embedding Interpolation ---
         curr_patches_h = x.shape[2]
         curr_patches_w = x.shape[3]
         curr_num_patches = curr_patches_h * curr_patches_w
@@ -190,27 +205,31 @@ class STViViT(nn.Module):
         x = x.flatten(2).transpose(1, 2) # (BT, N_curr, D)
         
         if curr_num_patches != self.num_patches:
-            # Interpolate pos_embed to match current input resolution
+            # The input video is NOT 128x128. We must interpolate the pos_embed.
             pos = self.pos_embed # (1, T, N, D)
             T_dim = pos.shape[1]
-            D_dim = pos.shape[3]
             
-            # Reshape to spatial grid
+            # 1. Reshape to spatial grid: (1, T, 8, 8, D) -> (T, D, 8, 8)
             orig_size = int(self.num_patches ** 0.5)
-            pos = rearrange(pos, '1 t (h w) d -> (1 t) d h w', h=orig_size, w=orig_size)
+            pos_grid = rearrange(pos, '1 t (h w) d -> (1 t) d h w', h=orig_size, w=orig_size)
             
-            # Interpolate
-            pos = F.interpolate(pos, size=(curr_patches_h, curr_patches_w), mode='bicubic', align_corners=False)
+            # 2. Interpolate to new size (e.g., 60x60)
+            pos_new = F.interpolate(
+                pos_grid, 
+                size=(curr_patches_h, curr_patches_w), 
+                mode='bicubic', 
+                align_corners=False
+            )
             
-            # Flatten back
-            pos = rearrange(pos, '(b t) d h w -> b t (h w) d', b=1, t=T_dim)
+            # 3. Flatten back: (T, D, H_new, W_new) -> (1, T, N_new, D)
+            pos = rearrange(pos_new, '(b t) d h w -> b t (h w) d', b=1, t=T_dim)
         else:
             pos = self.pos_embed
 
-        # Add Positional Embeddings
-        # pos shape: (1, T, N, D) -> expand to (B, T, N, D) -> flatten to (B*T, N, D)
+        # Expand to batch size and add
         pos = repeat(pos, '1 t n d -> (b t) n d', b=B)
         x = x + pos
+        # -------------------------------------------------------
         
         # Apply Transformer Blocks
         for block in self.blocks:
@@ -239,86 +258,109 @@ class MapEncoderGAT(nn.Module):
         self.pos_enc = nn.Linear(3, in_channels)
 
     def forward(self, node_pos, edge_index, edge_attr):
-        # Encode absolute positions
         x = self.pos_enc(node_pos)
-        # GAT Layers
         x = self.conv1(x, edge_index, edge_attr=edge_attr)
         x = F.elu(x)
         x = self.conv2(x, edge_index, edge_attr=edge_attr)
-        return x
+        return x # (Num_Nodes, D)
 
 # ==============================================================================
-# PART 4: MAIN ARCHITECTURE (DeepLungST)
+# PART 4: MAIN ARCHITECTURE (DeepLungST - Multi-Hypothesis)
 # ==============================================================================
 class DeepLungST(nn.Module):
-    def __init__(self, t_frames, sdf_volume_tensor, grid_transform_matrix, mode='tiny'):
+    def __init__(self, t_frames, sdf_volume_tensor, grid_transform_matrix, mode='s'):
         super().__init__()
         self.t_frames = t_frames
         self.config = MODEL_CONFIGS[mode]
         embed_dim = self.config['embed_dim']
+        self.K = self.config['num_particles'] # Number of particles
         
         # Encoders
         self.visual_encoder = STViViT(self.config, img_size=128, t_frames=t_frames)
         self.map_encoder = MapEncoderGAT(self.config, in_channels=11)
         
-        # Fusion (Cross-Attention)
+        # Improvement 3: Map Retrieval Projection Heads
+        self.visual_proj = nn.Linear(embed_dim, embed_dim)
+        self.map_proj = nn.Linear(embed_dim, embed_dim)
+        
+        # Fusion
         self.fusion = nn.MultiheadAttention(embed_dim, num_heads=self.config['num_heads'], batch_first=True)
         self.norm = nn.LayerNorm(embed_dim)
         
-        # Kinematics
+        # Kinematics (Particle Filter)
         self.kinematic_rnn = nn.LSTM(embed_dim, self.config['lstm_hidden'], batch_first=True)
+        
+        # Velocity Head: Outputs mean velocity + variance/noise scale
         self.velocity_head = nn.Linear(self.config['lstm_hidden'], 3)
+        self.noise_scale_head = nn.Linear(self.config['lstm_hidden'], 3)
         
         # Physics
         self.constraint = DifferentiableSDFConstraint(sdf_volume_tensor, grid_transform_matrix)
 
     def forward(self, video, map_nodes, map_edges, map_edge_attr, initial_pose=None):
         B = video.shape[0]
+        K = self.K
         
-        # A. Map Encoding
-        map_embed_single = self.map_encoder(map_nodes, map_edges, map_edge_attr)
-        map_embed = repeat(map_embed_single, 'n d -> b n d', b=B)
+        # 1. Map Encoding
+        map_nodes_embed = self.map_encoder(map_nodes, map_edges, map_edge_attr)
         
-        # B. Visual Encoding
+        # 2. Visual Encoding
         visual_tokens = self.visual_encoder(video)
         
-        # C. Fusion
-        context, _ = self.fusion(visual_tokens, map_embed, map_embed)
-        context = self.norm(context + visual_tokens)
+        # --- Projection Heads ---
+        visual_emb_global = visual_tokens.mean(dim=1) 
+        visual_feat_proj = self.visual_proj(visual_emb_global) 
+        map_feat_proj = self.map_proj(map_nodes_embed)         
         
-        # D. Kinematics
-        rnn_out, _ = self.kinematic_rnn(context)
-        velocities = self.velocity_head(rnn_out)
+        # 3. Expand for Particle Filter
+        map_embed_expanded = repeat(map_nodes_embed, 'n d -> (b k) n d', b=B, k=K)
+        visual_tokens_expanded = repeat(visual_tokens, 'b t d -> (b k) t d', k=K)
         
-        # E. Integration & Constraint
-        if initial_pose is not None: 
-            current_pos = initial_pose 
-        else:
-            current_pos = torch.zeros(B, 3, device=video.device)
+        # 4. Fusion
+        context, _ = self.fusion(visual_tokens_expanded, map_embed_expanded, map_embed_expanded)
+        context = self.norm(context + visual_tokens_expanded) 
+        
+        # 5. Kinematics
+        rnn_out, _ = self.kinematic_rnn(context) 
+        velocities = self.velocity_head(rnn_out)   
+        noise_scales = torch.sigmoid(self.noise_scale_head(rnn_out))
+        
+        # 6. Integration & Constraint Loop
+        if initial_pose is None:
+            initial_pose = torch.zeros(B, 3, device=video.device)
+            
+        # --- FIX: Handling Independent Particle Continuation ---
+        # If initial_pose is (B, 3), we spawn K particles (Start of inference/Training).
+        # If initial_pose is (B, K, 3), we resume existing K particles (Mid-inference).
+        if initial_pose.dim() == 3: # shape (B, K, 3)
+            current_pos = rearrange(initial_pose, 'b k d -> (b k) d')
+        else: # shape (B, 3)
+            current_pos = repeat(initial_pose, 'b d -> (b k) d', k=K)
+            # Add initial noise only when spawning new particles
+            current_pos = current_pos + (torch.randn_like(current_pos) * 2.0)
         
         traj_pos = []
         violations = []
         
         for t in range(self.t_frames):
-            vel = velocities[:, t, :]
-            proposal = current_pos + vel
+            vel_mean = velocities[:, t, :]
+            noise_sigma = noise_scales[:, t, :]
+            
+            # Stochastic Step
+            step_noise = torch.randn_like(vel_mean) * noise_sigma
+            proposal = current_pos + vel_mean + step_noise
+            
+            # Physics Constraints
             constrained, viol = self.constraint(proposal)
+            
             current_pos = constrained
             traj_pos.append(current_pos)
             violations.append(viol)
             
-        return torch.stack(traj_pos, dim=1), torch.stack(violations, dim=1)
-
-# ==============================================================================
-# PART 5: LOSS FUNCTION
-# ==============================================================================
-def deep_lung_loss(pred_traj, gt_traj, violations, sdf_lambda=10.0):
-    loss_pose = F.mse_loss(pred_traj, gt_traj)
-    loss_geo = violations.mean()
-    
-    vel = pred_traj[:, 1:] - pred_traj[:, :-1]
-    accel = vel[:, 1:] - vel[:, :-1]
-    loss_smooth = torch.mean(accel**2)
-    
-    total_loss = loss_pose + (sdf_lambda * loss_geo) + (0.1 * loss_smooth)
-    return total_loss, {"pose": loss_pose, "geo": loss_geo, "smooth": loss_smooth}
+        traj_stack = torch.stack(traj_pos, dim=1) 
+        viol_stack = torch.stack(violations, dim=1) 
+        
+        traj_out = rearrange(traj_stack, '(b k) t d -> b k t d', b=B, k=K)
+        viol_out = rearrange(viol_stack, '(b k) t d -> b k t d', b=B, k=K)
+        
+        return traj_out, viol_out, visual_feat_proj, map_feat_proj

@@ -3,6 +3,7 @@ import glob
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+import cv2  # Added for resizing
 
 class DeepLungDataset(Dataset):
     """
@@ -133,6 +134,27 @@ class DeepLungDataset(Dataset):
         video_clip = vid_mmap[start_idx : end_idx] # Shape: (T, H, W, 3) usually
         traj_clip  = traj_mmap[start_idx : end_idx] # Shape: (T, 7)
         
+        # --- RESIZING BLOCK START ---
+        # Resize frames to 128x128
+        resized_frames = []
+        for frame in video_clip:
+            # Check format: (3, H, W) vs (H, W, 3)
+            # cv2.resize expects HWC
+            if frame.shape[0] == 3: 
+                # CHW -> HWC
+                frame = np.transpose(frame, (1, 2, 0))
+                frame = cv2.resize(frame, (128, 128))
+                # HWC -> CHW
+                frame = np.transpose(frame, (2, 0, 1))
+            else:
+                # HWC
+                frame = cv2.resize(frame, (128, 128))
+            resized_frames.append(frame)
+        
+        # Replace original clip with resized version
+        video_clip = np.array(resized_frames)
+        # --- RESIZING BLOCK END ---
+        
         # 2. Convert to Tensor and Float
         # Copy is necessary here because torch doesn't support negative strides 
         # which sometimes happen with mmap slicing, and to detach from file handle.
@@ -156,7 +178,7 @@ class DeepLungDataset(Dataset):
         gt_rot = traj_tensor[:, 3:]
         
         return {
-            "video": video_tensor,   # (T, 3, H, W)
+            "video": video_tensor,   # (T, 3, 128, 128)
             "gt_pos": gt_pos,        # (T, 3)
             "gt_rot": gt_rot         # (T, 4)
         }
@@ -180,7 +202,7 @@ if __name__ == "__main__":
     if len(ds) > 0:
         sample = ds[0]
         print("\nSample 0 Shapes:")
-        print(f"  Video: {sample['video'].shape} (Expected: 16, 3, H, W)")
+        print(f"  Video: {sample['video'].shape} (Expected: 16, 3, 128, 128)")
         print(f"  Pose:  {sample['gt_pos'].shape} (Expected: 16, 3)")
         print(f"  Min/Max Video: {sample['video'].min():.2f} / {sample['video'].max():.2f}")
     else:

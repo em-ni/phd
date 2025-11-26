@@ -7,8 +7,7 @@ import cv2
 import pyvista as pv
 from tqdm import tqdm
 
-# --- FIX 1: Force Headless Mode for WSL ---
-# This prevents PyVista from looking for a monitor and crashing
+# Force Headless Mode
 pv.OFF_SCREEN = True
 os.environ["PYVISTA_OFF_SCREEN"] = "true"
 os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "1" 
@@ -16,14 +15,13 @@ os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "1"
 from deep_lung_st import DeepLungST
 
 # ==============================================================================
-# VISUALIZATION LOGIC
+# VISUALIZATION LOGIC (MULTI-HYPOTHESIS)
 # ==============================================================================
-def save_long_video(video_tensor, pred_traj, gt_traj, lung_mesh, save_path):
+def save_long_video(video_tensor, pred_traj_particles, gt_traj, lung_mesh, save_path):
     print(f"[VIZ] Generating video: {save_path}")
     
-    # Data is already on CPU from the main loop
     video_np = video_tensor.numpy()
-    pred_np = pred_traj.numpy()
+    pred_np = pred_traj_particles.numpy() # Shape: (N, K, 3)
     gt_np = gt_traj.numpy()
     
     N, C, H, W = video_np.shape
@@ -36,12 +34,14 @@ def save_long_video(video_tensor, pred_traj, gt_traj, lung_mesh, save_path):
     pv.set_plot_theme("document")
     plotter = pv.Plotter(off_screen=True, window_size=(1000, 600))
     
+    # Setup Camera/Mesh
     if lung_mesh:
-        plotter.add_mesh(lung_mesh, color='wheat', opacity=0.25, label='Lungs CAD')
+        plotter.add_mesh(lung_mesh, color='wheat', opacity=0.15, label='Lungs CAD')
         center = np.array(lung_mesh.center)
         bounds = lung_mesh.bounds
         max_dim = max(bounds[1]-bounds[0], bounds[3]-bounds[2], bounds[5]-bounds[4])
-        cam_pos = (center[0], center[1] - max_dim * 1.5, center[2] + max_dim * 0.2)
+        # Pull camera back further to see the spread
+        cam_pos = (center[0], center[1] - max_dim * 1.8, center[2] + max_dim * 0.3)
         plotter.camera.position = cam_pos
         plotter.camera.focal_point = center
         plotter.camera.up = (0, 0, 1)
@@ -67,21 +67,35 @@ def save_long_video(video_tensor, pred_traj, gt_traj, lung_mesh, save_path):
         frame_img = cv2.cvtColor(frame_img, cv2.COLOR_RGB2BGR)
         frame_img = cv2.resize(frame_img, (out_w_video, out_h), interpolation=cv2.INTER_NEAREST)
         
+        # 1. Draw Ground Truth (Green Tube)
         if t > 1:
             points_gt = gt_np[:t+1]
             if len(points_gt) > 1:
-                tube_gt = pv.lines_from_points(points_gt).tube(radius=1.0)
+                tube_gt = pv.lines_from_points(points_gt).tube(radius=1.5)
                 plotter.add_mesh(tube_gt, color='green', name='gt_trace')
 
+        # 2. Draw ALL Independent Particles (Cyan Fibers)
+        # We draw the FULL history for each particle independently
+        K = pred_np.shape[1]
         if t > 1:
-            points_pred = pred_np[:t+1]
-            if len(points_pred) > 1:
-                tube_pred = pv.lines_from_points(points_pred).tube(radius=1.5)
-                plotter.add_mesh(tube_pred, color='blue', name='pred_trace')
+            for k in range(K):
+                # Get full history for particle k up to time t
+                points_p = pred_np[:t+1, k]
+                
+                if len(points_p) > 1:
+                    # Thin radius, slight transparency to show density of hypotheses
+                    tube_p = pv.lines_from_points(points_p).tube(radius=0.4)
+                    # Unique name allows PyVista to replace the actor instead of adding new ones
+                    plotter.add_mesh(tube_p, color='cyan', opacity=0.6, name=f'p_trace_{k}')
         
-        plotter.add_mesh(pv.Sphere(radius=1.5, center=gt_np[t]), color='green', name='gt_tip')
-        plotter.add_mesh(pv.Sphere(radius=1.5, center=pred_np[t]), color='blue', name='pred_tip')
+        # Draw Tips (Spheres)
+        plotter.add_mesh(pv.Sphere(radius=2.0, center=gt_np[t]), color='green', name='gt_tip')
+        
+        # Draw all particle tips as small dots
+        for k in range(K):
+             plotter.add_mesh(pv.Sphere(radius=0.8, center=pred_np[t, k]), color='cyan', name=f'p_tip_{k}')
 
+        # 4. Composite Image
         img_3d = plotter.screenshot(return_img=True, transparent_background=False)
         img_3d = cv2.resize(img_3d, (out_w_3d, out_h))
         img_3d = cv2.cvtColor(img_3d, cv2.COLOR_RGB2BGR)
@@ -92,7 +106,7 @@ def save_long_video(video_tensor, pred_traj, gt_traj, lung_mesh, save_path):
         cv2.rectangle(overlay, (out_w_video, 0), (out_w_video + 400, 50), (255, 255, 255), -1)
         cv2.addWeighted(overlay, 0.6, combined, 0.4, 0, combined)
         cv2.putText(combined, f"Frame: {t}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(combined, "Blue: Prediction | Green: GT", (out_w_video + 10, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+        cv2.putText(combined, "Cyan: K-Hypotheses | Green: Ground Truth", (out_w_video + 10, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
         out.write(combined)
     
     plotter.close()
@@ -107,7 +121,6 @@ def run_long_inference(args):
     
     static_dir = os.path.join(args.data_root, "static")
     
-    # Resolve Lung Mesh Path
     lung_obj_path = os.path.join("patient", "lungs.obj")
     if not os.path.exists(lung_obj_path):
         lung_obj_path = os.path.join(static_dir, "lungs.obj")
@@ -116,8 +129,6 @@ def run_long_inference(args):
     if os.path.exists(lung_obj_path):
         print(f"[INFO] Loading 3D Lung Mesh from {lung_obj_path}")
         lung_mesh = pv.read(lung_obj_path)
-    else:
-        print("[WARNING] No lungs.obj found. Visualization will be trajectory only.")
 
     # Load Static Tensors
     try:
@@ -141,7 +152,6 @@ def run_long_inference(args):
     model.load_state_dict(torch.load(ckpt_path, map_location=device))
     model.eval()
 
-    # Find Sequences
     sequences_dir = os.path.join(args.data_root, "test")
     seq_folders = sorted(glob.glob(os.path.join(sequences_dir, "seq_*")))
     
@@ -157,58 +167,63 @@ def run_long_inference(args):
         print(f"\n[INFO] Processing Sequence: {os.path.basename(seq_dir)}")
         
         try:
-            print("  > Loading Numpy files...")
             full_video_np = np.load(os.path.join(seq_dir, "video.npy"))
             full_traj_np = np.load(os.path.join(seq_dir, "trajectory.npy"))
-            print(f"  > Loaded {len(full_video_np)} frames.")
         except Exception as e:
             print(f"Skipping {seq_dir}: {e}")
             continue
 
-        # --- FIX 2: VRAM Optimization ---
-        # Keep the main video tensor on CPU to prevent OOM
         video_tensor = torch.from_numpy(full_video_np).float()
         if video_tensor.shape[-1] == 3: 
             video_tensor = video_tensor.permute(0, 3, 1, 2)
         video_tensor = (video_tensor / 127.5) - 1.0
         
-        # Ground truth can go to GPU (it's small, just coordinates)
         gt_pos_tensor = torch.from_numpy(full_traj_np[:, :3]).float().to(device)
         
         N_frames = video_tensor.shape[0]
         T = args.t_frames
         
         full_pred_traj = []
+        
+        # Start with a single point for Ground Truth (1, 3)
+        # The model will spawn K particles in the first iteration
         current_tracker_pos = gt_pos_tensor[0].unsqueeze(0) 
         
         print("  > Starting Inference Loop...")
         for t in range(0, N_frames - T + 1, T):
             
-            # --- FIX 2 (Cont.): Stream Batch to GPU ---
-            # Only move the small chunk we need right now
             batch_video = video_tensor[t : t+T].unsqueeze(0).to(device) 
             
             with torch.no_grad():
-                pred_block, _ = model(batch_video, node_pos, edge_index, edge_attr, current_tracker_pos)
+                # Unpack 4 values
+                pred_block, _, _, _ = model(batch_video, node_pos, edge_index, edge_attr, current_tracker_pos)
             
-            # Move result back to CPU immediately to free VRAM
-            pred_block_cpu = pred_block[0].cpu()
+            # pred_block shape: (B, K, T, 3)
+            # Store results: permute to (T, K, 3) for appending
+            pred_block_cpu = pred_block[0].cpu().permute(1, 0, 2)
             full_pred_traj.append(pred_block_cpu)
             
-            # Update tracker state (keep on device for next iteration)
-            current_tracker_pos = pred_block[:, -1, :] 
+            # --- CRITICAL FIX FOR INDEPENDENCE ---
+            # We take the K positions at the last timestep of this window
+            # and pass them DIRECTLY to the next window.
+            # Shape: (1, K, 3)
+            # We DO NOT average them.
+            current_tracker_pos = pred_block[:, :, -1, :]
         
         if len(full_pred_traj) > 0:
-            full_pred_traj = torch.cat(full_pred_traj, dim=0) # (N_processed, 3) on CPU
+            full_pred_traj = torch.cat(full_pred_traj, dim=0) # (N_total, K, 3)
             
             valid_len = full_pred_traj.shape[0]
-            valid_gt = gt_pos_tensor[:valid_len].cpu() # Move GT to CPU for metric calc
-            valid_video = video_tensor[:valid_len]     # Already on CPU
+            valid_gt = gt_pos_tensor[:valid_len].cpu()
+            valid_video = video_tensor[:valid_len]
             
-            ade = torch.norm(full_pred_traj - valid_gt, dim=1).mean().item()
-            print(f"  > Full Sequence ADE: {ade:.2f} mm")
+            # Calculate Mean ADE for logging (just for info)
+            # But the video will show the full spread
+            mean_traj = full_pred_traj.mean(dim=1)
+            ade = torch.norm(mean_traj - valid_gt, dim=1).mean().item()
+            print(f"  > Full Sequence Mean ADE: {ade:.2f} mm")
             
-            save_name = os.path.join(args.output_dir, f"{os.path.basename(seq_dir)}_ADE_{ade:.1f}.mp4")
+            save_name = os.path.join(args.output_dir, f"{os.path.basename(seq_dir)}_Particles.mp4")
             save_long_video(valid_video, full_pred_traj, valid_gt, lung_mesh, save_name)
         else:
             print("  > Sequence too short.")
@@ -218,7 +233,7 @@ if __name__ == "__main__":
     parser.add_argument('--data_root', type=str, default='./dataset')
     parser.add_argument('--checkpoint_dir', type=str, default='./checkpoints')
     parser.add_argument('--output_dir', type=str, default='./dataset/test/results')
-    parser.add_argument('--model_mode', type=str, default='tiny', choices=['tiny', 'big'])
+    parser.add_argument('--model_mode', type=str, default='s', choices=['s', 'm', 'l'])
     parser.add_argument('--t_frames', type=int, default=16)
     parser.add_argument('--num_viz', type=int, default=1)
     
