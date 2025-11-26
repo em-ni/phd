@@ -1,11 +1,11 @@
-# navigation
+# BronchoSim
 Before proceeding you need to have:
 - a solid of the environment in .stl format
 - FreeCAD
 - gmsh
 - vmtk
 
-How to prepare the files needed for the navigation simulation:
+How to prepare the files needed for the BronchoSim simulation:
 - get the CAD of the environment (e.g. lung model.stl)
 - convert .stl to .vtk:
     - open FreeCAD and import the STL file.
@@ -27,7 +27,7 @@ How to prepare the files needed for the navigation simulation:
     - press q
     - then select the start point(s) of the centerline pressing space
     - press q
-- get the negative solid for first person view navigation:
+- get the negative solid for first person view BronchoSim:
     - open the part menu
     - import the .obj file of the model
     - create shape from mesh for the imported model

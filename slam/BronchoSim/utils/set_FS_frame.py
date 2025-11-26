@@ -936,16 +936,16 @@ if __name__ == "__main__":
     #         [0.0, 0.0, 0.0, 1.0],
     #     ]
     # )
-    # input_file = "/home/emanuele/Desktop/github/phd/slam/navigation/utils/tum.txt"
-    # output_file = "/home/emanuele/Desktop/github/phd/slam/navigation/utils/fs.txt"
-    # ref_centerline_fs_file = "/home/emanuele/Desktop/github/phd/slam/navigation/data/mesh/lungs/sim/centerlines/b1_fs.txt"
+    # input_file = "/home/emanuele/Desktop/github/phd/slam/BronchoSim/utils/tum.txt"
+    # output_file = "/home/emanuele/Desktop/github/phd/slam/BronchoSim/utils/fs.txt"
+    # ref_centerline_fs_file = "/home/emanuele/Desktop/github/phd/slam/BronchoSim/data/mesh/lungs/sim/centerlines/b1_fs.txt"
     # print(
     #     convert_tum_to_fs(
     #         input_file, output_file, ref_centerline_fs_file, convention="wTc"
     #     )
     # )
 
-    all_vtp = "/home/emanuele/Desktop/github/phd/slam/navigation/data/mesh/lungs/sim/centerlines"
+    all_vtp = "/home/emanuele/Desktop/github/phd/slam/BronchoSim/data/mesh/lungs/sim/centerlines"
     visualize_multiple_paths_with_frames(
         all_vtp,
         num_frames_per_path=50,

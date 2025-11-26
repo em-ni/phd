@@ -15,7 +15,7 @@ Mono:
         - add the error term between the frame pose and the estimated frame (done)
 
 - Consider when centerline is made of multiple segments (done)
-    - New way to compute FS frame (done in navigation)
+    - New way to compute FS frame (done in BronchoSim)
     - New way to store the centerline frames in file (vector of vectors of matrices, each branch is a vector of matrices)
     - New way to handle the centerline in the map (same as above)
     - New way to select the candidate frame (compute the ca for each branch and select the one closet to the previous frame. Check if this makes sense)

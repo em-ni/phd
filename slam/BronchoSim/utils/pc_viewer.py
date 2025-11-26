@@ -31,7 +31,7 @@ class SimplePointCloudViewer(ShowBase):
         self.cam.setPos(0, -20, 5)
         self.cam.lookAt(0, 0, 0)
 
-        # Setup camera controls similar to navigation.py
+        # Setup camera controls similar to BronchoSim.py
         self.setupControls()
 
         # Setup lighting
@@ -78,7 +78,7 @@ class SimplePointCloudViewer(ShowBase):
         self.accept("wheel_up", self.zoom, [True])
         self.accept("wheel_down", self.zoom, [False])
 
-        # Mouse look on right-click (like in navigation.py)
+        # Mouse look on right-click (like in BronchoSim.py)
         self.accept("mouse3", self.startMouseLook)  # Right mouse button
         self.accept("mouse3-up", self.stopMouseLook)
 

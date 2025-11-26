@@ -30,7 +30,7 @@ valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --verbose -
 
 # Real time pose
 Currently the executable is sending the Tcw matrix to localhost:12345
-This is received by the navigation.py 
+This is received by the BronchoSim.py 
 
 # Things to try
 - change parameters to avoid tracking lost and initialization: 
