@@ -5,7 +5,7 @@
 - orbslam (repo: ORB_SLAM3, env: orbslam, run: ./Examples/Monocular/mono_realtime Vocabulary/ORBvoc.txt ./em/calibration_Misumi_200p.yaml)
     - in: camera frames 
     - out: camera pose, other orbslam things
-- navigation (repo: navigation , env: nav , run: python navigation.py -view tp -live on)
+- BronchoSim (repo: BronchoSim , env: nav , run: python BronchoSim.py -view tp -live on)
     - in: camera pose 
     - out: visualization in 3d cad (both fpv and tpv)
 - daq (repo: controllers (sensors), run: read_sensors
@@ -45,9 +45,9 @@ Terminal 1
 - open browser to http://localhost:65432 to visualize pressure sensors
 
 Terminal 2
-- cd ~/Desktop/github/navigation 
+- cd ~/Desktop/github/BronchoSim 
 - conda activate nav
-- python navigation.py -view tp -live on
+- python BronchoSim.py -view tp -live on
 
 Terminal 3
 - cd ~/Desktop/github/controllers

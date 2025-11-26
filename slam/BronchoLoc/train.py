@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 
 # Import the architecture and dataset class
 from deep_lung_st import DeepLungST, deep_lung_loss
-# Ensure BronchoSim.py or a separate utils file contains DeepLungDataset
 from deep_lung_dataset import DeepLungDataset 
 
 def train(args):
@@ -66,6 +65,10 @@ def train(args):
         grid_transform_matrix=grid_trans,
         mode=args.model_mode
     ).to(device)
+
+    # Print total trainable parameters
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"[INFO] Model Initialized with {total_params/1e6:.2f} Million Parameters.")
 
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.5)
