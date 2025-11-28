@@ -1,6 +1,6 @@
 #!/bin/bash
 # Usage: ./run_random_autopilot.sh N
-# Runs the simulation N times with random selection of 2 centerlines in autopilot mode
+# Runs the simulation N times with random selection of 3 centerlines in autopilot mode
 
 if [ -z "$1" ]; then
   echo "Usage: $0 N"

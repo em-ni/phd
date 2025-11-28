@@ -684,9 +684,7 @@ Viewer.ViewpointZ: -1.8
             self.setup_depth()
 
         if self.autopilot:
-            print(
-                "[INFO] Autopilot enabled. Starting continuous forward motion for full lungs inspection..."
-            )
+            print("[INFO] Autopilot enabled")
 
         if self.live_mode == True:
             self.setup_live_mode()
