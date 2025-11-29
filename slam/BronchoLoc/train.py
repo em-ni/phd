@@ -102,6 +102,10 @@ def train(args):
         norm_scale=norm_scale
     ).to(device)
 
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"[INFO] Trainable parameters: {total_params:,}")
+    
+
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.5)
 
@@ -172,8 +176,8 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_dir', type=str, default='./checkpoints')
     parser.add_argument('--model_mode', type=str, default='s', choices=['s', 'm', 'l'])
     parser.add_argument('--t_frames', type=int, default=16)
-    parser.add_argument('--batch_size', type=int, default=8)
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--sdf_lambda', type=float, default=10.0) 
     parser.add_argument('--workers', type=int, default=4)

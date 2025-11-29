@@ -19,19 +19,19 @@ MODEL_CONFIGS = {
         'num_particles': 20  
     },
     'm': {
-        'embed_dim': 256,
-        'num_heads': 4,
-        'vi_layers': 4,
-        'gat_heads': 4,
-        'lstm_hidden': 128,
+        'embed_dim': 1024,
+        'num_heads': 16,
+        'vi_layers': 12,
+        'gat_heads': 8,
+        'lstm_hidden': 512,
         'num_particles': 20
     },
     'l': {
-        'embed_dim': 512,
-        'num_heads': 8,
-        'vi_layers': 6,
-        'gat_heads': 4,
-        'lstm_hidden': 256,
+        'embed_dim': 2048,
+        'num_heads': 32,
+        'vi_layers': 24,
+        'gat_heads': 16,
+        'lstm_hidden': 1024,
         'num_particles': 20
     }
 }
