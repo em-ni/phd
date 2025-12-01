@@ -340,6 +340,18 @@ Viewer.ViewpointZ: -1.8
             self.tex = self.loader.loadTexture(tex_path)
             self.scene.setTexture(self.tex, 1)
             
+            # Load Normal Map
+            normal_path = tex_path.replace(".png", "_normal.png")
+            if os.path.exists(normal_path):
+                self.normal_tex = self.loader.loadTexture(normal_path)
+                # Stage 2 for normal map (p3d_Texture1 in shader)
+                ts_normal = TextureStage("normal")
+                ts_normal.setSort(2)
+                self.scene.setTexture(ts_normal, self.normal_tex)
+                print(f"[INFO] Applied Normal Map from {normal_path}")
+            else:
+                print(f"[WARNING] Normal map not found at {normal_path}")
+            
             # Load Shader
             triplanar_shader = Shader.load(
                 Shader.SL_GLSL,
