@@ -336,7 +336,7 @@ Viewer.ViewpointZ: -1.8
 
         # Load and apply texture with Triplanar Shader
         try:
-            tex_path = "data/textures/mucosa_diffuse.png"
+            tex_path = self.texture_name
             self.tex = self.loader.loadTexture(tex_path)
             self.scene.setTexture(self.tex, 1)
             
@@ -488,6 +488,7 @@ Viewer.ViewpointZ: -1.8
         self.videos_dir = self.app_config["PATHS"]["record_dir"]
         self.logs_dir = self.app_config["PATHS"]["logs_dir"]
         self.all_branches_bool = self.app_config["PATHS"]["all_branches_bool"]
+        self.texture_name = self.app_config["PATHS"]["texture_name"]
 
         # RECORD
         self.legacy_record_method = self.app_config["RECORD"].getboolean(
