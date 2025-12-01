@@ -328,34 +328,67 @@ Viewer.ViewpointZ: -1.8
 
         # Adjust material
         myMaterial = Material()  # type: ignore
-        myMaterial.setShininess(80)
-        myMaterial.setSpecular((0.9, 0.9, 0.9, 1))
+        myMaterial.setShininess(20.0) # Lower shininess for broader, wetter highlights
+        myMaterial.setSpecular((0.4, 0.3, 0.3, 1)) # Pinkish specular for tissue
         myMaterial.setAmbient((0.3, 0.3, 0.3, 1))
-        myMaterial.setDiffuse((0.7, 0.2, 0.2, 1))
+        myMaterial.setDiffuse((0.8, 0.8, 0.8, 1)) # White/Grey diffuse to let texture show through
         self.scene.setMaterial(myMaterial, 1)
+
+        # Load and apply texture with Triplanar Shader
+        try:
+            tex_path = "data/textures/mucosa_diffuse.png"
+            self.tex = self.loader.loadTexture(tex_path)
+            self.scene.setTexture(self.tex, 1)
+            
+            # Load Shader
+            triplanar_shader = Shader.load(
+                Shader.SL_GLSL,
+                vertex="shaders/triplanar.vert",
+                fragment="shaders/triplanar.frag"
+            )
+            self.scene.setShader(triplanar_shader)
+            
+            # Set Shader Inputs (Uniforms)
+            self.scene.setShaderInput("texScale", 0.05) # Adjust scale for triplanar (world units)
+            self.scene.setShaderInput("lightColor", Vec3(1.5, 1.5, 1.5)) # Match point light intensity
+            self.scene.setShaderInput("ambientColor", Vec3(0.2, 0.2, 0.2)) # Match ambient light
+            self.scene.setShaderInput("shininess", 20.0)
+            self.scene.setShaderInput("k_specular", Vec3(0.4, 0.3, 0.3))
+            self.scene.setShaderInput("k_diffuse", Vec3(0.8, 0.8, 0.8))
+            
+            # We need to update lightPos every frame in update_scene or attach it to camera?
+            # Ideally, we pass the camera position as lightPos.
+            # Since the light is attached to the camera, lightPos = cameraPos.
+            # We will update "lightPos" in the update loop.
+            
+            print(f"[INFO] Applied Triplanar Shader with texture {tex_path}")
+        except Exception as e:
+            print(f"[WARNING] Could not load shader/texture: {e}")
 
         # (Optional) enable auto-shader
         self.render.setShaderAuto()
 
         # Add a brighter ambient light
         ambientLight = AmbientLight("ambientLight")  # type: ignore
-        ambientLight.setColor((0.5, 0.5, 0.5, 1))  # Brighter
+        ambientLight.setColor((0.2, 0.2, 0.2, 1))  # Slightly brighter ambient
         ambientLightNP = self.render.attachNewNode(ambientLight)
         self.render.setLight(ambientLightNP)
 
-        # Add a directional light
-        directionalLight = DirectionalLight("directionalLight")  # type: ignore
-        directionalLight.setColor((1, 1, 1, 1))
-        directionalLightNP = self.render.attachNewNode(directionalLight)
-        directionalLightNP.setHpr(45, -45, 0)
-        self.render.setLight(directionalLightNP)
-        self.directionalLightNP = directionalLightNP
+        # Directional light removed to simulate internal organ environment (no sun)
+        # directionalLight = DirectionalLight("directionalLight")  # type: ignore
+        # directionalLight.setColor((1, 1, 1, 1))
+        # directionalLightNP = self.render.attachNewNode(directionalLight)
+        # directionalLightNP.setHpr(45, -45, 0)
+        # self.render.setLight(directionalLightNP)
+        # self.directionalLightNP = directionalLightNP
 
         # Add a point light that moves with the camera
         pointLight = PointLight("pointLight")  # type: ignore
-        pointLight.setColor((1, 1, 1, 1))
+        # Increase intensity > 1 for brighter light
+        pointLight.setColor((1.5, 1.5, 1.5, 1)) 
         # Tweak attenuation: constant=1, linear=0, quadratic=0.02
-        pointLight.setAttenuation((1, 0, 0.02))
+        # Lower quadratic factor to allow light to reach further
+        pointLight.setAttenuation((1, 0, 0.01))
 
         self.pointLightNP = self.camera.attachNewNode(pointLight)
         self.pointLightNP.setPos(0, 0, 0)  # Right at the camera
@@ -1209,14 +1242,14 @@ Viewer.ViewpointZ: -1.8
 
         # Update the directional light's orientation to match the camera's orientation
         # if in first-person view mode
-        if self.view_mode == "fp":
-            cameraHpr = self.camera.getHpr()
-            self.directionalLightNP.setHpr(cameraHpr)
+        # if self.view_mode == "fp":
+        #     cameraHpr = self.camera.getHpr()
+        #     self.directionalLightNP.setHpr(cameraHpr)
 
         # Adjust lighting to follow the camera
-        self.directionalLightNP.setPos(
-            self.camera.getX(), self.camera.getY(), self.camera.getZ()
-        )
+        # self.directionalLightNP.setPos(
+        #     self.camera.getX(), self.camera.getY(), self.camera.getZ()
+        # )
 
     def update_robot_tip_position(self, dt, forward=True):
 
@@ -1400,6 +1433,10 @@ Viewer.ViewpointZ: -1.8
             if self.draw_centerline_bool == "1":
                 # Update the trajectory
                 self.update_trajectory()
+            
+            # Update shader light position (attached to camera)
+            if hasattr(self, "scene"):
+                self.scene.setShaderInput("lightPos", self.camera.getPos(self.render))
 
         # Blinking logic
         self.blink_timer += dt
