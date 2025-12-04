@@ -500,6 +500,7 @@ Viewer.ViewpointZ: -1.8
         self.videos_dir = self.app_config["PATHS"]["record_dir"]
         self.logs_dir = self.app_config["PATHS"]["logs_dir"]
         self.all_branches_bool = self.app_config["PATHS"]["all_branches_bool"]
+        self.separate_branches = self.app_config["PATHS"].getboolean("separate_branches_bool", False)
         self.texture_name = self.app_config["PATHS"]["texture_name"]
 
         # RECORD
@@ -558,7 +559,8 @@ Viewer.ViewpointZ: -1.8
         print(f"-Live: {self.live_mode}")
         print(f"-Record: {self.record_mode}")
         print(f"-Autopilot: {self.autopilot}")
-        print(f"-Results mode: {self.results_mode}\n")
+        print(f"-Results mode: {self.results_mode}")
+        print(f"-Separate Branches: {self.separate_branches}\n")
 
         # Initialize keyMap with default values to ensure it always exists
         self.keyMap = {"robot_tip_forward": False, "robot_tip_backward": False}
@@ -812,20 +814,45 @@ Viewer.ViewpointZ: -1.8
             self.setup_line_multibranch(fs_frames)
             print("[INFO] Random path built successfully")
             self.points = points
+
         elif self.all_branches_bool == "1":
-            # Crate a trajectory traversing all the branches in the folder forward and backward
-            print("[INFO] Building final path combining all branches...")
-            fs_frames, points = build_all_branches_path(
-                self.app_config, self.data_folder
-            )
+            if self.separate_branches:
+                # Get all branch files and store them in a queue
+                centerline_folder_name = self.app_config["PATHS"]["all_branches_folder"]
+                centerline_folder_path = os.path.join(
+                    self.data_folder, centerline_folder_name
+                )
+                if not os.path.isdir(centerline_folder_path):
+                    print(f"[ERROR] Directory not found: {centerline_folder_path}")
+                    sys.exit(1)
+                
+                self.branch_files_queue = [
+                    os.path.join(centerline_folder_name, f)
+                    for f in os.listdir(centerline_folder_path)
+                    if f.endswith(".vtp")
+                ]
+                
+                if not self.branch_files_queue:
+                    print(f"[ERROR] No .vtp files found in {centerline_folder_path}")
+                    sys.exit(1)
+                
+                print(f"[INFO] Found {len(self.branch_files_queue)} branches to record separately.")
+                self.load_next_branch()
+                
+            else:
+                # Crate a trajectory traversing all the branches in the folder forward and backward
+                print("[INFO] Building final path combining all branches...")
+                fs_frames, points = build_all_branches_path(
+                    self.app_config, self.data_folder
+                )
 
-            if not fs_frames:
-                print("[ERROR] No branches found. Exiting...")
-                sys.exit(1)
+                if not fs_frames:
+                    print("[ERROR] No branches found. Exiting...")
+                    sys.exit(1)
 
-            self.setup_line_multibranch(fs_frames)
-            print("[INFO] Final path built successfully")
-            self.points = points
+                self.setup_line_multibranch(fs_frames)
+                print("[INFO] Final path built successfully")
+                self.points = points
 
         else:
             # Get centerline points from the .vtp
@@ -834,6 +861,48 @@ Viewer.ViewpointZ: -1.8
             # Setup
             self.setup_line(points)
             self.points = points
+
+    def load_next_branch(self):
+        if not hasattr(self, "branch_files_queue") or not self.branch_files_queue:
+            print("[INFO] No more branches to process.")
+            return False
+
+        # Pop the next branch
+        branch_file = self.branch_files_queue.pop(0)
+        self.current_branch_name = os.path.splitext(os.path.basename(branch_file))[0]
+        print(f"[INFO] Loading branch: {self.current_branch_name}")
+
+        # Build path for this single branch (forth and back)
+        # We can use build_random_branches_path with a single file
+        from src.utils import build_random_branches_path
+        fs_frames, points = build_random_branches_path([branch_file], self.data_folder)
+
+        if not fs_frames:
+            print(f"[WARNING] Failed to build path for {branch_file}. Skipping...")
+            return self.load_next_branch() # Try next one
+
+        self.setup_line_multibranch(fs_frames)
+        self.points = points
+        
+        # Reset indices
+        self.current_index = 0
+        self.next_index = 1 if len(self.interpolated_points) > 1 else 0
+        self.robot_tip = self.interpolated_points[0]
+        self.interp_alpha = 0.0
+        
+        # If recording, initialize new sequence
+        if self.record_mode:
+             if self.legacy_record_method:
+                 # For legacy, we might need to reset record_dir or similar, 
+                 # but legacy setup_video_recorder is called in setup_mode.
+                 # If we want separate folders for legacy, we'd need to re-call setup_video_recorder or modify it.
+                 # Assuming non-legacy for "huge video" issue usually implies the dataset collection.
+                 # But let's try to handle legacy if possible, or just warn.
+                 pass 
+             else:
+                 self.collect_sequence_dataset_init()
+        
+        return True
 
     def setup_results(self):
 
@@ -1519,11 +1588,31 @@ Viewer.ViewpointZ: -1.8
             if self.current_index >= len(self.interpolated_points) - 1:
                 print("[INFO] Robot tip reached the end of the path")
                 if self.autopilot:
-                    # Deactivate autopilot mode
-                    self.autopilot = False
-                    print("[INFO] Autopilot mode deactivated")
-                    print("[INFO] Exiting application...")
-                    self.quit_app()
+                    if self.separate_branches and hasattr(self, "branch_files_queue"):
+                        # Finalize current recording
+                        if self.record_mode:
+                            if self.legacy_record_method:
+                                # Legacy finalize is quit_app, which stops everything. 
+                                # We might need a custom finalize for legacy if supported.
+                                # For now, assume non-legacy or single session.
+                                pass
+                            else:
+                                self.collect_sequence_dataset_finalize()
+                        
+                        # Load next branch
+                        if self.load_next_branch():
+                            return # Continue with new branch
+                        else:
+                            # No more branches
+                            print("[INFO] All branches processed.")
+                            print("[INFO] Exiting application...")
+                            self.quit_app()
+                    else:
+                        # Deactivate autopilot mode
+                        self.autopilot = False
+                        print("[INFO] Autopilot mode deactivated")
+                        print("[INFO] Exiting application...")
+                        self.quit_app()
                 return  # Stop moving forward
             next_index = self.current_index + 1
         else:
@@ -1630,7 +1719,10 @@ Viewer.ViewpointZ: -1.8
             return
 
         # Generate a unique sequence name based on timestamp
-        seq_name = f"seq_{int(time.time())}"
+        if hasattr(self, "current_branch_name"):
+             seq_name = f"seq_{self.current_branch_name}_{int(time.time())}"
+        else:
+             seq_name = f"seq_{int(time.time())}"
         self.dataset_seq_dir = os.path.join(self.data_folder, self.videos_dir, seq_name)
         
         # If output dir exists, append random suffix to avoid overwrite
