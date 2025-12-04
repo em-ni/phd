@@ -1736,18 +1736,21 @@ Viewer.ViewpointZ: -1.8
 
         # In-memory buffers for the sequence data
         # We collect all data in RAM and dump to .npy at the end to ensure shape consistency
-        # For extremely long sequences, you might need to use memory mapping or append mode,
-        # but for typical recording sessions (few minutes), RAM is fine.
-        self.dataset_buffer_rgb = []
+        # For extremely long sequences, we use temporary files and memory mapping.
         self.dataset_buffer_pose = [] # [x, y, z, qx, qy, qz, qw]
         self.dataset_frame_count = 0
+        
+        # Create temp directory for frames
+        self.temp_frames_dir = os.path.join(self.dataset_seq_dir, "temp_frames")
+        os.makedirs(self.temp_frames_dir, exist_ok=True)
+        self.temp_frame_files = []
 
     def collect_sequence_dataset_step(self):
         """
         Captures the current frame and robot pose.
         Must be called every update loop if record_mode is True.
         """
-        if not self.record_mode or not hasattr(self, 'dataset_buffer_rgb'):
+        if not self.record_mode or not hasattr(self, 'temp_frame_files'):
             return
 
         # 1. Capture RGB Frame
@@ -1770,9 +1773,10 @@ Viewer.ViewpointZ: -1.8
         # If you want to force 128x128 here:
         # rgb = cv2.resize(rgb, (128, 128), interpolation=cv2.INTER_LINEAR)
         
-        # Append to buffer (H, W, C)
-        # We will transpose to (N, C, H, W) or (N, H, W, C) at save time.
-        self.dataset_buffer_rgb.append(rgb)
+        # Save to temp file instead of appending to list
+        temp_file = os.path.join(self.temp_frames_dir, f"frame_{self.dataset_frame_count:06d}.npy")
+        np.save(temp_file, rgb)
+        self.temp_frame_files.append(temp_file)
 
         # 2. Capture Robot Pose (Ground Truth)
         # We need World_T_Camera (Camera Pose in World Frame)
@@ -1808,14 +1812,36 @@ Viewer.ViewpointZ: -1.8
             shutil.rmtree(self.dataset_seq_dir) # Cleanup empty folder
             return
 
-        # 1. Save Video (.npy)
-        # Format: (N, 3, H, W) is PyTorch standard, but (N, H, W, 3) is standard for numpy/cv2
-        # The Dataset class you have handles (N, H, W, 3) -> (N, 3, H, W).
-        # So we save as (N, H, W, 3) uint8 for easy inspection and compatibility.
-        video_array = np.stack(self.dataset_buffer_rgb, axis=0) # (N, H, W, 3)
+        # 1. Save Video (.npy) using Memory Mapping
+        # Format: (N, H, W, 3)
+        
+        # Get shape from first frame
+        if not self.temp_frame_files:
+             print("[DATASET] Error: No frames found.")
+             return
+
+        first_frame = np.load(self.temp_frame_files[0])
+        H, W, C = first_frame.shape
+        video_shape = (len(self.temp_frame_files), H, W, C)
+        
         video_path = os.path.join(self.dataset_seq_dir, "video.npy")
-        np.save(video_path, video_array)
-        print(f"[DATASET] Saved video.npy shape={video_array.shape}")
+        
+        print(f"[DATASET] Creating memmap video.npy with shape {video_shape}...")
+        fp = np.lib.format.open_memmap(video_path, mode='w+', dtype=np.uint8, shape=video_shape)
+        
+        # Copy frames into memmap
+        for i, fpath in enumerate(self.temp_frame_files):
+            fp[i] = np.load(fpath)
+            # Optional: delete immediately to save space? 
+            # os.remove(fpath) 
+            
+        # Flush changes
+        fp.flush()
+        del fp # Close memmap
+        print(f"[DATASET] Saved video.npy")
+        
+        # Cleanup temp files
+        shutil.rmtree(self.temp_frames_dir)
 
         # 2. Save Trajectory (.npy)
         traj_array = np.stack(self.dataset_buffer_pose, axis=0) # (N, 7)
@@ -1830,8 +1856,8 @@ Viewer.ViewpointZ: -1.8
                 f.write(",".join(self.selected_branch_names))
 
         # Clear buffers to free RAM
-        self.dataset_buffer_rgb = []
         self.dataset_buffer_pose = []
+        self.temp_frame_files = []
         print("[DATASET] Collection complete.")
 
     def record_frame(self):
