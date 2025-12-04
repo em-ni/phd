@@ -322,7 +322,7 @@ Viewer.ViewpointZ: -1.8
         # Load the negative model
         self.scene = self.loader.loadModel(self.model)
         self.scene.reparentTo(self.render)
-        self.scene.setTransparency(TransparencyAttrib.MDual)  # type: ignore
+        # self.scene.setTransparency(TransparencyAttrib.MDual)  # type: ignore
         self.scene.setColorScale(1, 1, 1, 1)
         self.scene.setTwoSided(True)
 
