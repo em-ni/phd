@@ -1,6 +1,3 @@
-import numpy as np
-import torch
-
 # --- MAP CONFIGURATION ---
 MAP_QUERY_RADIUS = 10.0 # mm
 

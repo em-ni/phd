@@ -1,8 +1,6 @@
 import os
 import argparse
 import torch
-import torch.nn.functional as F
-import numpy as np
 from torch.utils.data import DataLoader, random_split
 import torch.optim as optim
 from tqdm import tqdm

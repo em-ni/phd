@@ -1,10 +1,7 @@
 import pyvista as pv
-import trimesh
-import numpy as np
-import scipy.ndimage
+import numpy as np  
 import os
-import torch 
-
+    
 class LungGraphBuilder:
     def __init__(self, vtk_path, cad_path):
         self.vtk_path = vtk_path

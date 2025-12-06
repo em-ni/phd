@@ -1,10 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATConv
 from einops import rearrange, repeat
-import numpy as np
-from torch.distributions import Categorical
 
 # ==============================================================================
 # CONFIGURATIONS
@@ -12,11 +9,11 @@ from torch.distributions import Categorical
 # Model variants with different capacities: small (s), base (b), medium (m), large (l)
 MODEL_CONFIGS = {
     's': {
-        'embed_dim': 16,
-        'num_heads': 2,
-        'vi_layers': 1,
-        'gat_heads': 2,
-        'lstm_hidden': 32
+        'embed_dim': 128,
+        'num_heads': 16,
+        'vi_layers': 8,
+        'gat_heads': 16,
+        'lstm_hidden': 128
     },
     'b': {
         'embed_dim': 512,
