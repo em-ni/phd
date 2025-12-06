@@ -10,9 +10,9 @@ from einops import rearrange, repeat
 MODEL_CONFIGS = {
     's': {
         'embed_dim': 128,
-        'num_heads': 16,
-        'vi_layers': 8,
-        'gat_heads': 16,
+        'num_heads': 32,
+        'vi_layers': 16,
+        'gat_heads': 32,
         'lstm_hidden': 128
     },
     'b': {
