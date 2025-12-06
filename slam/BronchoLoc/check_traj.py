@@ -147,6 +147,12 @@ class TrajectoryVisualizer:
             self.visualize_sequence(seq_name, seq_path)
 
 if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--filter", type=str, default=None, help="Filter sequences by name (substring match)")
+    args = parser.parse_args()
+
     # --- CONFIGURATION ---
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DATASET_ROOT = os.path.join(BASE_DIR, "dataset", "sequences")
@@ -154,4 +160,27 @@ if __name__ == "__main__":
     # ---------------------
     
     viz = TrajectoryVisualizer(DATASET_ROOT, CAD_FILE)
+    
+    # Monkey patch run to support filter (or modify run method, but this is cleaner for now without changing class signature)
+    original_run = viz.run
+    
+    def run_with_filter():
+        seq_pattern = os.path.join(viz.data_root, "seq_*")
+        sequences = sorted(glob.glob(seq_pattern))
+        
+        if not sequences:
+            print(f"[ERROR] No sequences found matching {seq_pattern}")
+            return
+
+        if args.filter:
+            sequences = [s for s in sequences if args.filter in os.path.basename(s)]
+            print(f"Filtered to {len(sequences)} sequences matching '{args.filter}'")
+
+        print(f"Found {len(sequences)} sequences.")
+        
+        for seq_path in sequences:
+            seq_name = os.path.basename(seq_path)
+            viz.visualize_sequence(seq_name, seq_path)
+            
+    viz.run = run_with_filter
     viz.run()
