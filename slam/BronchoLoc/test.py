@@ -193,10 +193,7 @@ def run_inference_and_viz(args):
             full_video_np = np.load(os.path.join(seq_dir, "video.npy"), mmap_mode='r')
             full_traj_np = np.load(os.path.join(seq_dir, "trajectory.npy"))
             
-            # Apply Stride (Downsample)
-            if args.stride > 1:
-                full_video_np = full_video_np[::args.stride]
-                full_traj_np = full_traj_np[::args.stride]
+
         except:
             print(f"[WARN] Could not load data for {seq_dir}")
             continue
@@ -241,8 +238,10 @@ def run_inference_and_viz(args):
         print("  > Running Inference...")
         
         # Iterate through the sequence in windows of size T.
-        # Stride = T (Non-overlapping windows for inference update, though video is continuous)
-        for t in range(0, N_frames - T + 1, T):
+        # Step = Effective Length (Non-overlapping relative to model predictions)
+        effective_len = (args.t_frames - 1) * args.frame_skip + 1
+        
+        for t in range(0, N_frames - effective_len + 1, effective_len):
             if args.max_frames and t >= args.max_frames:
                 print(f"  > Reached max_frames ({args.max_frames}). Stopping.")
                 break
@@ -255,7 +254,8 @@ def run_inference_and_viz(args):
             
             # 2. Prepare Batch
             # Video input for this window
-            batch_video = video_tensor[t : t+T].unsqueeze(0).to(device) # (1, T, C, H, W)
+            # Slice with frame_skip to match training
+            batch_video = video_tensor[t : t + effective_len : args.frame_skip].unsqueeze(0).to(device) # (1, T, C, H, W)
             
             # Replicate the static local map for all T frames in the window
             # (Model expects map points per frame, but they are constant in this window reference frame)
@@ -438,7 +438,7 @@ if __name__ == "__main__":
     parser.add_argument('--output_dir', type=str, default='./dataset/test/results')
     parser.add_argument('--model_mode', type=str, default='s', choices=['s', 'b', 'm', 'l'])
     parser.add_argument('--t_frames', type=int, default=16)
-    parser.add_argument('--stride', type=int, default=1, help="Stride for data sampling (match training)")
+    parser.add_argument('--frame_skip', type=int, default=1, help="Frame skipping (dilation) within window")
     parser.add_argument('--img_size', type=int, default=128, help="Image resolution (default: 128)")
     parser.add_argument('--num_viz', type=int, default=1)
     parser.add_argument('--overfit', action='store_true', help="Overfit on a small subset")

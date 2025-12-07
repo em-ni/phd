@@ -24,7 +24,7 @@ def train(args):
         data_root=os.path.join(args.data_root, "sequences"), 
         t_frames=args.t_frames, 
         mode='train', 
-        stride=args.stride, 
+        frame_skip=args.frame_skip,
         img_size=args.img_size
     )
     
@@ -178,7 +178,7 @@ if __name__ == "__main__":
     parser.add_argument('--model_mode', type=str, default='s', choices=['s', 'b', 'm', 'l'])
     parser.add_argument('--t_frames', type=int, default=16)
     parser.add_argument('--batch_size', type=int, default=16)
-    parser.add_argument('--stride', type=int, default=1, help="Stride for data sampling (1 = full FPS, 2 = half FPS, etc.)")
+    parser.add_argument('--frame_skip', type=int, default=1, help="Frame skipping (dilation) within window (1 = consecutive)")
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--workers', type=int, default=4)

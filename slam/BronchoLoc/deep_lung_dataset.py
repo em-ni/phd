@@ -105,20 +105,20 @@ class DeepLungDataset(Dataset):
     Handles loading video frames, trajectories, and static airway maps, 
     and generating training samples consisting of video clips, map points, and target actions.
     """
-    def __init__(self, data_root, t_frames=16, mode='train', stride=1, map_points_k=32, img_size=128):
+    def __init__(self, data_root, t_frames=16, mode='train', frame_skip=1, map_points_k=32, img_size=128):
         """
         Args:
             data_root (str): Path to the directory containing sequence folders.
             t_frames (int): Number of temporal frames in one sample sequence (window size).
             mode (str): 'train' or 'test'. Used for logging.
-            stride (int): Step size for sampling windows (augmentation/downsampling).
+            frame_skip (int): Number of frames to skip within a window (dilation). 1 = consecutive.
             map_points_k (int): Number of nearest map points to retrieve for the graph.
             img_size (int): Spatial resolution to resize video frames to (img_size x img_size).
         """
         self.data_root = data_root
         self.t_frames = t_frames
         self.mode = mode
-        self.stride = stride
+        self.frame_skip = frame_skip
         self.map_points_k = map_points_k
         self.img_size = img_size
         self.samples = []
@@ -170,8 +170,12 @@ class DeepLungDataset(Dataset):
                 N_vid = vid_data.shape[0]
                 
                 # Create sliding windows of length t_frames
-                if N_vid >= self.t_frames:
-                    for start_idx in range(0, N_vid - self.t_frames + 1, self.stride):
+                # Effective length needed is (t_frames - 1) * frame_skip + 1
+                effective_len = (self.t_frames - 1) * self.frame_skip + 1
+                
+                if N_vid >= effective_len:
+                    # Step size is exactly effective_len (non-overlapping windows)
+                    for start_idx in range(0, N_vid - effective_len + 1, effective_len):
                         self.samples.append((vid_path, traj_path, start_idx))
             except Exception as e:
                 print(f"Error: {e}")
@@ -246,11 +250,12 @@ class DeepLungDataset(Dataset):
         # Load data using mmap to save memory
         vid_mmap = np.load(vid_path, mmap_mode='r')
         traj_mmap = np.load(traj_path, mmap_mode='r')
-        end_idx = start_idx + self.t_frames
+        end_idx = start_idx + (self.t_frames - 1) * self.frame_skip + 1
         
         # Slice the window
-        video_clip = vid_mmap[start_idx : end_idx] 
-        traj_clip  = traj_mmap[start_idx : end_idx].copy()
+        # Use step=self.frame_skip to pick frames: i, i+FS, i+2*FS, ...
+        video_clip = vid_mmap[start_idx : end_idx : self.frame_skip] 
+        traj_clip  = traj_mmap[start_idx : end_idx : self.frame_skip].copy()
         
         # Resize video frames to self.img_size
         resized_frames = []
