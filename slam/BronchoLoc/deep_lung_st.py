@@ -46,7 +46,7 @@ class SpatioTemporalBlock(nn.Module):
     1. Spatial Attention: Attends between patches within the same frame.
     2. Temporal Attention: Attends between the same spatial location across different frames.
     """
-    def __init__(self, dim, num_heads, t_frames):
+    def __init__(self, dim, num_heads, window_size):
         super().__init__()
         self.spatial_attn = nn.MultiheadAttention(dim, num_heads, batch_first=True)
         self.temporal_attn = nn.MultiheadAttention(dim, num_heads, batch_first=True)
@@ -54,7 +54,7 @@ class SpatioTemporalBlock(nn.Module):
         self.norm2 = nn.LayerNorm(dim)
         self.norm3 = nn.LayerNorm(dim)
         self.mlp = nn.Sequential(nn.Linear(dim, dim*4), nn.GELU(), nn.Linear(dim*4, dim))
-        self.t_frames = t_frames
+        self.window_size = window_size
 
     def forward(self, x):
         # x: (B*T, N_patches, D) - Flattened batch of frames
@@ -66,12 +66,12 @@ class SpatioTemporalBlock(nn.Module):
         
         # Reshape for Temporal Attention
         bt, n, d = x.shape
-        b = bt // self.t_frames
+        b = bt // self.window_size
         
         # Rearrange to group by spatial location: (B, N, T, D)
         # We treat (B*N) as the batch dimension and T as the sequence dimension.
         # This allows each patch to attend to its history/future self.
-        x = rearrange(x, '(b t) n d -> (b n) t d', b=b, t=self.t_frames)
+        x = rearrange(x, '(b t) n d -> (b n) t d', b=b, t=self.window_size)
         
         # 2. Temporal Attention
         attn_out, _ = self.temporal_attn(x, x, x)
@@ -89,7 +89,7 @@ class STViViT(nn.Module):
     Spatio-Temporal Vision Transformer (ViViT-style).
     Extracts features from a sequence of video frames.
     """
-    def __init__(self, config, img_size=128, t_frames=16):
+    def __init__(self, config, img_size=128, window_size=16):
         super().__init__()
         dim = config['embed_dim']
         layers = config['vi_layers']
@@ -101,10 +101,10 @@ class STViViT(nn.Module):
         self.num_patches = (img_size // self.patch_size) ** 2
         
         # Learnable Positional Embedding: (1, T, N, D) adds info about space and time
-        self.pos_embed = nn.Parameter(torch.randn(1, t_frames, self.num_patches, dim))
+        self.pos_embed = nn.Parameter(torch.randn(1, window_size, self.num_patches, dim))
         
         # Stack of SpatioTemporal Blocks
-        self.blocks = nn.ModuleList([SpatioTemporalBlock(dim, heads, t_frames) for _ in range(layers)])
+        self.blocks = nn.ModuleList([SpatioTemporalBlock(dim, heads, window_size) for _ in range(layers)])
         
         self.proj_out = nn.Linear(dim, dim)
 
@@ -193,14 +193,14 @@ class ActionPredictor(nn.Module):
     Predicts the next position by attending to visual features and selecting/weighting 
     candidates from the K local map points.
     """
-    def __init__(self, t_frames, mode='s', img_size=128): 
+    def __init__(self, window_size, mode='s', img_size=128): 
         super().__init__()
-        self.t_frames = t_frames
+        self.window_size = window_size
         self.config = MODEL_CONFIGS[mode]
         embed_dim = self.config['embed_dim']
         
         # Visual Encoder
-        self.visual_encoder = STViViT(self.config, img_size=img_size, t_frames=t_frames)
+        self.visual_encoder = STViViT(self.config, img_size=img_size, window_size=window_size)
         
         # Map Encoder
         # We ensure map features match visual feature dimension for dot product attention.
@@ -216,17 +216,19 @@ class ActionPredictor(nn.Module):
         
         self.scale = embed_dim ** -0.5
 
-    def forward(self, video, map_points=None):
+    def forward(self, video, map_points=None, map_mask=None):
         """
         Args:
             video: Video tensor (B, T, C, H, W)
             map_points: Local map candidates (B, T, K, 3)
+            map_mask: Boolean mask (B, T, K) - True for valid points, False for padding
             
         Returns:
             pred_delta: Predicted position update (B, T, 3)
         """
         # video: (B, T, C, H, W)
         # map_points: (B, T, K, 3)
+        # map_mask: (B, T, K)
         
         if map_points is None:
             # Fallback (shouldn't happen in normal flow)
@@ -250,11 +252,20 @@ class ActionPredictor(nn.Module):
         queries = queries.unsqueeze(2) # (B, T, 1, D)
         scores = torch.sum(queries * keys, dim=-1) * self.scale # (B, T, K)
         
-        # 4. Compute Probabilities
-        # Softmax normalizes scores to sum to 1.
+        # 4. Apply Mask (set padding positions to -inf before softmax)
+        if map_mask is not None:
+            # map_mask is True for valid, False for padding
+            # Set padding positions to -inf so they get 0 probability after softmax
+            scores = scores.masked_fill(~map_mask, float('-inf'))
+        
+        # 5. Compute Probabilities
+        # Softmax normalizes scores to sum to 1 (only over valid points).
         probs = F.softmax(scores, dim=-1) # (B, T, K)
         
-        # 5. Weighted Sum of Map Points (Soft Selection)
+        # Handle case where all points are masked (shouldn't happen but be safe)
+        probs = torch.nan_to_num(probs, nan=0.0)
+        
+        # 6. Weighted Sum of Map Points (Soft Selection)
         # We predict the delta by taking the expected value over the map points.
         # This constrains predictions to lie in the convex hull of the map candidates
         # (effectively "selecting" a point on the centerline).

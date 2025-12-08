@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from deep_lung_st import ActionPredictor
 from deep_lung_dataset import DeepLungDataset 
-from constants import MAP_QUERY_RADIUS, NORM_MAP_SCALE 
+from constants import NORM_MAP_SCALE 
 
 def train(args):
     """
@@ -19,14 +19,16 @@ def train(args):
     
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     
-    # Initialize full dataset
+    # Initialize full dataset (window_size/frame_skip loaded from config inside dataset)
     full_dataset = DeepLungDataset(
         data_root=os.path.join(args.data_root, "sequences"), 
-        t_frames=args.t_frames, 
         mode='train', 
-        frame_skip=args.frame_skip,
         img_size=args.img_size
     )
+    
+    # Get window_size from dataset (loaded from config)
+    window_size = full_dataset.window_size
+    print(f"[INFO] Using window_size={window_size}, frame_skip={full_dataset.frame_skip}")
     
     # --- DEBUGGING / OVERFITTING MODES ---
     if args.overfit:
@@ -55,8 +57,9 @@ def train(args):
     if args.debug_one:
         print("[INFO] DEBUG ONE mode: Training on a SINGLE batch (first 16 samples).")
         # Extreme debug mode: Overfit on just one batch of data.
-        # Take first batch only
-        first_batch = next(iter(train_loader))
+        # Use shuffle=False to ensure the same batch is used in test.py
+        debug_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
+        first_batch = next(iter(debug_loader))
         
         # Create a dummy loader that yields this batch forever
         class InfiniteLoader:
@@ -72,7 +75,7 @@ def train(args):
 
     # Initialize Model
     model = ActionPredictor(
-        t_frames=args.t_frames, 
+        window_size=window_size, 
         mode=args.model_mode,
         img_size=args.img_size
     ).to(device)
@@ -90,95 +93,114 @@ def train(args):
     criterion = torch.nn.MSELoss(reduction='none')
 
     # --- TRAINING LOOP ---
-    for epoch in range(args.epochs):
-        print(f"\nEpoch {epoch+1}/{args.epochs}")
-        
-        model.train()
-        run_loss = 0.0
-        
-        pbar = tqdm(train_loader)
-        for batch in pbar:
-            video = batch['video'].to(device) # (B, T, C, H, W)
-            gt_deltas = batch['actions'].to(device) # (B, T, 6)
-            map_points = batch['map_points'].to(device) # (B, T, K, 3)
+    try:
+        for epoch in range(args.epochs):
+            print(f"\nEpoch {epoch+1}/{args.epochs}")
             
-            optimizer.zero_grad()
+            model.train()
+            run_loss = 0.0
             
-            # Forward Pass
-            # (B, T, 3) - Model now only predicts translation (via graph selection)
-            pred_trans = model(video, map_points=map_points)
-            
-            # Get Ground Truth Translation
-            gt_trans = gt_deltas[:, :, :3]
-            
-            # Normalize GT to match map point scale [-1, 1]
-            # This is critical because the model's output is derived from normalized map points.
-            gt_trans_norm = gt_trans / NORM_MAP_SCALE
-            
-            # Calculate Loss
-            raw_loss = criterion(pred_trans, gt_trans_norm)
-            
-            # Weighted Loss (Motion Incentive)
-            # Penalize errors more on frames with larger movement.
-            # This combats the "stop-and-stare" problem where models predict zero motion.
-            motion_mag = torch.norm(gt_trans_norm, dim=2)
-            weights = 1.0 + args.motion_weight * motion_mag
-            weights = weights.unsqueeze(2)
-            loss = (raw_loss * weights).mean()
-            
-            # Backward Pass
-            loss.backward()
-            optimizer.step()
-            
-            run_loss += loss.item()
-            
-            pbar.set_postfix({'MSE': f"{loss.item():.6f}"})
-
-        avg_train_loss = run_loss / len(train_loader)
-        
-        # --- VALIDATION LOOP ---
-        model.eval()
-        val_loss = 0.0
-        
-        with torch.no_grad():
-            for batch in val_loader:
-                video = batch['video'].to(device)
-                gt_deltas = batch['actions'].to(device)
-                map_points = batch['map_points'].to(device)
+            pbar = tqdm(train_loader)
+            for batch in pbar:
+                video = batch['video'].to(device) # (B, T, C, H, W)
+                gt_deltas = batch['actions'].to(device) # (B, T, 6)
+                map_points = batch['map_points'].to(device) # (B, T, K, 3)
+                map_mask = batch['map_mask'].to(device) # (B, T, K)
                 
-                pred_trans = model(video, map_points=map_points)
+                optimizer.zero_grad()
                 
+                # Forward Pass
+                # (B, T, 3) - Model now only predicts translation (via graph selection)
+                pred_trans = model(video, map_points=map_points, map_mask=map_mask)
+                
+                # Get Ground Truth Translation
                 gt_trans = gt_deltas[:, :, :3]
+                
+                # Normalize GT to match map point scale [-1, 1]
+                # This is critical because the model's output is derived from normalized map points.
                 gt_trans_norm = gt_trans / NORM_MAP_SCALE
                 
+                # Calculate Loss
                 raw_loss = criterion(pred_trans, gt_trans_norm)
+                
+                # Weighted Loss (Motion Incentive)
+                # Penalize errors more on frames with larger movement.
+                # This combats the "stop-and-stare" problem where models predict zero motion.
                 motion_mag = torch.norm(gt_trans_norm, dim=2)
                 weights = 1.0 + args.motion_weight * motion_mag
                 weights = weights.unsqueeze(2)
                 loss = (raw_loss * weights).mean()
                 
-                val_loss += loss.item()
-        
-        avg_val_loss = val_loss / len(val_loader)
-        
-        print(f"  >> Train MSE: {avg_train_loss:.6f}")
-        print(f"  >> Val MSE:   {avg_val_loss:.6f}")
-        
-        # Step LR Scheduler
-        scheduler.step(avg_val_loss)
-        
-        # Save Checkpoint (Best so far)
-        # Note: Currently saves every epoch, could be improved to save only on improvement.
-        torch.save(model.state_dict(), os.path.join(args.checkpoint_dir, "best_model.pth"))
+                # Backward Pass
+                loss.backward()
+                optimizer.step()
+                
+                run_loss += loss.item()
+                
+                pbar.set_postfix({'MSE': f"{loss.item():.6f}"})
+
+            avg_train_loss = run_loss / len(train_loader)
+            
+            # --- VALIDATION LOOP ---
+            model.eval()
+            val_loss = 0.0
+            
+            with torch.no_grad():
+                for batch in val_loader:
+                    video = batch['video'].to(device)
+                    gt_deltas = batch['actions'].to(device)
+                    map_points = batch['map_points'].to(device)
+                    map_mask = batch['map_mask'].to(device)
+                    
+                    pred_trans = model(video, map_points=map_points, map_mask=map_mask)
+                    
+                    gt_trans = gt_deltas[:, :, :3]
+                    gt_trans_norm = gt_trans / NORM_MAP_SCALE
+                    
+                    raw_loss = criterion(pred_trans, gt_trans_norm)
+                    motion_mag = torch.norm(gt_trans_norm, dim=2)
+                    weights = 1.0 + args.motion_weight * motion_mag
+                    weights = weights.unsqueeze(2)
+                    loss = (raw_loss * weights).mean()
+                    
+                    val_loss += loss.item()
+            
+            avg_val_loss = val_loss / len(val_loader)
+            
+            print(f"  >> Train MSE: {avg_train_loss:.6f}")
+            print(f"  >> Val MSE:   {avg_val_loss:.6f}")
+            
+            # Step LR Scheduler
+            scheduler.step(avg_val_loss)
+            
+            # Save Checkpoint (Best so far)
+            # Note: Currently saves every epoch, could be improved to save only on improvement.
+            if args.debug_one:
+                ckpt_name = "debug_one_model.pth"
+            elif args.overfit:
+                ckpt_name = "overfit_model.pth"
+            else:
+                ckpt_name = "best_model.pth"
+            torch.save(model.state_dict(), os.path.join(args.checkpoint_dir, ckpt_name))
+                
+    except KeyboardInterrupt:
+        print("\n[INFO] Training interrupted by user (Ctrl+C).")
+        # Save model on interrupt
+        if args.debug_one:
+            save_path = os.path.join(args.checkpoint_dir, "debug_one_model.pth")
+        elif args.overfit:
+            save_path = os.path.join(args.checkpoint_dir, "overfit_model.pth")
+        else:
+            save_path = os.path.join(args.checkpoint_dir, "best_model.pth")
+        torch.save(model.state_dict(), save_path)
+        print(f"[INFO] Model saved to {save_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_root', type=str, default='./dataset')
     parser.add_argument('--checkpoint_dir', type=str, default='./checkpoints')
     parser.add_argument('--model_mode', type=str, default='s', choices=['s', 'b', 'm', 'l'])
-    parser.add_argument('--t_frames', type=int, default=16)
     parser.add_argument('--batch_size', type=int, default=16)
-    parser.add_argument('--frame_skip', type=int, default=1, help="Frame skipping (dilation) within window (1 = consecutive)")
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--workers', type=int, default=4)

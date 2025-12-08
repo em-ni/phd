@@ -3,12 +3,15 @@ import glob
 import numpy as np
 import pyvista as pv
 from scipy.spatial.transform import Rotation as R
+from utils import load_centerline_points
 
 class TrajectoryVisualizer:
-    def __init__(self, data_root, cad_path):
+    def __init__(self, data_root, cad_path, graph_path=None):
         self.data_root = data_root
         self.cad_path = cad_path
+        self.graph_path = graph_path
         self.cad_mesh = None
+        self.centerline_points = None
         
         # Load CAD once
         if os.path.exists(self.cad_path):
@@ -16,6 +19,12 @@ class TrajectoryVisualizer:
             self.cad_mesh = pv.read(self.cad_path)
         else:
             print(f"[WARNING] CAD file not found at {self.cad_path}. Visualizing trajectories only.")
+        
+        # Load Centerline once
+        if self.graph_path:
+            self.centerline_points = load_centerline_points(self.graph_path)
+            if self.centerline_points is not None:
+                print(f"[INFO] Loaded {len(self.centerline_points)} centerline points")
 
     def load_pose_file(self, filepath):
         """
@@ -97,8 +106,12 @@ class TrajectoryVisualizer:
         # 1. Plot CAD (Ghostly)
         if self.cad_mesh:
             p.add_mesh(self.cad_mesh, color='wheat', opacity=0.25, label='Lungs CAD')
+        
+        # 2. Plot Centerline (Faint)
+        if self.centerline_points is not None:
+            p.add_mesh(pv.PolyData(self.centerline_points), color='black', opacity=0.2, point_size=3, render_points_as_spheres=True, label='Centerline')
 
-        # 2. Plot Trajectory Line
+        # 3. Plot Trajectory Line
         positions = poses[:, :3, 3]
         # Create a continuous line
         line = pv.lines_from_points(positions)
@@ -151,15 +164,17 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--filter", type=str, default=None, help="Filter sequences by name (substring match)")
+    parser.add_argument("--graph_path", type=str, default='./dataset/static/deep_lung_graph.npz', help="Path to centerline graph file")
     args = parser.parse_args()
 
     # --- CONFIGURATION ---
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DATASET_ROOT = os.path.join(BASE_DIR, "dataset", "sequences")
     CAD_FILE = os.path.join(BASE_DIR, "patient", "lungs.obj")
+    GRAPH_FILE = os.path.join(BASE_DIR, args.graph_path) if not os.path.isabs(args.graph_path) else args.graph_path
     # ---------------------
     
-    viz = TrajectoryVisualizer(DATASET_ROOT, CAD_FILE)
+    viz = TrajectoryVisualizer(DATASET_ROOT, CAD_FILE, GRAPH_FILE)
     
     # Monkey patch run to support filter (or modify run method, but this is cleaner for now without changing class signature)
     original_run = viz.run

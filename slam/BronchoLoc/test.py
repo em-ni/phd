@@ -1,449 +1,376 @@
 import os
-import glob
 import argparse
-import torch
 import numpy as np
+import torch
+from torch.utils.data import DataLoader
 import cv2
-import pyvista as pv
 from tqdm import tqdm
+import pyvista as pv
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial import cKDTree
-from sklearn.cluster import DBSCAN
-
-# Force Headless Mode for WSL/Server
-# PyVista requires this when running without a display.
-pv.OFF_SCREEN = True
-os.environ["PYVISTA_OFF_SCREEN"] = "true"
-os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "1" 
 
 from deep_lung_st import ActionPredictor
-from constants import MAP_QUERY_RADIUS, NORM_MAP_SCALE
+from deep_lung_dataset import DeepLungDataset
+from constants import NORM_MAP_SCALE, MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS
+from utils import load_centerline_points, filter_connected_component, farthest_point_sample
 
-# Heuristic threshold for connectivity (matches visualize_ball.py)
-# Used for DBSCAN clustering to filter connected components.
-CONNECTIVITY_THRESHOLD = 2.0 
 
-def filter_connected_component(center_point, neighbors):
+def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
+                   gt_traj_current, pred_traj_current,
+                   current_gt, current_pred, frame_idx, total_frames):
     """
-    Filters neighbors to keep only those in the same cluster as the center_point.
-    Uses DBSCAN. Matches the logic in dataset generation to ensure consistency.
-    """
-    if len(neighbors) == 0:
-        return np.array([])
-        
-    # 1. Run DBSCAN on all points (neighbors)
-    clustering = DBSCAN(eps=CONNECTIVITY_THRESHOLD, min_samples=1).fit(neighbors)
-    labels = clustering.labels_
-    
-    # 2. Find label of the center point (or closest point to it)
-    dists = np.linalg.norm(neighbors - center_point, axis=1)
-    center_idx = np.argmin(dists)
-    center_label = labels[center_idx]
-    
-    # 3. Select points with the same label
-    mask = (labels == center_label)
-    connected_indices = np.where(mask)[0]
-    
-    return neighbors[connected_indices]
-
-def get_local_map(map_tree, map_points, current_pos, current_quat, K=32):
-    """
-    Finds nearest map points and transforms them to local camera frame during INFERENCE.
-    Matches visualize_ball.py logic: Radius Search -> Filter Connected -> Top K for Model.
+    Renders the 3D trajectory view to a numpy array.
+    Style matches check_ball.py and check_traj.py.
+    Shows FPS-downsampled points that the model sees.
     
     Args:
-        current_pos: Global position (3,).
-        current_quat: Global orientation (4,) [x, y, z, w].
-        K: Number of points to sample.
+        plotter: PyVista Plotter (off-screen)
+        lung_mesh: Loaded lung mesh (pyvista object) or None
+        centerline_pts: Centerline points array (N, 3) or None
+        centerline_tree: KDTree for centerline points or None
+        gt_traj_current: GT trajectory up to current frame (M, 3)
+        pred_traj_current: Pred trajectory up to current frame (M, 3)
+        current_gt: Current frame GT position (3,)
+        current_pred: Current frame Pred position (3,)
+        frame_idx: Current frame index in window
+        total_frames: Total frames in window
         
-    Returns: 
-        local_tensor: (K, 3) normalized tensor ready for model input.
-        candidates_global: (M, 3) all connected points in radius (for visualization).
+    Returns:
+        np.ndarray: Rendered image (H, W, 3) as uint8
     """
-    # 1. Query All Neighbors in Radius (Global)
-    if map_tree is None:
-        return torch.zeros(K, 3), np.zeros((0, 3))
+    plotter.clear()
+    
+    # 1. Draw Lung Mesh (Ghostly - like check_ball.py)
+    if lung_mesh is not None:
+        plotter.add_mesh(lung_mesh, color='wheat', opacity=0.1, label='Lungs')
+    
+    # 2. Draw Centerline (Faint black points - like check_ball.py)
+    if centerline_pts is not None:
+        plotter.add_mesh(pv.PolyData(centerline_pts), color='black', opacity=0.2, 
+                        point_size=3, render_points_as_spheres=True, label='Centerline')
+    
+    # 3. Compute FPS points (what model sees) centered at first GT position
+    fps_points = None
+    if centerline_tree is not None and len(gt_traj_current) > 0:
+        p0 = gt_traj_current[0]  # Ball is centered at START of window
+        ball_indices = centerline_tree.query_ball_point(p0, r=MAP_QUERY_RADIUS)
+        if len(ball_indices) > 0:
+            ball_points = centerline_pts[ball_indices]
+            connected_points, _ = filter_connected_component(p0, ball_points)
+            if len(connected_points) > DEFAULT_MAX_MAP_POINTS:
+                dists = np.linalg.norm(connected_points - p0, axis=1)
+                start_idx = np.argmin(dists)
+                fps_points, _ = farthest_point_sample(connected_points, DEFAULT_MAX_MAP_POINTS, start_idx=start_idx)
+            else:
+                fps_points = connected_points
+    
+    # 4. Draw Ball Query Sphere (Wireframe - centered at START, like dataset)
+    if len(gt_traj_current) > 0:
+        p0 = gt_traj_current[0]
+        ball_sphere = pv.Sphere(radius=MAP_QUERY_RADIUS, center=p0, 
+                                theta_resolution=20, phi_resolution=20)
+        plotter.add_mesh(ball_sphere, style='wireframe', color='gray', opacity=0.5, 
+                        label=f'Ball R={MAP_QUERY_RADIUS}mm')
+    
+    # 5. Draw FPS Points (magenta - what model sees)
+    if fps_points is not None and len(fps_points) > 0:
+        plotter.add_mesh(pv.PolyData(fps_points), color='magenta', opacity=0.8, 
+                        point_size=6, render_points_as_spheres=True, 
+                        label=f'FPS Input ({len(fps_points)})')
+    
+    # 6. Draw GT Trajectory (Blue - building up as frames proceed)
+    if len(gt_traj_current) > 1:
+        gt_line = pv.lines_from_points(gt_traj_current)
+        plotter.add_mesh(gt_line, color='blue', line_width=4, label='GT Trajectory')
+    
+    # 7. Draw Predicted Trajectory (Red - building up as frames proceed)  
+    if len(pred_traj_current) > 1:
+        pred_line = pv.lines_from_points(pred_traj_current)
+        plotter.add_mesh(pred_line, color='red', line_width=4, label='Pred Trajectory')
+    
+    # 8. Draw current position markers (spheres)
+    plotter.add_mesh(pv.Sphere(radius=1.5, center=current_gt), color='blue')
+    plotter.add_mesh(pv.Sphere(radius=1.5, center=current_pred), color='red')
+    
+    # 9. Add Start label at first GT point
+    if len(gt_traj_current) > 0:
+        plotter.add_point_labels([gt_traj_current[0]], ["Start"], point_size=8, 
+                                 text_color='green', always_visible=True, font_size=12)
+    
+    # 10. Add text overlay (black text for white background)
+    text = f"Frame: {frame_idx+1}/{total_frames}\n"
+    text += f"GT (mm):   X={current_gt[0]:+.2f} Y={current_gt[1]:+.2f} Z={current_gt[2]:+.2f}\n"
+    text += f"Pred (mm): X={current_pred[0]:+.2f} Y={current_pred[1]:+.2f} Z={current_pred[2]:+.2f}"
+    plotter.add_text(text, position='upper_left', font_size=10, color='black')
+    
+    # 11. Set camera to good viewpoint (like check_ball.py)
+    # Focus on the current GT position
+    plotter.camera.position = (current_gt[0], current_gt[1] - 150, current_gt[2] + 30)
+    plotter.camera.focal_point = current_gt
+    plotter.camera.up = (0, 0, 1)
+    
+    # Add legend and axes
+    plotter.add_legend()
+    plotter.add_axes()
+    
+    # Render to numpy array
+    plotter.render()
+    img = plotter.screenshot(return_img=True)
+    
+    return img
 
-    # visualize_ball.py uses query_ball_point which returns all indices within radius.
-    indices = map_tree.query_ball_point(current_pos, r=MAP_QUERY_RADIUS)
-    
-    if len(indices) == 0:
-        return torch.zeros(K, 3), np.zeros((0, 3))
-        
-    raw_neighbors = map_points[indices] # (M, 3)
-    
-    # 2. Filter Connected Component (DBSCAN)
-    # This ensures we only look at the relevant branch and ignore adjacent disjoint airways.
-    connected_neighbors = filter_connected_component(current_pos, raw_neighbors)
-    
-    if len(connected_neighbors) == 0:
-        return torch.zeros(K, 3), np.zeros((0, 3))
 
-    # 3. Transform to Local Frame
-    rot_cam = R.from_quat(current_quat)
-    inv_rot_cam = rot_cam.inv()
-    
-    # Vector from camera to point
-    rel_vecs = connected_neighbors - current_pos
-    
-    # Rotate
-    local_points_all = inv_rot_cam.apply(rel_vecs) # (M, 3)
-    
-    # 4. Select Top K for Model (Sorted by distance)
-    # We want the K closest points to the camera to feed into the model.
-    dists = np.linalg.norm(local_points_all, axis=1)
-    sorted_idx = np.argsort(dists)
-    
-    local_points_sorted = local_points_all[sorted_idx]
-    
-    # Pad or Truncate to fixed size K
-    out_points = np.zeros((K, 3), dtype=np.float32)
-    M = min(len(local_points_sorted), K)
-    out_points[:M] = local_points_sorted[:M]
-    
-    # Normalize to [-1, 1]
-    out_points_norm = out_points / NORM_MAP_SCALE
-    
-    # Return normalized tensor for model, AND full connected set for viz
-    return torch.from_numpy(out_points_norm).float(), connected_neighbors
-
-def run_inference_and_viz(args):
+def test(args):
     """
-    Runs inference on test sequences and generates visualization videos.
-    This simulates a closed-loop control scenario where the model's predictions
-    update the camera's position estimate frame-by-frame.
+    Main test function.
+    Runs inference on the dataset and generates a side-by-side video visualization.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[INFO] Testing on {device}")
+    print(f"[INFO] Starting Test on {device}")
     
-    # --- 1. Load Resources ---
-    static_dir = os.path.join(args.data_root, "static")
+    os.makedirs(args.output_dir, exist_ok=True)
     
-    # Lungs Mesh (for visualization context)
-    lung_obj_path = os.path.join("patient", "lungs.obj")
-    if not os.path.exists(lung_obj_path):
-        lung_obj_path = os.path.join(static_dir, "lungs.obj")
+    # Initialize dataset (window_size/frame_skip loaded from config inside dataset)
+    full_dataset = DeepLungDataset(
+        data_root=os.path.join(args.data_root, "sequences"),
+        mode='test',
+        img_size=args.img_size
+    )
     
-    lung_mesh = None
-    if os.path.exists(lung_obj_path):
-        print(f"[INFO] Loading 3D Lung Mesh from {lung_obj_path}")
-        lung_mesh = pv.read(lung_obj_path)
-
-    # Graph (Centerlines)
-    # This is the "Map" we are localizing against.
-    graph_path = os.path.join(static_dir, "deep_lung_graph.npz")
-    map_tree = None
-    map_points = None
+    # Get window_size from dataset (loaded from config)
+    window_size = full_dataset.window_size
+    print(f"[INFO] Using window_size={window_size}, frame_skip={full_dataset.frame_skip}")
     
-    if os.path.exists(graph_path):
-        print(f"[INFO] Loading Graph from {graph_path}")
-        gdata = np.load(graph_path)
-        if 'centerline_points' in gdata:
-            map_points = gdata['centerline_points']
-        else:
-            map_points = gdata['node_pos']
-        map_tree = cKDTree(map_points)
+    # --- DEBUGGING / OVERFITTING MODES (same as train.py) ---
+    if args.overfit:
+        print("[INFO] Overfitting mode: Testing on 'seq_test' only.")
+        indices = [i for i, (vp, _, _) in enumerate(full_dataset.samples) if "seq_test" in vp]
+        
+        if not indices:
+            print("[ERROR] 'seq_test' not found in dataset!")
+            return
+            
+        full_dataset = torch.utils.data.Subset(full_dataset, indices)
+        test_ds = full_dataset
     else:
-        print("[ERROR] Graph file not found!")
-        return
-
-    # Initialize Model
+        test_ds = full_dataset
+        
+    # For debug_one, use same first batch as training (shuffle=False)
+    test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
+    
+    if args.debug_one:
+        print("[INFO] DEBUG ONE mode: Testing on a SINGLE batch (first 16 samples).")
+        first_batch = next(iter(test_loader))
+        
+        class SingleBatchLoader:
+            def __init__(self, batch): 
+                self.batch = batch
+            def __iter__(self): 
+                yield self.batch
+            def __len__(self): 
+                return 1
+                
+        test_loader = SingleBatchLoader(first_batch)
+    
+    # Load Model
     model = ActionPredictor(
-        t_frames=args.t_frames, 
+        window_size=window_size,
         mode=args.model_mode,
         img_size=args.img_size
     ).to(device)
     
-    # Load Checkpoint
-    ckpt_path = os.path.join(args.checkpoint_dir, "best_model.pth")
+    # Load checkpoint
+    if args.debug_one:
+        ckpt_path = os.path.join(args.checkpoint_dir, "debug_one_model.pth")
+    elif args.overfit:
+        ckpt_path = os.path.join(args.checkpoint_dir, "overfit_model.pth")
+    else:
+        ckpt_path = os.path.join(args.checkpoint_dir, "best_model.pth")
+    
     if not os.path.exists(ckpt_path):
-        print(f"[ERROR] No checkpoint found at {ckpt_path}")
+        print(f"[ERROR] Checkpoint not found: {ckpt_path}")
         return
+        
+    print(f"[INFO] Loading checkpoint: {ckpt_path}")
     model.load_state_dict(torch.load(ckpt_path, map_location=device))
     model.eval()
-
-    # --- 2. Select Sequences ---
-    if args.overfit:
-        print("[INFO] Overfitting mode: Using 'seq_test' from TRAINING set.")
-        sequences_dir = os.path.join(args.data_root, "sequences")
-        seq_test_path = os.path.join(sequences_dir, "seq_test")
-        if not os.path.exists(seq_test_path):
-             print(f"[ERROR] 'seq_test' not found at {seq_test_path}")
-             return
-        seq_folders = [seq_test_path]
+    
+    # --- LOAD 3D ASSETS (like check_traj.py) ---
+    # Load lung mesh
+    lung_mesh = None
+    lung_path = os.path.join(args.data_root, "..", "patient", "lungs.obj")
+    if os.path.exists(lung_path):
+        print(f"[INFO] Loading lung mesh: {lung_path}")
+        lung_mesh = pv.read(lung_path)
     else:
-        if args.split == 'test':
-             sequences_dir = os.path.join(args.data_root, "test")
-             if not os.path.exists(sequences_dir):
-                 sequences_dir = os.path.join(args.data_root, "sequences")
-        else:
-             sequences_dir = os.path.join(args.data_root, "sequences")
-        seq_folders = sorted(glob.glob(os.path.join(sequences_dir, "seq_*")))
-
-    os.makedirs(args.output_dir, exist_ok=True)
-
-    # --- 3. Processing Loop ---
-    for seq_idx, seq_dir in enumerate(seq_folders):
-        if seq_idx >= args.num_viz: break 
-        print(f"[INFO] Processing: {os.path.basename(seq_dir)}")
-        
-        try:
-            # Load Data (Video + Trajectory)
-            # Use mmap_mode to save memory
-            full_video_np = np.load(os.path.join(seq_dir, "video.npy"), mmap_mode='r')
-            full_traj_np = np.load(os.path.join(seq_dir, "trajectory.npy"))
+        print(f"[WARNING] Lung mesh not found at {lung_path}")
+    
+    # Load centerline
+    graph_path = os.path.join(args.data_root, "static", "deep_lung_graph.npz")
+    centerline_pts = load_centerline_points(graph_path)
+    centerline_tree = None
+    if centerline_pts is not None:
+        print(f"[INFO] Loaded {len(centerline_pts)} centerline points")
+        centerline_tree = cKDTree(centerline_pts)
+    
+    # --- INFERENCE AND VIDEO GENERATION ---
+    print("[INFO] Running inference and generating video...")
+    
+    # Initialize PyVista off-screen plotter for 3D rendering
+    pv.start_xvfb()  # For headless environments
+    plotter = pv.Plotter(off_screen=True, window_size=(640, 480))
+    plotter.set_background('white')  # White background like check_ball.py
+    
+    # Collect all frames
+    all_frames = []
+    
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(tqdm(test_loader, desc="Processing batches")):
+            video = batch['video'].to(device)  # (B, T, C, H, W)
+            gt_deltas = batch['actions'].to(device)  # (B, T, 6) - LOCAL frame
+            map_points = batch['map_points'].to(device)  # (B, T, K, 3)
+            map_mask = batch['map_mask'].to(device)  # (B, T, K)
             
-
-        except:
-            print(f"[WARN] Could not load data for {seq_dir}")
-            continue
-
-        # Pre-process video frames for the model
-        print("  > Pre-processing video for model...")
-        resized_frames = []
-        
-        # Limit frames if requested for quick debugging
-        limit_frames = len(full_video_np)
-        if args.max_frames:
-            limit_frames = min(limit_frames, args.max_frames + args.t_frames)
-
-        for i in range(limit_frames):
-            f = full_video_np[i]
-            if f.shape[0] == 3: # Convert CHW -> HWC if needed
-                f = np.transpose(f, (1, 2, 0))
+            # Get first frame poses for transforming back to global
+            first_pos = batch['first_frame_pos'].numpy()  # (B, 3)
+            first_quat = batch['first_frame_quat'].numpy()  # (B, 4)
             
-            # Resize image to model input size (e.g., 128x128)
-            f_model = cv2.resize(f, (args.img_size, args.img_size))
-            f_model = np.transpose(f_model, (2, 0, 1)) # Back to CHW
-            resized_frames.append(f_model)
+            # Forward pass
+            pred_trans = model(video, map_points=map_points, map_mask=map_mask)  # (B, T, 3) - normalized output
             
-        video_tensor = torch.from_numpy(np.array(resized_frames)).float()
-        # Normalize to [-1, 1]
-        video_tensor = (video_tensor / 127.5) - 1.0
-        
-        gt_pos_raw = full_traj_np[:, :3]
-        gt_quat_raw = full_traj_np[:, 3:]
-        
-        N_frames = video_tensor.shape[0]
-        T = args.t_frames
-        
-        # --- CLOSED LOOP INFERENCE ---
-        # We start at the known Ground Truth position at Frame 0.
-        # From then on, we update position using Model Predictions.
-        current_pos_est = gt_pos_raw[0].copy()
-        
-        # Store data for visualization later
-        viz_data = []
-        
-        print("  > Running Inference...")
-        
-        # Iterate through the sequence in windows of size T.
-        # Step = Effective Length (Non-overlapping relative to model predictions)
-        effective_len = (args.t_frames - 1) * args.frame_skip + 1
-        
-        for t in range(0, N_frames - effective_len + 1, effective_len):
-            if args.max_frames and t >= args.max_frames:
-                print(f"  > Reached max_frames ({args.max_frames}). Stopping.")
-                break
+            # Get GT translation (first 3 dims of actions) - LOCAL frame
+            gt_trans_local = gt_deltas[:, :, :3].cpu().numpy()  # (B, T, 3)
             
-            # 1. Map Query (at current estimated position)
-            # Use the actual rotation from GT? Usually in SLAM we estimate this too, 
-            # but here we might assume IMU gives orientation. For simplicity, use GT quat.
-            q_curr = gt_quat_raw[t] 
-            local_map_tensor, candidates_global = get_local_map(map_tree, map_points, current_pos_est, q_curr, K=32)
+            # Denormalize prediction to mm (model outputs normalized values)
+            pred_trans_local = pred_trans.cpu().numpy() * NORM_MAP_SCALE  # (B, T, 3)
             
-            # 2. Prepare Batch
-            # Video input for this window
-            # Slice with frame_skip to match training
-            batch_video = video_tensor[t : t + effective_len : args.frame_skip].unsqueeze(0).to(device) # (1, T, C, H, W)
+            # Convert video back to displayable format
+            # Dataset stores RGB, normalized to [-1, 1]
+            video_np = video.cpu().numpy()  # (B, T, C, H, W)
+            video_np = (video_np + 1.0) * 127.5  # Denormalize from [-1, 1] to [0, 255]
+            video_np = video_np.clip(0, 255).astype(np.uint8)
             
-            # Replicate the static local map for all T frames in the window
-            # (Model expects map points per frame, but they are constant in this window reference frame)
-            batch_map = local_map_tensor.unsqueeze(0).unsqueeze(0).repeat(1, T, 1, 1).to(device)
-            
-            # 3. Model Prediction
-            with torch.no_grad():
-                pred_trans = model(batch_video, map_points=batch_map)
-            
-            pred_trans_np = pred_trans[0].cpu().numpy() # (T, 3)
-            
-            # 4. Process Predictions
-            # Convert model outputs (local deltas) back to global positions
-            window_preds_global = []
-            
-            for i in range(T):
-                frame_idx = t + i
-                if frame_idx >= N_frames: break
+            # Process each sample in batch
+            B, T = video_np.shape[:2]
+            for b in range(B):
+                # Get first frame's global pose for this sample
+                p0 = first_pos[b]  # (3,)
+                q0 = first_quat[b]  # (4,)
+                rot_0 = R.from_quat(q0)  # Rotation from frame 0's local to global
                 
-                # We un-rotate using the START OF WINDOW rotation (q_curr)
-                # Because predictions are made relative to the Local Frame at T=0
-                rot_mat_start = R.from_quat(q_curr)
+                # Transform LOCAL to GLOBAL coordinates
+                # global = rot_0.apply(local) + p0
+                gt_window_global = rot_0.apply(gt_trans_local[b]) + p0  # (T, 3)
+                pred_window_global = rot_0.apply(pred_trans_local[b]) + p0  # (T, 3)
                 
-                # Denormalize map scale
-                delta_local_norm = pred_trans_np[i]
-                delta_local_mm = delta_local_norm * NORM_MAP_SCALE
+                # Also keep local values for printing
+                gt_window_local = gt_trans_local[b]  # (T, 3)
+                pred_window_local = pred_trans_local[b]  # (T, 3)
                 
-                # Local -> Global
-                delta_global = rot_mat_start.apply(delta_local_mm)
-                
-                # New global position
-                pred_pos_global = current_pos_est + delta_global
-                window_preds_global.append(pred_pos_global)
-                
-                viz_data.append({
-                    'frame_idx': frame_idx,
-                    'gt_pos': gt_pos_raw[frame_idx],
-                    'pred_pos': pred_pos_global,
-                    'ball_center': current_pos_est,
-                    'candidates': candidates_global
-                })
-            
-            # 5. Update State
-            # The last predicted position becomes the start for the next window
-            current_pos_est = window_preds_global[-1]
-            
-        # --- VISUALIZATION GENERATION ---
-        save_path = os.path.join(args.output_dir, f"{os.path.basename(seq_dir)}_viz.mp4")
-        print(f"  > Generating Video: {save_path}")
-        
-        # Setup PyVista Plotter (Headless)
-        pv.set_plot_theme("document")
-        plotter = pv.Plotter(off_screen=True, window_size=(800, 600))
-        
-        # Configure Video Writer
-        out_h = 600
-        
-        # Get aspect ratio from first frame
-        f_sample = full_video_np[0]
-        if f_sample.shape[0] == 3: f_sample = np.transpose(f_sample, (1, 2, 0))
-        in_h, in_w = f_sample.shape[:2]
-        aspect_ratio = in_w / in_h
-        out_w_video = int(out_h * aspect_ratio)
-        
-        out_w_3d = 800
-        total_w = out_w_video + out_w_3d
-        
+                # Process each frame in window
+                for t in range(T):
+                    # Get input frame (C, H, W) -> (H, W, C)
+                    # Note: Different sequences may have different color orders
+                    # Simulator sequences are BGR, phantom sequences are RGB
+                    # We'll convert assuming BGR (most common for OpenCV-saved data)
+                    frame_bgr = video_np[b, t].transpose(1, 2, 0)
+                    frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                    
+                    # Current positions (LOCAL for printing, GLOBAL for 3D viz)
+                    current_gt_local = gt_window_local[t]
+                    current_pred_local = pred_window_local[t]
+                    current_gt_global = gt_window_global[t]
+                    current_pred_global = pred_window_global[t]
+                    
+                    # Print frame info to console (local frame values)
+                    print(f"[Batch {batch_idx+1} | Sample {b+1} | Frame {t+1}/{T}] "
+                          f"GT: ({current_gt_local[0]:+.3f}, {current_gt_local[1]:+.3f}, {current_gt_local[2]:+.3f}) mm | "
+                          f"Pred: ({current_pred_local[0]:+.3f}, {current_pred_local[1]:+.3f}, {current_pred_local[2]:+.3f}) mm")
+                    
+                    # Trajectory up to current frame in window (GLOBAL for 3D)
+                    gt_traj_current = gt_window_global[:t+1]
+                    pred_traj_current = pred_window_global[:t+1]
+                    
+                    # Render 3D view (with lung mesh and centerline + FPS points)
+                    img_3d = render_3d_view(
+                        plotter,
+                        lung_mesh,
+                        centerline_pts,
+                        centerline_tree,
+                        gt_traj_current,
+                        pred_traj_current,
+                        current_gt_global,
+                        current_pred_global,
+                        t,
+                        T
+                    )
+                    
+                    # Get dimensions
+                    h_3d, w_3d = img_3d.shape[:2]
+                    h_frame, w_frame = frame_rgb.shape[:2]
+                    
+                    # Resize video frame to match 3D view height while preserving aspect ratio
+                    scale = h_3d / h_frame
+                    new_w_frame = int(w_frame * scale)
+                    frame_resized = cv2.resize(frame_rgb, (new_w_frame, h_3d))
+                    
+                    # Create side-by-side frame (RGB)
+                    combined_rgb = np.hstack([frame_resized, img_3d])
+                    
+                    # Convert RGB to BGR for OpenCV video writing
+                    combined_bgr = cv2.cvtColor(combined_rgb, cv2.COLOR_RGB2BGR)
+                    
+                    # Add frame info overlay on input side
+                    cv2.putText(combined_bgr, f"Window: {batch_idx+1}", (10, 30),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    cv2.putText(combined_bgr, f"Frame: {t+1}/{T}", (10, 60),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    
+                    all_frames.append(combined_bgr)
+    
+    plotter.close()
+    
+    # Save video
+    if args.debug_one:
+        output_path = os.path.join(args.output_dir, "test_debug_one.mp4")
+    elif args.overfit:
+        output_path = os.path.join(args.output_dir, "test_overfit.mp4")
+    else:
+        output_path = os.path.join(args.output_dir, "test_results.mp4")
+    
+    print(f"[INFO] Saving video to {output_path}")
+    
+    if len(all_frames) > 0:
+        h, w = all_frames[0].shape[:2]
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(save_path, fourcc, 10.0, (total_w, out_h))
+        out = cv2.VideoWriter(output_path, fourcc, args.fps, (w, h))
         
-        for i, data in enumerate(tqdm(viz_data, desc="Rendering")):
-            # 1. Input Video Frame (Read from mmap)
-            frame_idx = data['frame_idx']
-            frame_img = full_video_np[frame_idx]
-            
-            if frame_img.shape[0] == 3:
-                frame_img = np.transpose(frame_img, (1, 2, 0))
-                
-            # Ensure uint8
-            if frame_img.dtype != np.uint8:
-                if frame_img.max() <= 1.0:
-                    frame_img = (frame_img * 255).astype(np.uint8)
-                else:
-                    frame_img = frame_img.astype(np.uint8)
-            
-            # Resize for output video
-            frame_img = cv2.resize(frame_img, (out_w_video, out_h), interpolation=cv2.INTER_NEAREST)
-            
-            # Check for black frame warnings
-            if frame_img.mean() < 1.0:
-                print(f"[WARN] Frame {frame_idx} is black! Mean: {frame_img.mean()}")
-
-            # 2. 3D Render
-            plotter.clear()
-            
-            # Add Lungs (Context)
-            if lung_mesh:
-                plotter.add_mesh(lung_mesh, color='wheat', opacity=0.1, label='Lungs')
-            
-            # Add Full Centerline (Faint context)
-            if map_points is not None:
-                plotter.add_mesh(pv.PolyData(map_points), color='black', opacity=0.1, point_size=2, render_points_as_spheres=True)
-            
-            # Visualize the Query Ball (Wireframe)
-            ball_center = data['ball_center']
-            sphere = pv.Sphere(radius=MAP_QUERY_RADIUS, center=ball_center, theta_resolution=20, phi_resolution=20)
-            plotter.add_mesh(sphere, style='wireframe', color='gray', opacity=0.3, line_width=1)
-            
-            # Visualize Candidates (Red points used by model)
-            candidates = data['candidates']
-            if len(candidates) > 0:
-                plotter.add_mesh(pv.PolyData(candidates), color='red', point_size=10, render_points_as_spheres=True)
-            else:
-                if i % args.t_frames == 0:
-                    print(f"[WARN] No candidates for frame {data['frame_idx']}")
-
-            # Visualize Current Prediction (Green Sphere)
-            pred_pos = data['pred_pos']
-            plotter.add_mesh(pv.Sphere(radius=2.5, center=pred_pos), color='green', label='Prediction')
-            
-            # Visualize Ground Truth (Blue Sphere - for comparison)
-            gt_pos = data['gt_pos']
-            plotter.add_mesh(pv.Sphere(radius=1.5, center=gt_pos), color='blue', opacity=0.5, label='GT')
-
-            # Camera Follow Mode
-            # Position the 3D camera to follow the PREDICTED position, simulating a 3rd person view of the scope.
-            cam_target = pred_pos
-            plotter.camera.position = (cam_target[0], cam_target[1] - 120, cam_target[2] + 30)
-            plotter.camera.focal_point = cam_target
-            plotter.camera.up = (0, 0, 1)
-            plotter.camera.zoom(1.0)
-            
-            # Render to image
-            img_3d = plotter.screenshot(return_img=True, transparent_background=False)
-            img_3d = cv2.resize(img_3d, (out_w_3d, out_h))
-            img_3d = cv2.cvtColor(img_3d, cv2.COLOR_RGB2BGR)
-            
-            # Combine Side-by-Side
-            combined = np.hstack([frame_img, img_3d])
-            out.write(combined)
-            
-        plotter.close()
+        for frame in tqdm(all_frames, desc="Writing video"):
+            out.write(frame)
+        
         out.release()
-        
-        # Save Snapshot of Trajectory (Global View)
-        # Collect all preds to calculate error metrics
-        all_preds = np.array([d['pred_pos'] for d in viz_data])
-        all_gt = np.array([d['gt_pos'] for d in viz_data])
-        
-        # Calculate Average Distance Error (ADE)
-        ade = np.linalg.norm(all_preds - all_gt, axis=1).mean()
-        print(f"  > Sequence ADE: {ade:.2f} mm")
-        
-        # Create a static snapshot image
-        plotter = pv.Plotter(off_screen=True, window_size=(1000, 1000))
-        if lung_mesh:
-            plotter.add_mesh(lung_mesh, color='wheat', opacity=0.1)
-        
-        plotter.add_mesh(pv.PolyData(all_gt), color='blue', point_size=3, render_points_as_spheres=True, label='GT')
-        plotter.add_mesh(pv.PolyData(all_preds), color='green', point_size=4, render_points_as_spheres=True, label='Pred')
-        
-        # Draw trajectory lines
-        if len(all_preds) > 1:
-            lines = pv.lines_from_points(all_preds)
-            plotter.add_mesh(lines, color='green', line_width=2)
-            
-        center = np.mean(all_gt, axis=0)
-        plotter.camera.position = (center[0], center[1] - 200, center[2] + 50)
-        plotter.camera.focal_point = center
-        plotter.camera.up = (0, 0, 1)
-        
-        snap_path = os.path.join(args.output_dir, f"{os.path.basename(seq_dir)}_ADE_{ade:.1f}mm.png")
-        plotter.screenshot(snap_path)
-        plotter.close()
+        print(f"[INFO] Video saved: {output_path}")
+        print(f"[INFO] Total frames: {len(all_frames)}")
+    else:
+        print("[WARNING] No frames to save!")
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Test BronchoLoc model and generate visualization video")
+    
+    # Same arguments as train.py
     parser.add_argument('--data_root', type=str, default='./dataset')
     parser.add_argument('--checkpoint_dir', type=str, default='./checkpoints')
-    parser.add_argument('--output_dir', type=str, default='./dataset/test/results')
     parser.add_argument('--model_mode', type=str, default='s', choices=['s', 'b', 'm', 'l'])
-    parser.add_argument('--t_frames', type=int, default=16)
-    parser.add_argument('--frame_skip', type=int, default=1, help="Frame skipping (dilation) within window")
+    parser.add_argument('--batch_size', type=int, default=1, help="Batch size (1 recommended for video)")
+    parser.add_argument('--workers', type=int, default=4)
+    parser.add_argument('--overfit', action='store_true', help="Test on seq_test only (matches overfit training)")
+    parser.add_argument('--debug_one', action='store_true', help="Test on SINGLE batch (matches debug_one training)")
     parser.add_argument('--img_size', type=int, default=128, help="Image resolution (default: 128)")
-    parser.add_argument('--num_viz', type=int, default=1)
-    parser.add_argument('--overfit', action='store_true', help="Overfit on a small subset")
-    parser.add_argument('--split', type=str, default='test', choices=['test', 'train'])
-    parser.add_argument('--max_frames', type=int, default=None, help="Limit number of frames for debugging")
+    
+    # Test-specific arguments
+    parser.add_argument('--output_dir', type=str, default='./dataset/test/results', help="Output directory for videos")
+    parser.add_argument('--fps', type=int, default=10, help="Output video FPS")
     
     args = parser.parse_args()
-    run_inference_and_viz(args)
+    test(args)

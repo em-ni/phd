@@ -1,2 +1,3 @@
-checkpoints*
-dataset*
+checkpoints/*
+dataset/*
+check/*

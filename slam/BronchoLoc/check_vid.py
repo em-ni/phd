@@ -113,7 +113,7 @@ def verify_videos(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='./dataset/sequences', help="Path to sequences directory")
-    parser.add_argument('--output_dir', type=str, default='./dataset_check_videos', help="Where to save mp4s")
+    parser.add_argument('--output_dir', type=str, default='./check/videos', help="Where to save mp4s")
     parser.add_argument('--scale', type=float, default=0.5, help="Downscale factor (e.g. 0.5 for half size). Ignored if img_size is set.")
     parser.add_argument('--img_size', type=int, default=None, help="Force output size (WxH), overrides scale. Creates subfolder.")
     parser.add_argument('--fps', type=int, default=30, help="Output FPS")
