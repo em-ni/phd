@@ -1,53 +1,95 @@
 import os
 import argparse
 import torch
+import shutil
+import signal
 from torch.utils.data import DataLoader, random_split
 import torch.optim as optim
 from tqdm import tqdm
+from datetime import datetime
 
 from deep_lung_st import ActionPredictor
 from deep_lung_dataset import DeepLungDataset 
-from constants import NORM_MAP_SCALE 
+from constants import NORM_MAP_SCALE, DEFAULT_MAX_MAP_POINTS
+
+# Global flag to prevent saving during an ongoing save
+_saving_in_progress = False
+
+    
+def get_checkpoint_name(args, is_debug=False):
+    """Generate descriptive checkpoint filename."""
+    mode_prefix = "debug" if is_debug else ("overfit" if args.overfit else "train")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    name = f"{mode_prefix}_model_{args.model_mode}_img_{args.img_size}_pts_{DEFAULT_MAX_MAP_POINTS}_{timestamp}"
+    return name
+
+
+def save_checkpoint(path, model, optimizer, scheduler, epoch, name):
+    """Save checkpoint atomically - writes to temp file first, then renames.
+    
+    This ensures the checkpoint is either fully written or not at all,
+    preventing corruption from Ctrl+C or crashes during save.
+    """
+    global _saving_in_progress
+    _saving_in_progress = True
+    
+    temp_path = path + ".tmp"
+    try:
+        # Save to temporary file first
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'checkpoint_name': name
+        }, temp_path)
+        
+        # Atomic rename (on same filesystem, this is atomic on most OSes)
+        shutil.move(temp_path, path)
+        
+    except Exception as e:
+        # Clean up temp file if save failed
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise e
+    finally:
+        _saving_in_progress = False
+
 
 def train(args):
     """
     Main training function.
     Sets up the dataset, model, optimizer, and executes the training loop.
+    Supports resuming from a checkpoint with --resume.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[INFO] Starting Training on {device}")
     
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     
-    # Initialize full dataset (window_size/frame_skip loaded from config inside dataset)
+    # Initialize full dataset
     full_dataset = DeepLungDataset(
         data_root=os.path.join(args.data_root, "sequences"), 
         mode='train', 
         img_size=args.img_size
     )
     
-    # Get window_size from dataset (loaded from config)
     window_size = full_dataset.window_size
     print(f"[INFO] Using window_size={window_size}, frame_skip={full_dataset.frame_skip}")
     
     # --- DEBUGGING / OVERFITTING MODES ---
     if args.overfit:
         print("[INFO] Overfitting mode: Training on 'seq_test' only.")
-        # Filter dataset to only include samples from "seq_test".
-        # This is useful to verify if the model can memorize a single sequence.
         indices = [i for i, (vp, _, _) in enumerate(full_dataset.samples) if "seq_test" in vp]
         
         if not indices:
-            print("[ERROR] 'seq_test' not found in dataset! Please ensure 'dataset/sequences/seq_test' exists.")
+            print("[ERROR] 'seq_test' not found in dataset!")
             return
             
         full_dataset = torch.utils.data.Subset(full_dataset, indices)
-        
-        # Train on this subset, Val on the SAME subset to check overfitting capability
         train_ds = full_dataset
         val_ds = full_dataset
     else:
-        # Standard Split: 80% Train, 20% Val
         train_size = int(0.8 * len(full_dataset))
         val_size = len(full_dataset) - train_size
         train_ds, val_ds = random_split(full_dataset, [train_size, val_size])
@@ -55,18 +97,15 @@ def train(args):
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
     
     if args.debug_one:
-        print("[INFO] DEBUG ONE mode: Training on a SINGLE batch (first 16 samples).")
-        # Extreme debug mode: Overfit on just one batch of data.
-        # Use shuffle=False to ensure the same batch is used in test.py
+        print("[INFO] DEBUG ONE mode: Training on a SINGLE batch.")
         debug_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
         first_batch = next(iter(debug_loader))
         
-        # Create a dummy loader that yields this batch forever
         class InfiniteLoader:
             def __init__(self, batch): self.batch = batch
             def __iter__(self): return self
             def __next__(self): return self.batch
-            def __len__(self): return 100 # arbitrary length for tqdm visualization
+            def __len__(self): return 100
             
         train_loader = InfiniteLoader(first_batch)
         val_loader = InfiniteLoader(first_batch)
@@ -85,16 +124,38 @@ def train(args):
     
     # Optimization Setup
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    # Learning rate scheduler: Reduce LR when validation loss stops improving
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.5)
-    
-    # Regression Loss Function
-    # Use reduction='none' to apply per-sample weighting later
     criterion = torch.nn.MSELoss(reduction='none')
+    
+    # Resume state
+    start_epoch = 0
+    checkpoint_name = None
+    
+    # --- RESUME FROM CHECKPOINT ---
+    if args.resume:
+        if os.path.exists(args.resume):
+            print(f"[INFO] Resuming from checkpoint: {args.resume}")
+            checkpoint = torch.load(args.resume, map_location=device)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            start_epoch = checkpoint['epoch'] + 1
+            checkpoint_name = checkpoint.get('checkpoint_name', None)
+            print(f"[INFO] Resuming from epoch {start_epoch}")
+        else:
+            print(f"[WARNING] Checkpoint not found: {args.resume}, starting fresh")
+    
+    # Generate checkpoint name if not resuming
+    if checkpoint_name is None:
+        checkpoint_name = get_checkpoint_name(args, is_debug=args.debug_one)
+    
+    checkpoint_path = os.path.join(args.checkpoint_dir, f"{checkpoint_name}.pth")
+    print(f"[INFO] Checkpoint will be saved as: {checkpoint_path}")
 
     # --- TRAINING LOOP ---
+    epoch = start_epoch  # Initialize for KeyboardInterrupt handler
     try:
-        for epoch in range(args.epochs):
+        for epoch in range(start_epoch, args.epochs):
             print(f"\nEpoch {epoch+1}/{args.epochs}")
             
             model.train()
@@ -102,49 +163,37 @@ def train(args):
             
             pbar = tqdm(train_loader)
             for batch in pbar:
-                video = batch['video'].to(device) # (B, T, C, H, W)
-                gt_deltas = batch['actions'].to(device) # (B, T, 6)
-                map_points = batch['map_points'].to(device) # (B, T, K, 3)
-                map_mask = batch['map_mask'].to(device) # (B, T, K)
+                video = batch['video'].to(device)
+                gt_deltas = batch['actions'].to(device)
+                map_points = batch['map_points'].to(device)
+                map_mask = batch['map_mask'].to(device)
                 
                 optimizer.zero_grad()
                 
-                # Forward Pass
-                # (B, T, 3) - Model now only predicts translation (via graph selection)
                 pred_trans = model(video, map_points=map_points, map_mask=map_mask)
-                
-                # Get Ground Truth Translation
                 gt_trans = gt_deltas[:, :, :3]
-                
-                # Normalize GT to match map point scale [-1, 1]
-                # This is critical because the model's output is derived from normalized map points.
                 gt_trans_norm = gt_trans / NORM_MAP_SCALE
                 
-                # Calculate Loss
-                raw_loss = criterion(pred_trans, gt_trans_norm)
+                base_loss = criterion(pred_trans, gt_trans_norm)
                 
-                # Weighted Loss (Motion Incentive)
-                # Penalize errors more on frames with larger movement.
-                # This combats the "stop-and-stare" problem where models predict zero motion.
-                motion_mag = torch.norm(gt_trans_norm, dim=2)
-                weights = 1.0 + args.motion_weight * motion_mag
-                weights = weights.unsqueeze(2)
-                loss = (raw_loss * weights).mean()
+                if args.motion_weight > 0:
+                    pred_variance = pred_trans.var(dim=1).mean()
+                    motion_term = -args.motion_weight * pred_variance
+                    loss = base_loss.mean() + motion_term
+                else:
+                    loss = base_loss.mean()
                 
-                # Backward Pass
                 loss.backward()
                 optimizer.step()
                 
                 run_loss += loss.item()
-                
-                pbar.set_postfix({'MSE': f"{loss.item():.6f}"})
-
+                pbar.set_postfix({"MSE": f"{loss.item():.6f}"})
+            
             avg_train_loss = run_loss / len(train_loader)
             
-            # --- VALIDATION LOOP ---
+            # Validation
             model.eval()
             val_loss = 0.0
-            
             with torch.no_grad():
                 for batch in val_loader:
                     video = batch['video'].to(device)
@@ -153,47 +202,25 @@ def train(args):
                     map_mask = batch['map_mask'].to(device)
                     
                     pred_trans = model(video, map_points=map_points, map_mask=map_mask)
-                    
                     gt_trans = gt_deltas[:, :, :3]
                     gt_trans_norm = gt_trans / NORM_MAP_SCALE
                     
-                    raw_loss = criterion(pred_trans, gt_trans_norm)
-                    motion_mag = torch.norm(gt_trans_norm, dim=2)
-                    weights = 1.0 + args.motion_weight * motion_mag
-                    weights = weights.unsqueeze(2)
-                    loss = (raw_loss * weights).mean()
-                    
+                    loss = criterion(pred_trans, gt_trans_norm).mean()
                     val_loss += loss.item()
-            
+                    
             avg_val_loss = val_loss / len(val_loader)
             
             print(f"  >> Train MSE: {avg_train_loss:.6f}")
             print(f"  >> Val MSE:   {avg_val_loss:.6f}")
             
-            # Step LR Scheduler
             scheduler.step(avg_val_loss)
-            
-            # Save Checkpoint (Best so far)
-            # Note: Currently saves every epoch, could be improved to save only on improvement.
-            if args.debug_one:
-                ckpt_name = "debug_one_model.pth"
-            elif args.overfit:
-                ckpt_name = "overfit_model.pth"
-            else:
-                ckpt_name = "best_model.pth"
-            torch.save(model.state_dict(), os.path.join(args.checkpoint_dir, ckpt_name))
+            save_checkpoint(checkpoint_path, model, optimizer, scheduler, epoch, checkpoint_name)
                 
     except KeyboardInterrupt:
         print("\n[INFO] Training interrupted by user (Ctrl+C).")
-        # Save model on interrupt
-        if args.debug_one:
-            save_path = os.path.join(args.checkpoint_dir, "debug_one_model.pth")
-        elif args.overfit:
-            save_path = os.path.join(args.checkpoint_dir, "overfit_model.pth")
-        else:
-            save_path = os.path.join(args.checkpoint_dir, "best_model.pth")
-        torch.save(model.state_dict(), save_path)
-        print(f"[INFO] Model saved to {save_path}")
+        save_checkpoint(checkpoint_path, model, optimizer, scheduler, epoch, checkpoint_name)
+        print(f"[INFO] Checkpoint saved to {checkpoint_path}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -204,9 +231,10 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--workers', type=int, default=4)
-    parser.add_argument('--overfit', action='store_true', help="Overfit on a small subset")
-    parser.add_argument('--debug_one', action='store_true', help="Overfit on a SINGLE batch to verify learning capability")
-    parser.add_argument('--motion_weight', type=float, default=0.0, help="Weight for motion incentive (0.0 = standard MSE)")
-    parser.add_argument('--img_size', type=int, default=128, help="Image resolution (default: 128)")
+    parser.add_argument('--overfit', action='store_true', help="Overfit on seq_test only")
+    parser.add_argument('--debug_one', action='store_true', help="Overfit on a SINGLE batch")
+    parser.add_argument('--motion_weight', type=float, default=0.0, help="Weight for motion incentive")
+    parser.add_argument('--img_size', type=int, default=128, help="Image resolution")
+    parser.add_argument('--resume', type=str, default=None, help="Path to checkpoint to resume from")
     args = parser.parse_args()
     train(args)

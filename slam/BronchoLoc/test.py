@@ -180,19 +180,31 @@ def test(args):
     ).to(device)
     
     # Load checkpoint
-    if args.debug_one:
-        ckpt_path = os.path.join(args.checkpoint_dir, "debug_one_model.pth")
-    elif args.overfit:
-        ckpt_path = os.path.join(args.checkpoint_dir, "overfit_model.pth")
+    if args.checkpoint:
+        ckpt_path = args.checkpoint
     else:
-        ckpt_path = os.path.join(args.checkpoint_dir, "best_model.pth")
+        # Default fallback names (for backwards compatibility)
+        if args.debug_one:
+            ckpt_path = os.path.join(args.checkpoint_dir, "debug_one_model.pth")
+        elif args.overfit:
+            ckpt_path = os.path.join(args.checkpoint_dir, "overfit_model.pth")
+        else:
+            ckpt_path = os.path.join(args.checkpoint_dir, "best_model.pth")
     
     if not os.path.exists(ckpt_path):
         print(f"[ERROR] Checkpoint not found: {ckpt_path}")
         return
         
     print(f"[INFO] Loading checkpoint: {ckpt_path}")
-    model.load_state_dict(torch.load(ckpt_path, map_location=device))
+    checkpoint = torch.load(ckpt_path, map_location=device)
+    
+    # Handle both old (state_dict only) and new (full checkpoint) formats
+    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['model_state_dict'])
+        print(f"[INFO] Loaded from epoch {checkpoint.get('epoch', '?')}")
+    else:
+        # Old format: checkpoint IS the state dict
+        model.load_state_dict(checkpoint)
     model.eval()
     
     # --- LOAD 3D ASSETS (like check_traj.py) ---
@@ -361,6 +373,7 @@ if __name__ == "__main__":
     # Same arguments as train.py
     parser.add_argument('--data_root', type=str, default='./dataset')
     parser.add_argument('--checkpoint_dir', type=str, default='./checkpoints')
+    parser.add_argument('--checkpoint', type=str, default=None, help="Path to specific checkpoint file")
     parser.add_argument('--model_mode', type=str, default='s', choices=['s', 'b', 'm', 'l'])
     parser.add_argument('--batch_size', type=int, default=1, help="Batch size (1 recommended for video)")
     parser.add_argument('--workers', type=int, default=4)
