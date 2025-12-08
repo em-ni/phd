@@ -1,8 +1,34 @@
+#!/usr/bin/env python
+"""
+Build Phantom Dataset
+
+This script processes phantom bronchoscopy recordings and creates
+sequence folders in the same format as the simulator recordings.
+
+It uses the transformations computed by align_phantom_traj.py to align
+the sensor trajectories with the 3D lung model.
+
+Usage:
+    python build_phantom_dataset.py
+
+Requirements:
+    For each video (e.g., lb.mp4), there must be:
+    - dataset/phantom/lb.txt (TUM trajectory from magnetic sensor)
+    - dataset/phantom/lb_transform.json (computed by align_phantom_traj.py)
+
+Output:
+    Creates sequence folders in dataset/sequences/seq_phantom_<name>/
+    with trajectory.npy and video.npy
+"""
+
 import os
+import glob
+import json
 import numpy as np
 import cv2
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
+
 
 def load_tum_trajectory(filepath):
     """
@@ -17,15 +43,15 @@ def load_tum_trajectory(filepath):
     
     timestamps = data[:, 0]
     positions = data[:, 1:4]
-    quaternions = data[:, 4:8] # qx, qy, qz, qw
+    quaternions = data[:, 4:8]  # qx, qy, qz, qw
     
     return timestamps, positions, quaternions
+
 
 def interpolate_pose(target_time, timestamps, positions, quaternions):
     """
     Interpolates pose at target_time.
     """
-    # Find indices
     idx = np.searchsorted(timestamps, target_time)
     
     if idx == 0:
@@ -38,134 +64,100 @@ def interpolate_pose(target_time, timestamps, positions, quaternions):
     ratio = (target_time - t0) / (t1 - t0)
     
     # Position interpolation (Linear)
-    p0 = positions[idx-1]
-    p1 = positions[idx]
-    p_interp = (1 - ratio) * p0 + ratio * p1
+    p_interp = (1 - ratio) * positions[idx-1] + ratio * positions[idx]
     
     # Rotation interpolation (SLERP)
-    # Create rotation objects
-    r0 = R.from_quat(quaternions[idx-1])
-    r1 = R.from_quat(quaternions[idx])
-    
-    # Slerp
     key_rots = R.from_quat([quaternions[idx-1], quaternions[idx]])
-    key_times = [0, 1]
-    slerp = Slerp(key_times, key_rots)
-    r_interp = slerp([ratio])[0]
-    q_interp = r_interp.as_quat()
+    slerp = Slerp([0, 1], key_rots)
+    q_interp = slerp([ratio])[0].as_quat()
     
     return p_interp, q_interp
 
-def process_sequence(name, output_root):
-    txt_path = f"dataset/phantom/{name}.txt"
-    video_path = f"dataset/phantom/{name}.mp4"
-    
-    print(f"\nProcessing {name}...")
-    
-    if not os.path.exists(txt_path) or not os.path.exists(video_path):
-        print(f"  [ERROR] Missing files for {name}")
-        return
 
-    # 1. Load Trajectory
+def process_sequence(name, phantom_dir, output_root):
+    """
+    Process a single phantom sequence.
+    
+    Args:
+        name: Sequence name (e.g., 'lb')
+        phantom_dir: Path to phantom data folder
+        output_root: Output folder for sequences
+    """
+    txt_path = os.path.join(phantom_dir, f"{name}.txt")
+    video_path = os.path.join(phantom_dir, f"{name}.mp4")
+    transform_path = os.path.join(phantom_dir, f"{name}_transform.json")
+    
+    print(f"\n{'='*60}")
+    print(f"Processing: {name}")
+    print(f"{'='*60}")
+    
+    # Check required files
+    if not os.path.exists(txt_path):
+        print(f"  [ERROR] Trajectory not found: {txt_path}")
+        return False
+    
+    if not os.path.exists(video_path):
+        print(f"  [ERROR] Video not found: {video_path}")
+        return False
+    
+    if not os.path.exists(transform_path):
+        print(f"  [ERROR] Transform not found: {transform_path}")
+        print(f"  Run: python align_phantom_traj.py {name}")
+        return False
+    
+    # 1. Load Transform
+    print(f"  Loading transform: {transform_path}")
+    with open(transform_path, 'r') as f:
+        transform_data = json.load(f)
+    
+    scale = transform_data['scale']
+    R_mat = np.array(transform_data['rotation_matrix'])
+    t_vec = np.array(transform_data['translation'])
+    rmse = transform_data['alignment_rmse_mm']
+    
+    print(f"    Scale: {scale:.4f}")
+    print(f"    RMSE: {rmse:.2f} mm")
+    
+    # 2. Load Trajectory
+    print(f"  Loading trajectory: {txt_path}")
     timestamps, positions, quaternions = load_tum_trajectory(txt_path)
+    print(f"    {len(timestamps)} poses")
     
     # Scale positions from meters to millimeters
-    print(f"  [INFO] Scaling positions by 1000 (m -> mm)")
     positions = positions * 1000.0
     
-    # --- SENSOR TO CAMERA TRANSFORM ---
-    # Phantom moves in -X (local). Simulator expects +Y (local).
-    # We need a transform T_sc such that T_camera = T_sensor * T_sc
-    # mapping Camera +Y to Sensor -X.
-    # Rotation +90 deg around Z maps [0, 1, 0] (Y) to [-1, 0, 0] (-X).
-    # R_sc = [[0, -1, 0], [1, 0, 0], [0, 0, 1]]
+    # 3. Apply Similarity Transformation
+    # p_model = scale * R @ p_sensor + t
+    print(f"  Applying similarity transformation...")
+    positions_aligned = scale * (positions @ R_mat.T) + t_vec
     
-    print(f"  [INFO] Applying Sensor-to-Camera transform (Motion -X -> +Y)")
-    r_sc = R.from_euler('z', 90, degrees=True).as_matrix()
-    t_sc = np.eye(4)
-    t_sc[:3, :3] = r_sc
-    
-    # Convert all to matrices first
-    N = len(positions)
-    all_rots = R.from_quat(quaternions).as_matrix()
-    all_matrices = np.eye(4).reshape(1, 4, 4).repeat(N, axis=0)
-    all_matrices[:, :3, :3] = all_rots
-    all_matrices[:, :3, 3] = positions
-    
-    # Apply T_sc
-    # T_camera = T_sensor @ T_sc
-    all_matrices = all_matrices @ t_sc
-    
-    # Update positions and quaternions for the alignment step
-    positions = all_matrices[:, :3, 3]
-    quaternions = R.from_matrix(all_matrices[:, :3, :3]).as_quat()
-    
-    # --- ALIGNMENT ---
-    # Target Start Pose (from seq_1764114794)
-    # Matrix:
-    # [[-0.69604685 -0.21296049  0.68568697 10.031978]
-    #  [-0.6556269  -0.20079842 -0.72789653 20.91881]
-    #  [ 0.29269806 -0.95620491  0.00014248 37.472145]
-    #  [ 0.0         0.0         0.0        1.0]]
-    
-    target_start_matrix = np.array([
-        [-0.69604685, -0.21296049,  0.68568697, 10.031978],
-        [-0.6556269,  -0.20079842, -0.72789653, 20.91881],
-        [ 0.29269806, -0.95620491,  0.00014248, 37.472145],
-        [ 0.0,         0.0,         0.0,        1.0]
-    ])
-    
-    # Current Start Pose
-    current_start_pos = positions[0]
-    current_start_quat = quaternions[0]
-    current_start_rot = R.from_quat(current_start_quat).as_matrix()
-    
-    current_start_matrix = np.eye(4)
-    current_start_matrix[:3, :3] = current_start_rot
-    current_start_matrix[:3, 3] = current_start_pos
-    
-    # Compute Alignment Transform: T_align * T_current = T_target
-    # T_align = T_target * inv(T_current)
-    t_align = target_start_matrix @ np.linalg.inv(current_start_matrix)
-    
-    print(f"  [INFO] Aligning coordinate system...")
-    print(f"  Alignment Matrix:\n{t_align}")
-    
-    # Apply to all poses
-    # 1. Convert all to matrices
-    N = len(positions)
-    all_rots = R.from_quat(quaternions).as_matrix()
-    all_matrices = np.eye(4).reshape(1, 4, 4).repeat(N, axis=0)
-    all_matrices[:, :3, :3] = all_rots
-    all_matrices[:, :3, 3] = positions
-    
-    # 2. Transform
-    # New = T_align * Old
-    # We can do this efficiently
-    new_matrices = t_align @ all_matrices
-    
-    # 3. Extract back
-    positions = new_matrices[:, :3, 3]
-    new_rots = new_matrices[:, :3, :3]
-    quaternions = R.from_matrix(new_rots).as_quat()
+    # For quaternions, we need to apply the rotation component
+    # q_model = R_align * q_sensor
+    R_align = R.from_matrix(R_mat)
+    original_rots = R.from_quat(quaternions)
+    aligned_rots = R_align * original_rots
+    quaternions_aligned = aligned_rots.as_quat()
     
     start_time = timestamps[0]
     end_time = timestamps[-1]
-    print(f"  Trajectory duration: {end_time - start_time:.2f}s")
+    duration = end_time - start_time
+    print(f"    Trajectory duration: {duration:.2f}s")
     
-    # 2. Open Video
+    # 4. Open Video
+    print(f"  Loading video: {video_path}")
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print("  [ERROR] Could not open video")
-        return
+        return False
         
     fps = cap.get(cv2.CAP_PROP_FPS)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print(f"  Video: {frame_count} frames, {fps} fps, {width}x{height}")
+    print(f"    {frame_count} frames, {fps:.1f} fps, {width}x{height}")
     
-    # 3. Process Frames
+    # 5. Process Frames
+    print(f"  Processing frames...")
     valid_frames = []
     valid_poses = []
     
@@ -175,17 +167,18 @@ def process_sequence(name, output_root):
             break
             
         # Calculate target time
-        # Assuming video starts at the same time as the trajectory
         current_time = start_time + (i / fps)
         
         if current_time > end_time:
-            print(f"  [INFO] Video exceeds trajectory duration at frame {i}. Stopping.")
+            print(f"  [INFO] Video exceeds trajectory at frame {i}. Stopping.")
             break
             
         # Interpolate pose
-        pos, quat = interpolate_pose(current_time, timestamps, positions, quaternions)
+        pos, quat = interpolate_pose(
+            current_time, timestamps, 
+            positions_aligned, quaternions_aligned
+        )
         
-        # Store
         # Convert BGR to RGB
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         valid_frames.append(frame_rgb)
@@ -194,44 +187,88 @@ def process_sequence(name, output_root):
         pose = np.concatenate([pos, quat])
         valid_poses.append(pose)
         
-        if i % 100 == 0:
-            print(f"  Processed {i}/{frame_count} frames...", end='\r')
+        if i % 200 == 0:
+            print(f"    {i}/{frame_count} frames...", end='\r')
             
     cap.release()
-    print(f"  Processed {len(valid_frames)} frames.          ")
+    print(f"    Processed {len(valid_frames)} frames.          ")
     
-    # 4. Save
-    # Create output directory
-    # Use timestamp for folder name to match convention
-    seq_name = f"seq_{int(start_time)}"
-    # Append suffix to distinguish if needed, but int timestamp is usually unique enough.
-    # However, to be safe and descriptive, maybe I should use the name?
-    # The user said "sequence format accepted by the model". The existing ones are seq_TIMESTAMP.
-    # I'll stick to seq_TIMESTAMP.
-    
+    # 6. Save
+    seq_name = f"seq_phantom_{name}"
     seq_dir = os.path.join(output_root, seq_name)
     os.makedirs(seq_dir, exist_ok=True)
     
-    print(f"  Saving to {seq_dir}...")
+    print(f"  Saving to: {seq_dir}")
     
     # Save trajectory
     traj_arr = np.array(valid_poses, dtype=np.float32)
     np.save(os.path.join(seq_dir, "trajectory.npy"), traj_arr)
+    print(f"    trajectory.npy: {traj_arr.shape}")
     
     # Save video
-    # Use memmap if too large? 
-    # For 2612 frames, it's ~7GB. np.save might handle it if RAM is sufficient.
-    # Let's try direct save first.
     try:
         video_arr = np.array(valid_frames, dtype=np.uint8)
         np.save(os.path.join(seq_dir, "video.npy"), video_arr)
-        print("  Saved successfully.")
-    except Exception as e:
-        print(f"  [ERROR] Saving video failed: {e}")
+        print(f"    video.npy: {video_arr.shape} ({video_arr.nbytes / 1e9:.2f} GB)")
+    except MemoryError:
+        print(f"  [ERROR] Out of memory saving video. Try using memmap.")
+        return False
+    
+    print(f"  Done!")
+    return True
+
+
+def main():
+    # Paths
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    phantom_dir = os.path.join(base_dir, "dataset", "phantom")
+    output_root = os.path.join(base_dir, "dataset", "sequences")
+    
+    os.makedirs(output_root, exist_ok=True)
+    
+    print("="*60)
+    print("BUILD PHANTOM DATASET")
+    print("="*60)
+    print(f"Phantom folder: {phantom_dir}")
+    print(f"Output folder: {output_root}")
+    
+    # Find all videos
+    video_files = glob.glob(os.path.join(phantom_dir, "*.mp4"))
+    
+    if not video_files:
+        print(f"\n[ERROR] No videos found in {phantom_dir}")
+        return
+    
+    # Extract names
+    names = [os.path.splitext(os.path.basename(v))[0] for v in video_files]
+    print(f"\nFound {len(names)} videos: {names}")
+    
+    # Process each
+    success = []
+    failed = []
+    
+    for name in names:
+        try:
+            if process_sequence(name, phantom_dir, output_root):
+                success.append(name)
+            else:
+                failed.append(name)
+        except Exception as e:
+            print(f"  [ERROR] Exception: {e}")
+            failed.append(name)
+    
+    # Summary
+    print("\n" + "="*60)
+    print("SUMMARY")
+    print("="*60)
+    print(f"Successful: {len(success)} - {success}")
+    print(f"Failed: {len(failed)} - {failed}")
+    
+    if failed:
+        print("\nTo fix failed sequences, run align_phantom_traj.py for each:")
+        for name in failed:
+            print(f"  python align_phantom_traj.py {name}")
+
 
 if __name__ == "__main__":
-    OUTPUT_ROOT = "dataset/sequences"
-    os.makedirs(OUTPUT_ROOT, exist_ok=True)
-    
-    process_sequence("lb", OUTPUT_ROOT)
-    process_sequence("rb", OUTPUT_ROOT)
+    main()
