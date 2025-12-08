@@ -7,34 +7,45 @@ from einops import rearrange, repeat
 # CONFIGURATIONS
 # ==============================================================================
 # Model variants with different capacities: small (s), base (b), medium (m), large (l)
+# Configurable dimensions:
+#   - embed_dim: Main embedding dimension (must be divisible by num_heads)
+#   - num_heads: Number of attention heads (embed_dim must be divisible by this)
+#   - vi_layers: Number of SpatioTemporal transformer blocks
+#   - mlp_expansion: Expansion factor for transformer FFN (hidden = embed_dim * mlp_expansion)
+#   - patch_size: Size of image patches for ViT (img_size must be divisible by this)
+#   - map_encoder_hidden: List of hidden layer sizes for MapEncoder MLP (input is 3, output is embed_dim)
 MODEL_CONFIGS = {
     's': {
         'embed_dim': 128,
         'num_heads': 32,
         'vi_layers': 16,
-        'gat_heads': 32,
-        'lstm_hidden': 128
+        'mlp_expansion': 4,
+        'patch_size': 16,
+        'map_encoder_hidden': [64, 128]
     },
     'b': {
         'embed_dim': 512,
         'num_heads': 8,
         'vi_layers': 8,
-        'gat_heads': 8,
-        'lstm_hidden': 256
+        'mlp_expansion': 4,
+        'patch_size': 16,
+        'map_encoder_hidden': [64, 128]
     },
     'm': {
         'embed_dim': 1024,
         'num_heads': 16,
         'vi_layers': 12,
-        'gat_heads': 8,
-        'lstm_hidden': 512
+        'mlp_expansion': 4,
+        'patch_size': 16,
+        'map_encoder_hidden': [128, 256]
     },
     'l': {
         'embed_dim': 2048,
         'num_heads': 32,
         'vi_layers': 24,
-        'gat_heads': 16,
-        'lstm_hidden': 1024
+        'mlp_expansion': 4,
+        'patch_size': 16,
+        'map_encoder_hidden': [256, 512]
     }
 }
 
@@ -46,14 +57,15 @@ class SpatioTemporalBlock(nn.Module):
     1. Spatial Attention: Attends between patches within the same frame.
     2. Temporal Attention: Attends between the same spatial location across different frames.
     """
-    def __init__(self, dim, num_heads, window_size):
+    def __init__(self, dim, num_heads, window_size, mlp_expansion=4):
         super().__init__()
         self.spatial_attn = nn.MultiheadAttention(dim, num_heads, batch_first=True)
         self.temporal_attn = nn.MultiheadAttention(dim, num_heads, batch_first=True)
         self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
         self.norm3 = nn.LayerNorm(dim)
-        self.mlp = nn.Sequential(nn.Linear(dim, dim*4), nn.GELU(), nn.Linear(dim*4, dim))
+        hidden_dim = dim * mlp_expansion
+        self.mlp = nn.Sequential(nn.Linear(dim, hidden_dim), nn.GELU(), nn.Linear(hidden_dim, dim))
         self.window_size = window_size
 
     def forward(self, x):
@@ -94,9 +106,10 @@ class STViViT(nn.Module):
         dim = config['embed_dim']
         layers = config['vi_layers']
         heads = config['num_heads']
-        self.patch_size = 16
+        mlp_expansion = config.get('mlp_expansion', 4)
+        self.patch_size = config.get('patch_size', 16)
         
-        # Convolutional Patch Embedding: Splits image into 16x16 patches and projects to dim
+        # Convolutional Patch Embedding: Splits image into patches and projects to dim
         self.patch_embed = nn.Conv2d(3, dim, kernel_size=self.patch_size, stride=self.patch_size)
         self.num_patches = (img_size // self.patch_size) ** 2
         
@@ -104,7 +117,10 @@ class STViViT(nn.Module):
         self.pos_embed = nn.Parameter(torch.randn(1, window_size, self.num_patches, dim))
         
         # Stack of SpatioTemporal Blocks
-        self.blocks = nn.ModuleList([SpatioTemporalBlock(dim, heads, window_size) for _ in range(layers)])
+        self.blocks = nn.ModuleList([
+            SpatioTemporalBlock(dim, heads, window_size, mlp_expansion) 
+            for _ in range(layers)
+        ])
         
         self.proj_out = nn.Linear(dim, dim)
 
@@ -159,22 +175,31 @@ class STViViT(nn.Module):
         x = self.proj_out(x)
         return x
 
-
 class MapEncoder(nn.Module):
     """
     Encodes local map points (K, 3) into feature vectors (K, D).
     Used to embed the topological map context.
     No pooling is applied because we want to attend to individual points.
+    
+    Args:
+        out_dim: Output dimension
+        hidden_sizes: List of hidden layer sizes (default: [64, 128])
     """
-    def __init__(self, out_dim=64):
+    def __init__(self, out_dim=64, hidden_sizes=None):
         super().__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(3, 64),
-            nn.GELU(),
-            nn.Linear(64, 128),
-            nn.GELU(),
-            nn.Linear(128, out_dim)
-        )
+        if hidden_sizes is None:
+            hidden_sizes = [64, 128]
+        
+        # Build MLP dynamically based on hidden_sizes
+        layers = []
+        in_dim = 3  # Input is always 3D coordinates
+        for h_dim in hidden_sizes:
+            layers.append(nn.Linear(in_dim, h_dim))
+            layers.append(nn.GELU())
+            in_dim = h_dim
+        layers.append(nn.Linear(in_dim, out_dim))
+        
+        self.mlp = nn.Sequential(*layers)
         
     def forward(self, x):
         # x: (B, T, K, 3)
@@ -198,6 +223,7 @@ class ActionPredictor(nn.Module):
         self.window_size = window_size
         self.config = MODEL_CONFIGS[mode]
         embed_dim = self.config['embed_dim']
+        map_encoder_hidden = self.config.get('map_encoder_hidden', [64, 128])
         
         # Visual Encoder
         self.visual_encoder = STViViT(self.config, img_size=img_size, window_size=window_size)
@@ -205,7 +231,7 @@ class ActionPredictor(nn.Module):
         # Map Encoder
         # We ensure map features match visual feature dimension for dot product attention.
         self.map_dim = embed_dim 
-        self.map_encoder = MapEncoder(out_dim=self.map_dim)
+        self.map_encoder = MapEncoder(out_dim=self.map_dim, hidden_sizes=map_encoder_hidden)
         
         # Selection Head (Attention)
         # Projects visual features to query space
