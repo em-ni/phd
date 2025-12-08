@@ -259,7 +259,7 @@ if __name__ == "__main__":
     parser.add_argument('--motion_weight', type=float, default=0.0, help="Weight for motion incentive")
     parser.add_argument('--img_size', type=int, default=128, help="Image resolution")
     parser.add_argument('--resume', type=str, default=None, help="Path to checkpoint to resume from")
-    parser.add_argument('--reset_lr', type=float, default=None, help="Reset learning rate to this value when resuming")
+    parser.add_argument('--reset_lr', type=float, default=1e-6, help="Reset learning rate to this value when resuming")
     parser.add_argument('--scheduler', type=str, default='plateau', choices=['plateau', 'cosine_restart'],
                         help="LR scheduler: 'plateau' (default) or 'cosine_restart' for warm restarts")
     args = parser.parse_args()
