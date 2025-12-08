@@ -124,7 +124,15 @@ def train(args):
     
     # Optimization Setup
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.5)
+    
+    # Scheduler Setup
+    if args.scheduler == 'cosine_restart':
+        # CosineAnnealingWarmRestarts: T_0=50 epochs per cycle, T_mult=2 doubles each cycle
+        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2, eta_min=1e-6)
+        print(f"[INFO] Using CosineAnnealingWarmRestarts scheduler (T_0=50, T_mult=2)")
+    else:
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=20, factor=0.5, min_lr=1e-6)
+    
     criterion = torch.nn.MSELoss(reduction='none')
     
     # Resume state
@@ -138,7 +146,15 @@ def train(args):
             checkpoint = torch.load(args.resume, map_location=device)
             model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            
+            if args.reset_lr is not None:
+                # Reset optimizer LR to specified value
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = args.reset_lr
+                print(f"[INFO] Learning rate reset to {args.reset_lr}")
+            else:
+                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+                
             start_epoch = checkpoint['epoch'] + 1
             checkpoint_name = checkpoint.get('checkpoint_name', None)
             print(f"[INFO] Resuming from epoch {start_epoch}")
@@ -213,7 +229,14 @@ def train(args):
             print(f"  >> Train MSE: {avg_train_loss:.6f}")
             print(f"  >> Val MSE:   {avg_val_loss:.6f}")
             
-            scheduler.step(avg_val_loss)
+            # Step scheduler (different schedulers have different APIs)
+            if args.scheduler == 'cosine_restart':
+                scheduler.step(epoch)
+            else:
+                scheduler.step(avg_val_loss)
+            
+            current_lr = optimizer.param_groups[0]['lr']
+            print(f"  >> Current LR: {current_lr:.2e}")
             save_checkpoint(checkpoint_path, model, optimizer, scheduler, epoch, checkpoint_name)
                 
     except KeyboardInterrupt:
@@ -236,5 +259,8 @@ if __name__ == "__main__":
     parser.add_argument('--motion_weight', type=float, default=0.0, help="Weight for motion incentive")
     parser.add_argument('--img_size', type=int, default=128, help="Image resolution")
     parser.add_argument('--resume', type=str, default=None, help="Path to checkpoint to resume from")
+    parser.add_argument('--reset_lr', type=float, default=None, help="Reset learning rate to this value when resuming")
+    parser.add_argument('--scheduler', type=str, default='plateau', choices=['plateau', 'cosine_restart'],
+                        help="LR scheduler: 'plateau' (default) or 'cosine_restart' for warm restarts")
     args = parser.parse_args()
     train(args)
