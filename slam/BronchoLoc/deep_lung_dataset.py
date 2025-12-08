@@ -323,18 +323,22 @@ class DeepLungDataset(Dataset):
         for i in range(self.window_size):
             p_curr = positions[i]
             
-            # Find nearest neighbor to current position from the fixed window map points.
-            # This represents the "correct" node we should be at or moving towards.
-            if len(window_map_points_global) > 0:
-                dists = np.linalg.norm(window_map_points_global - p_curr, axis=1)
+            # Find nearest neighbor to current position from the DOWNSAMPLED map points.
+            # IMPORTANT: Use model_map_points_global (what the model sees), not window_map_points_global!
+            # This ensures the GT is always within the convex hull of the model's candidates.
+            if len(model_map_points_global) > 0:
+                dists = np.linalg.norm(model_map_points_global - p_curr, axis=1)
                 nn_idx = np.argmin(dists)
-                target_global = window_map_points_global[nn_idx]
+                target_global = model_map_points_global[nn_idx]
             else:
                 target_global = p_curr # Fallback to identity (learn nothing) if no map
             
             # Transform this global target into the Local Frame of START (T=0)
             # Vector from Camera 0 to Target
             target_local = inv_rot_0.apply(target_global - p0)
+            
+            # Normalize to match the map points (which are also normalized)
+            target_local = target_local / NORM_MAP_SCALE
             
             # We construct a 6D action vector (3 pos + 3 rot), but currently only use position.
             # Zeros for rotation placeholders.
