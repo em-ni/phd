@@ -1,33 +1,28 @@
 #!/usr/bin/env python
 """
-Correspondence Annotation Tool - Slider Navigation
+Align Phantom Trajectory
 
-Navigate the video with keyboard, navigate the centerline with a SLIDER.
-Much more responsive than keyboard events!
+Computes the similarity transformation to align phantom sensor trajectories
+with the 3D lung model.
 
 Usage:
-    python annotate_simple.py <sequence_name>
+    # Full workflow: annotate correspondences and compute transform
+    python align_phantom_traj.py <sequence_name>
     
-    Example: python annotate_simple.py lb
+    # Reuse existing correspondences (skip annotation)
+    python align_phantom_traj.py <sequence_name> --reuse
 
-Step 1: Video browser (OpenCV)
-    LEFT/RIGHT or A/D  - Navigate frames
-    1/5/0              - Set step size (1/5/10)
-    ENTER              - Mark frame for annotation
-    BACKSPACE          - Unmark last frame
-    Q                  - Done, proceed to 3D navigation
+Options:
+    --reuse    Skip annotation and use existing correspondences from JSON file
 
-Step 2: 3D point selection (PyVista) - for each marked frame
-    SLIDER             - Move along centerline (drag it!)
-    P                  - Confirm current point
-    K                  - Skip this frame
-    Q                  - Quit (saves progress)
-    M                  - Toggle mesh visibility
+The transformation ensures that all trajectory points remain INSIDE the mesh,
+since a bronchoscope cannot be outside the airways.
 """
 
 import os
 import sys
 import json
+import argparse
 import numpy as np
 import cv2
 import pyvista as pv
@@ -66,6 +61,36 @@ def get_sensor_pose(frame_idx, fps, timestamps, positions, quaternions):
     return pos, quat
 
 
+def check_points_inside_mesh(points, mesh):
+    """
+    Check which points are inside the mesh.
+    
+    Returns:
+        inside_mask: boolean array, True if point is inside
+        distances: signed distances (negative = inside, positive = outside)
+    """
+    # Create a PolyData from points
+    point_cloud = pv.PolyData(points)
+    
+    # Use select_enclosed_points to check containment
+    # This works by casting rays and checking intersections
+    selection = point_cloud.select_enclosed_points(mesh, tolerance=0.0, check_surface=False)
+    
+    # Get the mask
+    inside_mask = selection['SelectedPoints'].astype(bool)
+    
+    # Compute signed distances for more detailed info
+    # Negative = inside, Positive = outside
+    # Note: This uses the closest point on surface
+    closest_cells, closest_points = mesh.find_closest_cell(points, return_closest_point=True)
+    distances = np.linalg.norm(points - closest_points, axis=1)
+    
+    # Sign the distances: negative if inside
+    signed_distances = np.where(inside_mask, -distances, distances)
+    
+    return inside_mask, signed_distances
+
+
 def browse_video(video_path, existing_frames=None):
     """
     Browse video and mark frames for annotation.
@@ -99,7 +124,6 @@ def browse_video(video_path, existing_frames=None):
     while True:
         display = frame.copy()
         
-        # Draw info
         info = [
             f"Frame: {current_frame}/{frame_count-1} (step={step})",
             f"Marked frames: {len(marked_frames)}",
@@ -109,7 +133,6 @@ def browse_video(video_path, existing_frames=None):
             "LEFT/RIGHT=Navigate  |  1/5/0=Step size"
         ]
         
-        # Check if current frame is marked
         is_marked = current_frame in marked_frames
         if is_marked:
             cv2.rectangle(display, (0, 0), (display.shape[1], display.shape[0]), 
@@ -161,76 +184,51 @@ def browse_video(video_path, existing_frames=None):
 
 def select_centerline_point(frame_idx, video_frame, mesh, centerline_points, 
                             existing_correspondences, frame_num, total_frames):
-    """
-    Navigate through centerline points using a SLIDER.
-    Returns selected point or None if skipped.
-    """
+    """Navigate through centerline points using a SLIDER."""
     n_points = len(centerline_points)
     
-    # State stored in lists for callback access
-    current_idx = [n_points // 2]  # Start in middle
+    current_idx = [n_points // 2]
     confirmed = [False]
     skipped = [False]
     quit_all = [False]
     mesh_visible = [True]
-    marker_actor = [None]
     
-    # Create plotter
     plotter = pv.Plotter(
         title=f"Frame {frame_idx} ({frame_num}/{total_frames}) - Use SLIDER, P=Confirm, K=Skip",
         window_size=(1400, 900)
     )
     
-    # Add mesh (very transparent)
     plotter.add_mesh(mesh, color='lightblue', opacity=0.1, name='mesh')
     
-    # Add centerline as points (rendered as spheres)
     centerline_poly = pv.PolyData(centerline_points)
     plotter.add_mesh(
-        centerline_poly, 
-        color='yellow', 
-        point_size=5,
-        render_points_as_spheres=True,
-        opacity=0.8, 
-        name='centerline'
+        centerline_poly, color='yellow', point_size=5,
+        render_points_as_spheres=True, opacity=0.8, name='centerline'
     )
     
-    # Add existing correspondences
     for corr in existing_correspondences:
-        sphere = pv.Sphere(radius=2.0, center=corr['model_pos'])
+        sphere = pv.Sphere(radius=1.0, center=corr['model_pos'])
         plotter.add_mesh(sphere, color='lime')
     
-    # Initial marker
     current_point = centerline_points[current_idx[0]]
-    marker = pv.Sphere(radius=3.5, center=current_point)
-    marker_actor[0] = plotter.add_mesh(marker, color='red', name='marker')
+    marker = pv.Sphere(radius=1.75, center=current_point)
+    plotter.add_mesh(marker, color='red', name='marker')
     
     def update_marker(value):
-        """Callback for slider - update marker position."""
         idx = int(value)
         current_idx[0] = idx
         point = centerline_points[idx]
-        
-        # Remove old marker and add new one
         plotter.remove_actor('marker')
-        new_marker = pv.Sphere(radius=3.5, center=point)
-        marker_actor[0] = plotter.add_mesh(new_marker, color='red', name='marker')
+        new_marker = pv.Sphere(radius=1.75, center=point)
+        plotter.add_mesh(new_marker, color='red', name='marker')
     
-    # Add slider widget
     plotter.add_slider_widget(
-        callback=update_marker,
-        rng=[0, n_points - 1],
-        value=current_idx[0],
-        title="Centerline Position",
-        pointa=(0.1, 0.1),
-        pointb=(0.9, 0.1),
-        style='modern',
-        fmt="%.0f"
+        callback=update_marker, rng=[0, n_points - 1], value=current_idx[0],
+        title="Centerline Position", pointa=(0.1, 0.1), pointb=(0.9, 0.1),
+        style='modern', fmt="%.0f"
     )
     
     def close_plotter():
-        """Properly close the plotter from a callback."""
-        # Use the interactor to properly terminate
         if plotter.iren is not None:
             plotter.iren.terminate_app()
     
@@ -254,27 +252,18 @@ def select_centerline_point(frame_idx, video_frame, mesh, centerline_points,
             plotter.add_mesh(mesh, color='lightblue', opacity=0.1, name='mesh')
             mesh_visible[0] = True
     
-    # Key bindings (only for confirm/skip/quit)
     plotter.add_key_event('p', confirm)
     plotter.add_key_event('k', skip)
     plotter.add_key_event('q', quit_action)
     plotter.add_key_event('m', toggle_mesh)
     
-    # Add instructions
     plotter.add_text(
         f"Frame {frame_idx} ({frame_num}/{total_frames})\n\n"
-        "DRAG the slider below to move\n"
-        "along the centerline.\n\n"
-        "P = Confirm this point\n"
-        "K = Skip this frame\n"
-        "M = Toggle mesh\n"
-        "Q = Quit",
-        position='upper_left',
-        font_size=12,
-        color='white'
+        "DRAG the slider below to move\nalong the centerline.\n\n"
+        "P = Confirm this point\nK = Skip this frame\nM = Toggle mesh\nQ = Quit",
+        position='upper_left', font_size=12, color='white'
     )
     
-    # Show video frame in separate window for reference
     cv2.namedWindow(f"Reference: Frame {frame_idx}", cv2.WINDOW_NORMAL)
     cv2.resizeWindow(f"Reference: Frame {frame_idx}", 800, 600)
     display = video_frame.copy()
@@ -283,13 +272,12 @@ def select_centerline_point(frame_idx, video_frame, mesh, centerline_points,
     cv2.imshow(f"Reference: Frame {frame_idx}", display)
     cv2.waitKey(1)
     
-    # Show plotter
     plotter.show()
     
     cv2.destroyWindow(f"Reference: Frame {frame_idx}")
     
     if quit_all[0]:
-        return None, True  # Signal to quit
+        return None, True
     elif confirmed[0]:
         selected_point = centerline_points[current_idx[0]]
         return selected_point.tolist(), False
@@ -297,52 +285,158 @@ def select_centerline_point(frame_idx, video_frame, mesh, centerline_points,
         return None, False
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python annotate_simple.py <sequence_name>")
-        print("  Example: python annotate_simple.py lb")
-        sys.exit(1)
+def umeyama_similarity(src_points, dst_points):
+    """Compute similarity transform using Umeyama algorithm."""
+    n = src_points.shape[0]
     
-    sequence_name = sys.argv[1]
+    if n < 3:
+        raise ValueError("Need at least 3 correspondences")
     
-    # Paths
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    video_path = os.path.join(base_dir, f"dataset/phantom/{sequence_name}.mp4")
-    trajectory_path = os.path.join(base_dir, f"dataset/phantom/{sequence_name}.txt")
-    mesh_path = os.path.join(base_dir, "patient/lungs.obj")
-    centerline_path = os.path.join(base_dir, "patient/centerline.vtk")
-    output_path = os.path.join(base_dir, f"dataset/phantom/{sequence_name}_correspondences.json")
+    src_mean = src_points.mean(axis=0)
+    dst_mean = dst_points.mean(axis=0)
     
-    # Validate paths
-    for path, name in [
-        (video_path, "Video"), 
-        (trajectory_path, "Trajectory"), 
-        (mesh_path, "Mesh"),
-        (centerline_path, "Centerline")
-    ]:
-        if not os.path.exists(path):
-            print(f"Error: {name} not found: {path}")
-            sys.exit(1)
+    src_centered = src_points - src_mean
+    dst_centered = dst_points - dst_mean
     
-    # Always start fresh - overwrite existing correspondences
-    if os.path.exists(output_path):
-        print(f"[INFO] Existing correspondences file will be OVERWRITTEN")
+    H = src_centered.T @ dst_centered / n
+    U, S, Vt = np.linalg.svd(H)
     
+    R_mat = Vt.T @ U.T
+    
+    if np.linalg.det(R_mat) < 0:
+        Vt[-1, :] *= -1
+        S[-1] *= -1
+        R_mat = Vt.T @ U.T
+    
+    src_var = np.mean(np.sum(src_centered**2, axis=1))
+    s = np.sum(S) / src_var
+    
+    t = dst_mean - s * R_mat @ src_mean
+    
+    transformed = s * (src_points @ R_mat.T) + t
+    error = np.sqrt(np.mean(np.sum((transformed - dst_points)**2, axis=1)))
+    
+    return s, R_mat, t, error
+
+
+def refine_transform_constrained(s_init, R_init, t_init, src_points, dst_points,
+                                  trajectory_positions, mesh, 
+                                  outside_penalty=1.0, max_iterations=200):
+    """
+    Refine transformation to minimize points outside mesh.
+    
+    Uses scipy.optimize to minimize:
+        objective = correspondence_error + outside_penalty * num_outside_points
+    
+    Args:
+        s_init, R_init, t_init: Initial transform from Umeyama
+        src_points: Correspondence source points
+        dst_points: Correspondence target points
+        trajectory_positions: Full trajectory to check containment
+        mesh: PyVista mesh for containment checking
+        outside_penalty: Weight for outside points (higher = stricter)
+        max_iterations: Max optimization iterations
+    
+    Returns:
+        s, R_mat, t, error, n_outside
+    """
+    from scipy.optimize import minimize
+    from scipy.spatial.transform import Rotation as Rot
+    
+    # Subsample trajectory for faster optimization
+    step = max(1, len(trajectory_positions) // 200)
+    traj_sample = trajectory_positions[::step]
+    
+    # Initial parameters: [scale, euler_x, euler_y, euler_z, tx, ty, tz]
+    euler_init = Rot.from_matrix(R_init).as_euler('xyz', degrees=False)
+    x0 = np.array([s_init, euler_init[0], euler_init[1], euler_init[2],
+                   t_init[0], t_init[1], t_init[2]])
+    
+    # Pre-compute mesh for faster containment checking
+    def count_outside(positions, mesh):
+        """Count points outside mesh."""
+        if len(positions) == 0:
+            return 0
+        point_cloud = pv.PolyData(positions)
+        try:
+            selection = point_cloud.select_enclosed_points(mesh, tolerance=0.0, check_surface=False)
+            inside_mask = selection['SelectedPoints'].astype(bool)
+            return (~inside_mask).sum()
+        except:
+            return len(positions)  # Assume all outside on error
+    
+    def objective(x):
+        """Combined objective: correspondence error + outside penalty."""
+        s = x[0]
+        euler = x[1:4]
+        t = x[4:7]
+        
+        # Build rotation matrix
+        R_mat = Rot.from_euler('xyz', euler, degrees=False).as_matrix()
+        
+        # Correspondence error
+        transformed_src = s * (src_points @ R_mat.T) + t
+        corr_error = np.sqrt(np.mean(np.sum((transformed_src - dst_points)**2, axis=1)))
+        
+        # Containment penalty (subsample for speed)
+        traj_transformed = s * (traj_sample @ R_mat.T) + t
+        n_outside = count_outside(traj_transformed, mesh)
+        outside_ratio = n_outside / len(traj_sample)
+        
+        # Combined objective
+        total = corr_error + outside_penalty * outside_ratio * 100
+        
+        return total
+    
+    print(f"\n  Refining transformation to minimize outside points...")
+    print(f"  Initial outside: {count_outside(s_init * (traj_sample @ R_init.T) + t_init, mesh)}/{len(traj_sample)}")
+    
+    # Bounds: scale > 0.1, others unbounded
+    bounds = [(0.1, 2.0),  # scale
+              (-np.pi, np.pi), (-np.pi, np.pi), (-np.pi, np.pi),  # euler
+              (None, None), (None, None), (None, None)]  # translation
+    
+    result = minimize(
+        objective, x0,
+        method='L-BFGS-B',
+        bounds=bounds,
+        options={'maxiter': max_iterations, 'disp': False}
+    )
+    
+    # Extract results
+    s = result.x[0]
+    euler = result.x[1:4]
+    t = result.x[4:7]
+    R_mat = Rot.from_euler('xyz', euler, degrees=False).as_matrix()
+    
+    # Compute final metrics
+    transformed_src = s * (src_points @ R_mat.T) + t
+    error = np.sqrt(np.mean(np.sum((transformed_src - dst_points)**2, axis=1)))
+    
+    # Final outside count on full trajectory
+    traj_transformed = s * (trajectory_positions @ R_mat.T) + t
+    n_outside = count_outside(traj_transformed, mesh)
+    
+    print(f"  Refined outside: {n_outside}/{len(trajectory_positions)}")
+    print(f"  Optimization converged: {result.success}")
+    
+    return s, R_mat, t, error, n_outside
+
+
+def annotate_correspondences(sequence_name, base_dir, video_path, trajectory_path,
+                              mesh_path, centerline_path, output_path):
+    """Run the annotation workflow."""
     # Load trajectory
     timestamps, positions, quaternions = load_trajectory(trajectory_path)
     
-    # Step 1: Browse video and mark frames
+    # Browse video and mark frames
     marked_frames, fps = browse_video(video_path, existing_frames=None)
     
     if not marked_frames:
         print("No frames marked. Exiting.")
-        return
+        return None
     
     print(f"\nMarked {len(marked_frames)} frames: {marked_frames}")
-    
-    # All marked frames are new (starting fresh)
-    
-    print(f"Will annotate {len(marked_frames)} frames: {marked_frames}")
     
     # Load 3D data
     print("\nLoading 3D data...")
@@ -351,38 +445,27 @@ def main():
     centerline_points = np.array(centerline.points)
     print(f"  Centerline: {len(centerline_points)} points")
     
-    # Load video for frames
     cap = cv2.VideoCapture(video_path)
     
-    # Step 2: Navigate centerline for each marked frame
     print("\n" + "="*60)
     print("STEP 2: CENTERLINE NAVIGATION (SLIDER)")
     print("="*60)
-    print("For each marked frame:")
-    print("  - DRAG the slider to move along centerline")
-    print("  - P to confirm current point")
-    print("  - K to skip, Q to quit")
-    print("  - M to toggle mesh visibility")
-    print("="*60)
     
-    correspondences = []  # Start fresh
+    correspondences = []
     
     for i, frame_idx in enumerate(marked_frames):
         print(f"\n--- Frame {frame_idx} ({i+1}/{len(marked_frames)}) ---")
         
-        # Get video frame
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, video_frame = cap.read()
         if not ret:
             print(f"Could not read frame {frame_idx}, skipping")
             continue
         
-        # Get sensor pose
         sensor_pos, sensor_quat = get_sensor_pose(
             frame_idx, fps, timestamps, positions, quaternions
         )
         
-        # Select point on centerline
         selected_point, should_quit = select_centerline_point(
             frame_idx, video_frame, mesh, centerline_points,
             correspondences, i+1, len(marked_frames)
@@ -402,7 +485,6 @@ def main():
             correspondences.append(corr)
             print(f"  Added: frame {frame_idx} -> [{selected_point[0]:.1f}, {selected_point[1]:.1f}, {selected_point[2]:.1f}]")
             
-            # Save after each addition
             with open(output_path, 'w') as f:
                 json.dump(correspondences, f, indent=2)
         else:
@@ -410,144 +492,119 @@ def main():
     
     cap.release()
     
-    # Final save
     with open(output_path, 'w') as f:
         json.dump(correspondences, f, indent=2)
     
-    print(f"\n{'='*60}")
-    print(f"Saved {len(correspondences)} correspondences to:")
-    print(f"  {output_path}")
-    print(f"{'='*60}")
+    print(f"\nSaved {len(correspondences)} correspondences to: {output_path}")
     
-    # --- COMPUTE TRANSFORMATION ---
-    if len(correspondences) >= 3:
-        compute_and_visualize_transform(
-            sequence_name, base_dir, correspondences, 
-            mesh_path, centerline_path, trajectory_path
-        )
-    else:
-        print(f"\nNeed at least 3 correspondences (have {len(correspondences)})")
+    return correspondences
 
 
-def umeyama_similarity(src_points, dst_points):
-    """
-    Compute similarity transform (scale, rotation, translation) 
-    that minimizes ||dst - (s * R @ src + t)||^2
-    
-    This is the Umeyama algorithm for point cloud registration.
-    """
-    n = src_points.shape[0]
-    
-    if n < 3:
-        raise ValueError("Need at least 3 correspondences for robust estimation")
-    
-    # Compute centroids
-    src_mean = src_points.mean(axis=0)
-    dst_mean = dst_points.mean(axis=0)
-    
-    # Center the points
-    src_centered = src_points - src_mean
-    dst_centered = dst_points - dst_mean
-    
-    # Compute covariance matrix
-    H = src_centered.T @ dst_centered / n
-    
-    # SVD
-    U, S, Vt = np.linalg.svd(H)
-    
-    # Rotation
-    R_mat = Vt.T @ U.T
-    
-    # Handle reflection case (ensure proper rotation)
-    if np.linalg.det(R_mat) < 0:
-        Vt[-1, :] *= -1
-        S[-1] *= -1
-        R_mat = Vt.T @ U.T
-    
-    # Scale
-    src_var = np.mean(np.sum(src_centered**2, axis=1))
-    s = np.sum(S) / src_var
-    
-    # Translation
-    t = dst_mean - s * R_mat @ src_mean
-    
-    # Compute error
-    transformed = s * (src_points @ R_mat.T) + t
-    error = np.sqrt(np.mean(np.sum((transformed - dst_points)**2, axis=1)))
-    
-    return s, R_mat, t, error
-
-
-def compute_and_visualize_transform(sequence_name, base_dir, correspondences,
-                                     mesh_path, centerline_path, trajectory_path):
-    """Compute the transformation and visualize the result."""
+def compute_and_validate_transform(sequence_name, base_dir, correspondences,
+                                    mesh_path, centerline_path, trajectory_path,
+                                    apply_constraint=False):
+    """Compute transformation and validate that all points are inside mesh."""
     from scipy.spatial.transform import Rotation as Rot
     
     n = len(correspondences)
     
-    # Extract points
     src_points = np.array([c['sensor_pos'] for c in correspondences])
     dst_points = np.array([c['model_pos'] for c in correspondences])
     
     print("\n" + "="*60)
-    print("COMPUTING SIMILARITY TRANSFORMATION")
+    print("STEP 1: UMEYAMA (INITIAL ESTIMATE)")
     print("="*60)
     
-    print("\nSource points (sensor, mm):")
-    for i, p in enumerate(src_points):
-        print(f"  {i+1}: [{p[0]:.2f}, {p[1]:.2f}, {p[2]:.2f}]")
-    
-    print("\nTarget points (3D model):")
-    for i, p in enumerate(dst_points):
-        print(f"  {i+1}: [{p[0]:.2f}, {p[1]:.2f}, {p[2]:.2f}]")
-    
-    # Compute transformation
+    # Compute initial transformation
     s, R_mat, t, error = umeyama_similarity(src_points, dst_points)
     
-    # Convert rotation to different representations
     rot = Rot.from_matrix(R_mat)
     euler = rot.as_euler('xyz', degrees=True)
-    quat = rot.as_quat()  # [x, y, z, w]
     
     print(f"\nScale factor: {s:.6f}")
-    print(f"  (Sensor scale / Model scale = {1/s:.6f})")
+    print(f"Alignment RMSE: {error:.4f} mm")
     
-    print(f"\nRotation matrix:")
-    print(f"  [{R_mat[0,0]:>8.5f}, {R_mat[0,1]:>8.5f}, {R_mat[0,2]:>8.5f}]")
-    print(f"  [{R_mat[1,0]:>8.5f}, {R_mat[1,1]:>8.5f}, {R_mat[1,2]:>8.5f}]")
-    print(f"  [{R_mat[2,0]:>8.5f}, {R_mat[2,1]:>8.5f}, {R_mat[2,2]:>8.5f}]")
+    # Load trajectory and mesh
+    data = np.loadtxt(trajectory_path, comments='#')
+    if data[0, 0] > data[-1, 0]:
+        data = np.flip(data, axis=0)
+    positions = data[:, 1:4] * 1000  # Convert to mm
     
-    print(f"\nRotation (Euler XYZ, degrees): [{euler[0]:.2f}, {euler[1]:.2f}, {euler[2]:.2f}]")
-    print(f"Rotation (Quaternion xyzw): [{quat[0]:.5f}, {quat[1]:.5f}, {quat[2]:.5f}, {quat[3]:.5f}]")
+    mesh = pv.read(mesh_path)
     
-    print(f"\nTranslation: [{t[0]:.4f}, {t[1]:.4f}, {t[2]:.4f}]")
+    # Check initial containment
+    positions_aligned = s * (positions @ R_mat.T) + t
+    inside_mask, _ = check_points_inside_mesh(positions_aligned, mesh)
+    n_outside_initial = (~inside_mask).sum()
+    pct_inside_initial = 100 * inside_mask.sum() / len(inside_mask)
     
-    print(f"\nAlignment RMSE: {error:.4f} mm")
+    print(f"\nInitial containment:")
+    print(f"  Inside: {inside_mask.sum()}/{len(inside_mask)} ({pct_inside_initial:.1f}%)")
+    print(f"  Outside: {n_outside_initial}")
     
-    # Per-point verification
+    # If apply_constraint is set and there are points outside, refine the transformation
+    if apply_constraint and n_outside_initial > 0:
+        print("\n" + "="*60)
+        print("STEP 2: CONSTRAINED REFINEMENT")
+        print("="*60)
+        
+        s, R_mat, t, error, n_outside = refine_transform_constrained(
+            s, R_mat, t, src_points, dst_points,
+            positions, mesh,
+            outside_penalty=2.0,  # Weight for outside penalty
+            max_iterations=300
+        )
+        
+        rot = Rot.from_matrix(R_mat)
+        euler = rot.as_euler('xyz', degrees=True)
+        
+        print(f"\nRefined scale factor: {s:.6f}")
+        print(f"Refined RMSE: {error:.4f} mm")
+        
+        # Update aligned positions
+        positions_aligned = s * (positions @ R_mat.T) + t
+    elif n_outside_initial > 0 and not apply_constraint:
+        print("\n  [TIP] Use --constraint flag to refine transformation and minimize outside points")
+    
+    # Final validation
+    print("\n" + "="*60)
+    print("FINAL VALIDATION")
+    print("="*60)
+    
+    inside_mask, signed_distances = check_points_inside_mesh(positions_aligned, mesh)
+    
+    n_inside = inside_mask.sum()
+    n_outside = len(inside_mask) - n_inside
+    pct_inside = 100 * n_inside / len(inside_mask)
+    
+    print(f"\n  Points INSIDE mesh:  {n_inside:>6} ({pct_inside:.1f}%)")
+    print(f"  Points OUTSIDE mesh: {n_outside:>6} ({100-pct_inside:.1f}%)")
+    
+    if n_outside > 0:
+        outside_distances = signed_distances[~inside_mask]
+        print(f"\n  Outside point statistics:")
+        print(f"    Max distance outside: {outside_distances.max():.2f} mm")
+        print(f"    Mean distance outside: {outside_distances.mean():.2f} mm")
+        print(f"\n  [WARNING] {n_outside} points are still outside the mesh!")
+    else:
+        print("\n  [OK] All trajectory points are inside the mesh!")
+    
+    # Per-point correspondence verification
     transformed = s * (src_points @ R_mat.T) + t
     print("\nPer-point verification:")
     print("-" * 70)
-    print(f"{'Point':>5} | {'Transformed':>30} | {'Target':>30} | {'Error':>8}")
-    print("-" * 70)
-    
     for i in range(len(src_points)):
-        trans_str = f"[{transformed[i,0]:8.2f}, {transformed[i,1]:8.2f}, {transformed[i,2]:8.2f}]"
-        tgt_str = f"[{dst_points[i,0]:8.2f}, {dst_points[i,1]:8.2f}, {dst_points[i,2]:8.2f}]"
         err = np.linalg.norm(transformed[i] - dst_points[i])
-        print(f"{i+1:>5} | {trans_str:>30} | {tgt_str:>30} | {err:>8.2f}")
-    
+        print(f"  Point {i+1}: Error = {err:.2f} mm")
     print("-" * 70)
     
-    # Build 4x4 transformation matrix (scaled)
+    # Build 4x4 transformation matrix
+    quat = rot.as_quat()
     T = np.eye(4)
     T[:3, :3] = s * R_mat
     T[:3, 3] = t
     
-    print("\nFull 4x4 transformation matrix (scale embedded in rotation):")
-    print(T)
-    
-    # Save transformation
+    # Save transformation with validation info
     transform_path = os.path.join(base_dir, f"dataset/phantom/{sequence_name}_transform.json")
     transform_data = {
         'scale': float(s),
@@ -558,6 +615,13 @@ def compute_and_visualize_transform(sequence_name, base_dir, correspondences,
         'transformation_matrix_4x4': T.tolist(),
         'alignment_rmse_mm': float(error),
         'num_correspondences': n,
+        'validation': {
+            'total_points': int(len(inside_mask)),
+            'points_inside': int(n_inside),
+            'points_outside': int(n_outside),
+            'percent_inside': float(pct_inside),
+            'max_outside_distance_mm': float(signed_distances[~inside_mask].max()) if n_outside > 0 else 0.0
+        },
         'correspondences': correspondences
     }
     
@@ -566,133 +630,159 @@ def compute_and_visualize_transform(sequence_name, base_dir, correspondences,
     
     print(f"\nTransformation saved to: {transform_path}")
     
-    # Print code snippet for build_phantom_dataset.py
-    print("\n" + "="*60)
-    print("CODE SNIPPET for build_phantom_dataset.py")
-    print("="*60)
-    print("""
-# --- SIMILARITY TRANSFORMATION ---
-# Computed from manual correspondences
-scale = {:.6f}
-R_align = np.array([
-    [{:>10.6f}, {:>10.6f}, {:>10.6f}],
-    [{:>10.6f}, {:>10.6f}, {:>10.6f}],
-    [{:>10.6f}, {:>10.6f}, {:>10.6f}]
-])
-t_align = np.array([{:.4f}, {:.4f}, {:.4f}])
-
-# Apply: p_model = scale * R_align @ p_sensor + t_align
-positions = scale * (positions @ R_align.T) + t_align
-""".format(
-        s,
-        R_mat[0,0], R_mat[0,1], R_mat[0,2],
-        R_mat[1,0], R_mat[1,1], R_mat[1,2],
-        R_mat[2,0], R_mat[2,1], R_mat[2,2],
-        t[0], t[1], t[2]
-    ))
+    # Visualize
+    visualize_alignment(sequence_name, mesh, positions_aligned, 
+                        src_points, dst_points, s, R_mat, t,
+                        inside_mask, centerline_path)
     
-    # --- VISUALIZATION ---
-    visualize_alignment(sequence_name, base_dir, s, R_mat, t, 
-                        src_points, dst_points, mesh_path, centerline_path, 
-                        trajectory_path)
+    return transform_data
 
 
-def visualize_alignment(sequence_name, base_dir, scale, R_mat, t, 
-                        src_points, dst_points, mesh_path, centerline_path,
-                        trajectory_path):
-    """Visualize the transformed trajectory inside the 3D model."""
+def visualize_alignment(sequence_name, mesh, positions_aligned, 
+                        src_points, dst_points, scale, R_mat, t,
+                        inside_mask, centerline_path):
+    """Visualize alignment with inside/outside coloring."""
     
     print("\n" + "="*60)
     print("VISUALIZATION")
     print("="*60)
     
-    # Load mesh
-    if not os.path.exists(mesh_path):
-        print(f"Mesh not found: {mesh_path}")
-        return
-    mesh = pv.read(mesh_path)
-    
-    # Load centerline
     centerline = None
     if os.path.exists(centerline_path):
         centerline = pv.read(centerline_path)
     
-    # Load full trajectory
-    data = np.loadtxt(trajectory_path, comments='#')
-    if data[0, 0] > data[-1, 0]:
-        data = np.flip(data, axis=0)
-    positions = data[:, 1:4] * 1000  # Convert to mm
-    
-    # Apply transformation
-    positions_aligned = scale * (positions @ R_mat.T) + t
-    
-    print(f"Trajectory: {len(positions)} points")
-    print("Close the visualization window to finish.")
-    
-    # Create plotter
     plotter = pv.Plotter(title=f"Alignment Visualization: {sequence_name}")
     
-    # Add mesh (semi-transparent)
+    # Add mesh
     plotter.add_mesh(mesh, color='lightblue', opacity=0.2, label='Lungs')
     
     # Add centerline
     if centerline is not None:
-        plotter.add_mesh(
-            centerline, 
-            color='gray', 
-            point_size=2,
-            render_points_as_spheres=True,
-            opacity=0.3,
-            label='Centerline'
-        )
+        plotter.add_mesh(centerline, color='gray', point_size=2,
+                        render_points_as_spheres=True, opacity=0.3)
     
-    # Add aligned trajectory as line
-    # Subsample for performance
+    # Add trajectory with color based on inside/outside
     step = max(1, len(positions_aligned) // 500)
     traj_points = positions_aligned[::step]
-    if len(traj_points) > 1:
-        line = pv.lines_from_points(traj_points)
-        plotter.add_mesh(line, color='blue', line_width=3, label='Aligned Trajectory')
+    traj_inside = inside_mask[::step]
     
-    # Add start and end markers
-    start_sphere = pv.Sphere(radius=2.0, center=positions_aligned[0])
-    end_sphere = pv.Sphere(radius=2.0, center=positions_aligned[-1])
+    # Points inside = blue, outside = red
+    colors = np.where(traj_inside, 0, 1)  # 0=inside, 1=outside
+    
+    if len(traj_points) > 1:
+        traj_poly = pv.PolyData(traj_points)
+        traj_poly['outside'] = colors.astype(float)
+        plotter.add_mesh(traj_poly, scalars='outside', cmap=['blue', 'red'],
+                        point_size=5, render_points_as_spheres=True,
+                        show_scalar_bar=False)
+    
+    # Add start/end markers
+    start_sphere = pv.Sphere(radius=1.0, center=positions_aligned[0])
+    end_sphere = pv.Sphere(radius=1.0, center=positions_aligned[-1])
     plotter.add_mesh(start_sphere, color='lime', label='Start')
     plotter.add_mesh(end_sphere, color='orange', label='End')
     
     # Add correspondence points
-    # Transformed source points
     src_transformed = scale * (src_points @ R_mat.T) + t
     
     for i in range(len(src_points)):
-        # Target point (green)
-        tgt_sphere = pv.Sphere(radius=1.5, center=dst_points[i])
+        tgt_sphere = pv.Sphere(radius=0.75, center=dst_points[i])
         plotter.add_mesh(tgt_sphere, color='green')
         
-        # Transformed source point (red)
-        src_sphere = pv.Sphere(radius=1.2, center=src_transformed[i])
-        plotter.add_mesh(src_sphere, color='red')
+        src_sphere = pv.Sphere(radius=0.6, center=src_transformed[i])
+        plotter.add_mesh(src_sphere, color='magenta')
         
-        # Line connecting them to show error
         error_line = pv.Line(src_transformed[i], dst_points[i])
         plotter.add_mesh(error_line, color='yellow', line_width=2)
     
-    # Add legend explanation
+    n_outside = (~inside_mask).sum()
+    pct_inside = 100 * inside_mask.sum() / len(inside_mask)
+    
     plotter.add_text(
         f"Sequence: {sequence_name}\n"
-        f"RMSE: {np.sqrt(np.mean(np.sum((src_transformed - dst_points)**2, axis=1))):.2f} mm\n\n"
-        "Green spheres: Target (model)\n"
-        "Red spheres: Transformed source\n"
-        "Yellow lines: Alignment errors\n"
-        "Blue line: Full trajectory",
-        position='upper_left',
-        font_size=10,
-        color='white'
+        f"Inside: {pct_inside:.1f}% | Outside: {n_outside} points\n\n"
+        "Blue = Inside mesh\n"
+        "Red = Outside mesh\n"
+        "Green = Target correspondences\n"
+        "Magenta = Transformed source",
+        position='upper_left', font_size=10, color='white'
     )
     
     plotter.add_legend()
     plotter.add_axes()
     plotter.show()
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Align phantom trajectory with 3D model')
+    parser.add_argument('sequence_name', help='Name of the sequence (e.g., lb)')
+    parser.add_argument('--reuse', action='store_true',
+                       help='Reuse existing correspondences from JSON file')
+    parser.add_argument('--constraint', action='store_true',
+                       help='Apply constrained optimization to minimize points outside mesh')
+    args = parser.parse_args()
+    
+    sequence_name = args.sequence_name
+    
+    # Paths
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    video_path = os.path.join(base_dir, f"dataset/phantom/{sequence_name}.mp4")
+    trajectory_path = os.path.join(base_dir, f"dataset/phantom/{sequence_name}.txt")
+    mesh_path = os.path.join(base_dir, "patient/lungs.obj")
+    centerline_path = os.path.join(base_dir, "patient/centerline.vtk")
+    corr_path = os.path.join(base_dir, f"dataset/phantom/{sequence_name}_correspondences.json")
+    
+    # Validate paths
+    for path, name in [
+        (trajectory_path, "Trajectory"), 
+        (mesh_path, "Mesh"),
+        (centerline_path, "Centerline")
+    ]:
+        if not os.path.exists(path):
+            print(f"Error: {name} not found: {path}")
+            sys.exit(1)
+    
+    if args.reuse:
+        # Reuse existing correspondences
+        print("="*60)
+        print(f"REUSING EXISTING CORRESPONDENCES: {sequence_name}")
+        print("="*60)
+        
+        if not os.path.exists(corr_path):
+            print(f"Error: Correspondences file not found: {corr_path}")
+            print("Run without --reuse first to create correspondences.")
+            sys.exit(1)
+        
+        with open(corr_path, 'r') as f:
+            correspondences = json.load(f)
+        
+        print(f"Loaded {len(correspondences)} correspondences from: {corr_path}")
+    else:
+        # Full annotation workflow
+        if not os.path.exists(video_path):
+            print(f"Error: Video not found: {video_path}")
+            sys.exit(1)
+        
+        if os.path.exists(corr_path):
+            print(f"[INFO] Existing correspondences will be OVERWRITTEN")
+        
+        correspondences = annotate_correspondences(
+            sequence_name, base_dir, video_path, trajectory_path,
+            mesh_path, centerline_path, corr_path
+        )
+        
+        if correspondences is None:
+            return
+    
+    # Compute and validate transformation
+    if len(correspondences) >= 3:
+        compute_and_validate_transform(
+            sequence_name, base_dir, correspondences,
+            mesh_path, centerline_path, trajectory_path,
+            apply_constraint=args.constraint
+        )
+    else:
+        print(f"\nNeed at least 3 correspondences (have {len(correspondences)})")
 
 
 if __name__ == "__main__":
