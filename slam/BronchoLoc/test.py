@@ -134,15 +134,34 @@ def test(args):
     full_dataset = AntDataset(
         data_root=os.path.join(args.data_root, "sequences"),
         mode='test',
-        img_size=args.img_size
+        img_size=args.img_size,
+        chain_mode=args.chain  # Enable overlapping windows for chain mode
     )
+    
+    if args.chain:
+        print("[INFO] Chain mode enabled: windows overlap by 1 frame, predictions are chained.")
+        if args.batch_size != 1:
+            print("[WARNING] Chain mode requires batch_size=1, setting to 1.")
+            args.batch_size = 1
     
     # Get window_size from dataset (loaded from config)
     window_size = full_dataset.window_size
     print(f"[INFO] Using window_size={window_size}, frame_skip={full_dataset.frame_skip}")
     
+    # --- SEQUENCE FILTERING ---
+    if args.seq_filter:
+        print(f"[INFO] Filtering sequences matching: '{args.seq_filter}'")
+        indices = [i for i, (vp, _, _) in enumerate(full_dataset.samples) if args.seq_filter in vp]
+        
+        if not indices:
+            print(f"[ERROR] No sequences matching '{args.seq_filter}' found in dataset!")
+            return
+        
+        print(f"[INFO] Found {len(indices)} windows matching filter.")
+        full_dataset = torch.utils.data.Subset(full_dataset, indices)
+        test_ds = full_dataset
     # --- DEBUGGING / OVERFITTING MODES (same as train.py) ---
-    if args.overfit:
+    elif args.overfit:
         print("[INFO] Overfitting mode: Testing on 'seq_test' only.")
         indices = [i for i, (vp, _, _) in enumerate(full_dataset.samples) if "seq_test" in vp]
         
@@ -236,6 +255,11 @@ def test(args):
     # Collect all frames
     all_frames = []
     
+    # --- State for chained predictions ---
+    # In chain mode, we carry forward the last predicted position as the anchor for the next window
+    chain_pred_anchor = None  # Will be set after first window
+    prev_seq_path = None  # Track sequence changes to reset chain
+    
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(test_loader, desc="Processing batches")):
             video = batch['video'].to(device)  # (B, T, C, H, W)
@@ -251,11 +275,12 @@ def test(args):
             pred_trans = model(video, map_points=map_points, map_mask=map_mask)  # (B, T, 3) - normalized output
             
             # Get GT translation (first 3 dims of actions) - LOCAL frame
-            gt_trans_local = gt_deltas[:, :, :3].cpu().numpy()  # (B, T, 3)
+            # Dataset stores actions NORMALIZED (divided by NORM_MAP_SCALE in ant_dataset.py line 293)
+            # So we need to denormalize to get mm
+            gt_trans_local = gt_deltas[:, :, :3].cpu().numpy() * NORM_MAP_SCALE  # (B, T, 3)
             
-            # Denormalize prediction to mm (model outputs normalized values)
+            # Denormalize prediction to mm (model outputs normalized values to match training targets)
             pred_trans_local = pred_trans.cpu().numpy() * NORM_MAP_SCALE  # (B, T, 3)
-            
             # Convert video back to displayable format
             # Dataset stores RGB, normalized to [-1, 1]
             video_np = video.cpu().numpy()  # (B, T, C, H, W)
@@ -265,15 +290,44 @@ def test(args):
             # Process each sample in batch
             B, T = video_np.shape[:2]
             for b in range(B):
-                # Get first frame's global pose for this sample
-                p0 = first_pos[b]  # (3,)
+                # Get first frame's global pose for this sample (from GT)
+                p0_gt = first_pos[b]  # (3,)
                 q0 = first_quat[b]  # (4,)
                 rot_0 = R.from_quat(q0)  # Rotation from frame 0's local to global
                 
+                # In chain mode, check if we're still in the same sequence
+                if args.chain:
+                    # Get current sequence path from dataset
+                    if hasattr(test_ds, 'dataset'):  # Subset
+                        sample_idx = test_ds.indices[batch_idx * args.batch_size + b]
+                        curr_seq_path = test_ds.dataset.samples[sample_idx][0]
+                    else:
+                        curr_seq_path = test_ds.samples[batch_idx * args.batch_size + b][0]
+                    
+                    # Reset chain if sequence changed
+                    if prev_seq_path is not None and curr_seq_path != prev_seq_path:
+                        print(f"[CHAIN] New sequence detected, resetting chain anchor.")
+                        chain_pred_anchor = None
+                    prev_seq_path = curr_seq_path
+                
+                # Determine anchor position for predictions
+                if args.chain and chain_pred_anchor is not None:
+                    # Use previous prediction as anchor
+                    p0_pred = chain_pred_anchor
+                    print(f"[CHAIN] Window {batch_idx+1}: Using predicted anchor at ({p0_pred[0]:.2f}, {p0_pred[1]:.2f}, {p0_pred[2]:.2f})")
+                else:
+                    # First window or non-chain mode: use GT anchor
+                    p0_pred = p0_gt
+                
                 # Transform LOCAL to GLOBAL coordinates
-                # global = rot_0.apply(local) + p0
-                gt_window_global = rot_0.apply(gt_trans_local[b]) + p0  # (T, 3)
-                pred_window_global = rot_0.apply(pred_trans_local[b]) + p0  # (T, 3)
+                # GT always uses GT anchor (ground truth visualization)
+                gt_window_global = rot_0.apply(gt_trans_local[b]) + p0_gt  # (T, 3)
+                # Predictions use chain anchor (or GT anchor if first window / non-chain)
+                pred_window_global = rot_0.apply(pred_trans_local[b]) + p0_pred  # (T, 3)
+                
+                # Update chain anchor for next window (last predicted position)
+                if args.chain:
+                    chain_pred_anchor = pred_window_global[-1].copy()
                 
                 # Also keep local values for printing
                 gt_window_local = gt_trans_local[b]  # (T, 3)
@@ -380,10 +434,12 @@ if __name__ == "__main__":
     parser.add_argument('--overfit', action='store_true', help="Test on seq_test only (matches overfit training)")
     parser.add_argument('--debug_one', action='store_true', help="Test on SINGLE batch (matches debug_one training)")
     parser.add_argument('--img_size', type=int, default=128, help="Image resolution (default: 128)")
+    parser.add_argument('--seq_filter', type=str, default=None, help="Filter sequences by name (substring match, e.g. 'seq_001')")
     
     # Test-specific arguments
     parser.add_argument('--output_dir', type=str, default='./dataset/test/results', help="Output directory for videos")
     parser.add_argument('--fps', type=int, default=10, help="Output video FPS")
+    parser.add_argument('--chain', action='store_true', help="Chain predictions: last pred of window N becomes anchor for window N+1")
     
     args = parser.parse_args()
     test(args)

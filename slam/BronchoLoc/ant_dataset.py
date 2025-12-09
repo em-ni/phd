@@ -63,7 +63,7 @@ class AntDataset(Dataset):
     Handles loading video frames, trajectories, and static airway maps, 
     and generating training samples consisting of video clips, map points, and target actions.
     """
-    def __init__(self, data_root, mode='train', max_map_points=DEFAULT_MAX_MAP_POINTS, img_size=128):
+    def __init__(self, data_root, mode='train', max_map_points=DEFAULT_MAX_MAP_POINTS, img_size=128, chain_mode=False):
         """
         Args:
             data_root (str): Path to the directory containing sequence folders.
@@ -71,11 +71,13 @@ class AntDataset(Dataset):
             max_map_points (int): Maximum number of map points to pass to model.
                                   If ball contains more, FPS downsampling is applied.
             img_size (int): Spatial resolution to resize video frames to (img_size x img_size).
+            chain_mode (bool): If True, windows overlap by 1 frame (for chained prediction testing).
         """
         self.data_root = data_root
         self.mode = mode
         self.max_map_points = max_map_points
         self.img_size = img_size
+        self.chain_mode = chain_mode
         self.samples = []
         
         # Load window config from file
@@ -130,8 +132,16 @@ class AntDataset(Dataset):
                 effective_len = (self.window_size - 1) * self.frame_skip + 1
                 
                 if N_vid >= effective_len:
-                    # Step size is exactly effective_len (non-overlapping windows)
-                    for start_idx in range(0, N_vid - effective_len + 1, effective_len):
+                    # Step size depends on mode:
+                    # - Normal: effective_len (non-overlapping windows)
+                    # - Chain mode: (window_size - 1) * frame_skip (overlap by 1 sampled frame)
+                    if self.chain_mode:
+                        # Overlap by 1 frame: last frame of window N = first frame of window N+1
+                        step_size = (self.window_size - 1) * self.frame_skip
+                    else:
+                        step_size = effective_len
+                    
+                    for start_idx in range(0, N_vid - effective_len + 1, step_size):
                         self.samples.append((vid_path, traj_path, start_idx))
             except Exception as e:
                 print(f"Error: {e}")

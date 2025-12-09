@@ -218,10 +218,10 @@ def train(args):
                 optimizer.zero_grad()
                 
                 pred_trans = model(video, map_points=map_points, map_mask=map_mask)
-                gt_trans = gt_deltas[:, :, :3]
-                gt_trans_norm = gt_trans / NORM_MAP_SCALE
+                # NOTE: gt_deltas are already normalized in the dataset (see ant_dataset.py line 293)
+                gt_trans = gt_deltas[:, :, :3]  # Already normalized
                 
-                base_loss = criterion(pred_trans, gt_trans_norm)
+                base_loss = criterion(pred_trans, gt_trans)
                 
                 if args.motion_weight > 0:
                     pred_variance = pred_trans.var(dim=1).mean()
@@ -249,10 +249,10 @@ def train(args):
                     map_mask = batch['map_mask'].to(device)
                     
                     pred_trans = model(video, map_points=map_points, map_mask=map_mask)
-                    gt_trans = gt_deltas[:, :, :3]
-                    gt_trans_norm = gt_trans / NORM_MAP_SCALE
+                    # NOTE: gt_deltas are already normalized in the dataset
+                    gt_trans = gt_deltas[:, :, :3]  # Already normalized
                     
-                    loss = criterion(pred_trans, gt_trans_norm).mean()
+                    loss = criterion(pred_trans, gt_trans).mean()
                     val_loss += loss.item()
                     
             avg_val_loss = val_loss / len(val_loader)
