@@ -141,62 +141,6 @@ class AntDataset(Dataset):
     def __len__(self):
         return len(self.samples)
 
-    def _get_local_map(self, current_pos, current_quat):
-        """
-        Finds nearest map points and transforms them to local camera frame.
-        NOTE: This helper function seems unused in __getitem__ below, which implements similar logic inline 
-        for the whole window relative to T=0. It might be a leftover or utility.
-        
-        Args:
-            current_pos (np.array): Camera position (3,)
-            current_quat (np.array): Camera orientation quaternion (4,) [x, y, z, w]
-            
-        Returns:
-            torch.Tensor: (K, 3) normalized local map points.
-        """
-        K = self.map_points_k
-        
-        if self.map_tree is None:
-            return torch.zeros(K, 3)
-            
-        # 1. Query Nearest Neighbors
-        # Find K nearest points in the global map within radius MAP_QUERY_RADIUS
-        dists, indices = self.map_tree.query(current_pos, k=K, distance_upper_bound=MAP_QUERY_RADIUS)
-        
-        # Handle cases where fewer than K points found (indices will be N_points for invalid slots)
-        valid_mask = indices < len(self.map_points)
-        valid_indices = indices[valid_mask]
-        
-        if len(valid_indices) == 0:
-            return torch.zeros(K, 3)
-            
-        local_points_global = self.map_points[valid_indices] # (M, 3)
-        
-        # 2. Transform to Local Frame
-        # We want points expressed relative to the camera.
-        # T_global = T_camera * T_local
-        # P_global = R_cam * P_local + t_cam
-        # P_local = R_cam^T * (P_global - t_cam)
-        
-        rot_cam = R.from_quat(current_quat)
-        inv_rot_cam = rot_cam.inv()
-        
-        # Vector from camera to point (Global Frame translation)
-        rel_vecs = local_points_global - current_pos
-        
-        # Rotate into camera frame
-        local_points = inv_rot_cam.apply(rel_vecs) # (M, 3)
-        
-        # 3. Pad or Truncate
-        out_points = np.zeros((K, 3), dtype=np.float32)
-        M = min(len(local_points), K)
-        out_points[:M] = local_points[:M]
-        
-        # Normalize to [-1, 1] for neural network input stability
-        out_points = out_points / NORM_MAP_SCALE
-        
-        return torch.from_numpy(out_points).float()
-
     def __getitem__(self, idx):
         """
         Loads a single sequence window (video + trajectory + map).
@@ -245,18 +189,16 @@ class AntDataset(Dataset):
         quats = traj_clip[:, 3:]
         
         # --- MAP EXTRACTION ---
-        # Query map points ONCE at T=0
-        # This defines the "ball" of candidates that the agent sees at the start of the window.
-        # We assume the local map context doesn't change drastically over the short window,
-        # or we want to predict relative motion within this initial reference frame.
+        # Query map points ONCE at T=0 (first frame of the window)
+        # This defines the "ball" of candidates that the agent sees at the start of the window
         p0 = positions[0]
         q0 = quats[0]
         rot_0 = R.from_quat(q0)
         inv_rot_0 = rot_0.inv()
         
-        # 1. Query Global Points (Ball Query - ALL points within radius)
+        # 1. Query Global Points (All centerline points within radius)
         if self.map_tree is not None:
-            # Use query_ball_point to get ALL points within radius (not just k-nearest)
+            # Use query_ball_point to get ALL points within radius
             ball_indices = self.map_tree.query_ball_point(p0, r=MAP_QUERY_RADIUS)
             
             if len(ball_indices) > 0:
