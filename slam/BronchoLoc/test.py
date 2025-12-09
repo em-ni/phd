@@ -296,8 +296,8 @@ def test(args):
                     
                     # Print frame info to console (local frame values)
                     print(f"[Batch {batch_idx+1} | Sample {b+1} | Frame {t+1}/{T}] "
-                          f"GT: ({current_gt_local[0]:+.3f}, {current_gt_local[1]:+.3f}, {current_gt_local[2]:+.3f}) mm | "
-                          f"Pred: ({current_pred_local[0]:+.3f}, {current_pred_local[1]:+.3f}, {current_pred_local[2]:+.3f}) mm")
+                          f"GT: ({current_gt_global[0]:+.3f}, {current_gt_global[1]:+.3f}, {current_gt_global[2]:+.3f}) mm | "
+                          f"Pred: ({current_pred_global[0]:+.3f}, {current_pred_global[1]:+.3f}, {current_pred_global[2]:+.3f}) mm")
                     
                     # Trajectory up to current frame in window (GLOBAL for 3D)
                     gt_traj_current = gt_window_global[:t+1]

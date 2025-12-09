@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader, random_split
 import torch.optim as optim
 from tqdm import tqdm
 from datetime import datetime
+from torch.utils.tensorboard import SummaryWriter
 
 from ant import ActionPredictor
 from ant_dataset import AntDataset 
@@ -126,10 +127,29 @@ def train(args):
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     
     # Scheduler Setup
-    if args.scheduler == 'cosine_restart':
-        # CosineAnnealingWarmRestarts: T_0=50 epochs per cycle, T_mult=2 doubles each cycle
-        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2, eta_min=1e-6)
-        print(f"[INFO] Using CosineAnnealingWarmRestarts scheduler (T_0=50, T_mult=2)")
+    if args.scheduler == 'cosine':
+        """
+                LR
+        │    ___
+        │   /   \___          ← 1e-4 (peak after warmup)
+        │  /        \___
+        │ /             \_    ← 1e-6 (end)
+        └────────────────────→ epochs
+        5%      95%
+        warmup  cosine decay
+        """
+        # Warmup + Cosine Decay: linear warmup then smooth cosine decay
+        warmup_epochs = max(1, int(args.epochs * 0.05))  # 5% warmup
+        warmup_scheduler = optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_epochs
+        )
+        cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=args.epochs - warmup_epochs, eta_min=1e-6
+        )
+        scheduler = optim.lr_scheduler.SequentialLR(
+            optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_epochs]
+        )
+        print(f"[INFO] Using Warmup ({warmup_epochs} epochs) + Cosine Decay scheduler")
     else:
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=20, factor=0.5, min_lr=1e-6)
     
@@ -167,6 +187,17 @@ def train(args):
     
     checkpoint_path = os.path.join(args.checkpoint_dir, f"{checkpoint_name}.pth")
     print(f"[INFO] Checkpoint will be saved as: {checkpoint_path}")
+    
+    # --- TENSORBOARD SETUP ---
+    log_dir = os.path.join(args.checkpoint_dir, "logs", checkpoint_name)
+    writer = SummaryWriter(log_dir=log_dir)
+    print(f"[INFO] TensorBoard logs at: {log_dir}")
+    print(f"[INFO] Run: tensorboard --logdir={os.path.join(args.checkpoint_dir, 'logs')}")
+    
+    # --- EARLY STOPPING SETUP ---
+    best_val_loss = float('inf')
+    patience_counter = 0
+    best_checkpoint_path = os.path.join(args.checkpoint_dir, f"{checkpoint_name}_best.pth")
 
     # --- TRAINING LOOP ---
     epoch = start_epoch  # Initialize for KeyboardInterrupt handler
@@ -230,19 +261,44 @@ def train(args):
             print(f"  >> Val MSE:   {avg_val_loss:.6f}")
             
             # Step scheduler (different schedulers have different APIs)
-            if args.scheduler == 'cosine_restart':
-                scheduler.step(epoch)
+            if args.scheduler == 'cosine':
+                scheduler.step()
             else:
                 scheduler.step(avg_val_loss)
             
             current_lr = optimizer.param_groups[0]['lr']
             print(f"  >> Current LR: {current_lr:.2e}")
+            
+            # --- TENSORBOARD LOGGING ---
+            writer.add_scalars('Loss', {'train': avg_train_loss, 'val': avg_val_loss}, epoch)
+            writer.add_scalar('Learning Rate', current_lr, epoch)
+            
+            # --- EARLY STOPPING CHECK ---
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                patience_counter = 0
+                save_checkpoint(best_checkpoint_path, model, optimizer, scheduler, epoch, checkpoint_name)
+                print(f"  >> New best model saved! (Val MSE: {best_val_loss:.6f})")
+            else:
+                patience_counter += 1
+                print(f"  >> No improvement ({patience_counter}/{args.early_stop_patience})")
+            
+            # Save regular checkpoint
             save_checkpoint(checkpoint_path, model, optimizer, scheduler, epoch, checkpoint_name)
+            
+            # Check early stopping
+            if args.early_stop_patience > 0 and patience_counter >= args.early_stop_patience:
+                print(f"\n[INFO] Early stopping triggered after {patience_counter} epochs without improvement.")
+                print(f"[INFO] Best model saved at: {best_checkpoint_path}")
+                break
                 
     except KeyboardInterrupt:
         print("\n[INFO] Training interrupted by user (Ctrl+C).")
         save_checkpoint(checkpoint_path, model, optimizer, scheduler, epoch, checkpoint_name)
         print(f"[INFO] Checkpoint saved to {checkpoint_path}")
+    finally:
+        writer.close()
+        print(f"[INFO] Best validation MSE: {best_val_loss:.6f}")
 
 
 if __name__ == "__main__":
@@ -260,7 +316,9 @@ if __name__ == "__main__":
     parser.add_argument('--img_size', type=int, default=128, help="Image resolution")
     parser.add_argument('--resume', type=str, default=None, help="Path to checkpoint to resume from")
     parser.add_argument('--reset_lr', type=float, default=1e-6, help="Reset learning rate to this value when resuming")
-    parser.add_argument('--scheduler', type=str, default='plateau', choices=['plateau', 'cosine_restart'],
-                        help="LR scheduler: 'plateau' (default) or 'cosine_restart' for warm restarts")
+    parser.add_argument('--scheduler', type=str, default='plateau', choices=['plateau', 'cosine'],
+                        help="LR scheduler: 'plateau' (default) or 'cosine' for warmup + cosine decay")
+    parser.add_argument('--early_stop_patience', type=int, default=50,
+                        help="Stop if val loss doesn't improve for N epochs (0=disabled)")
     args = parser.parse_args()
     train(args)
