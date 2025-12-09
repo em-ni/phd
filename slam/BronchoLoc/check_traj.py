@@ -164,7 +164,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--filter", type=str, default=None, help="Filter sequences by name (substring match)")
-    parser.add_argument("--graph_path", type=str, default='./dataset/static/deep_lung_graph.npz', help="Path to centerline graph file")
+    parser.add_argument("--graph_path", type=str, default='./dataset/static/centerline.npz', help="Path to centerline graph file")
     args = parser.parse_args()
 
     # --- CONFIGURATION ---

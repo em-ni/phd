@@ -57,9 +57,9 @@ def get_stats(data_root):
     print("="*40)
     print("\nCopy these values into your constants.py!")
 
-class DeepLungDataset(Dataset):
+class AntDataset(Dataset):
     """
-    PyTorch Dataset for the Deep-Lung-ST model.
+    PyTorch Dataset for the ANT model.
     Handles loading video frames, trajectories, and static airway maps, 
     and generating training samples consisting of video clips, map points, and target actions.
     """
@@ -87,7 +87,7 @@ class DeepLungDataset(Dataset):
         # Assume static data is in parent of 'sequences' or 'test'
         # data_root is usually .../dataset/sequences
         parent_dir = os.path.dirname(self.data_root)
-        graph_path = os.path.join(parent_dir, "static", "deep_lung_graph.npz")
+        graph_path = os.path.join(parent_dir, "static", "centerline.npz")
         
         self.map_tree = None
         self.map_points = None
@@ -361,7 +361,7 @@ if __name__ == "__main__":
     import argparse
     import pyvista as pv
     
-    parser = argparse.ArgumentParser(description="Debug visualization for DeepLungDataset windows")
+    parser = argparse.ArgumentParser(description="Debug visualization for AntDataset windows")
     parser.add_argument('--data_root', type=str, default='./dataset/sequences')
     parser.add_argument('--seq_filter', type=str, default=None, help="Filter sequence by name (substring match)")
     parser.add_argument('--window_size', type=int, default=16)
@@ -389,7 +389,7 @@ if __name__ == "__main__":
         
         # Load centerline once
         parent_dir = os.path.dirname(args.data_root)
-        graph_path = os.path.join(parent_dir, "static", "deep_lung_graph.npz")
+        graph_path = os.path.join(parent_dir, "static", "centerline.npz")
         centerline_pts = load_centerline_points(graph_path)
         
         # Load lung mesh once

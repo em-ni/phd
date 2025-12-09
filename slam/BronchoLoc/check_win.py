@@ -11,7 +11,7 @@ from utils import load_centerline_points, filter_connected_component, farthest_p
 def visualize_window_3d(positions, frame_indices, lung_path, graph_path, seq_name, max_points=DEFAULT_MAX_MAP_POINTS):
     """
     Visualizes window frame positions in 3D context.
-    Uses ball query centered at first frame (like deep_lung_dataset.py).
+    Uses ball query centered at first frame (like ant_dataset.py).
     
     Args:
         positions: (N, 3) array of all trajectory positions
@@ -240,7 +240,7 @@ if __name__ == "__main__":
     parser.add_argument('--frame_skip', type=int, default=10, help="Frame skipping interval")
     parser.add_argument('--window_size', type=int, default=16, help="Number of frames in one sample window")
     parser.add_argument('--lung_path', type=str, default='./patient/lungs.obj', help="Path to lungs mesh")
-    parser.add_argument('--graph_path', type=str, default='./dataset/static/deep_lung_graph.npz', help="Path to centerline graph")
+    parser.add_argument('--graph_path', type=str, default='./dataset/static/centerline.npz', help="Path to centerline graph")
     parser.add_argument('--visualize', action='store_true', default=True, help="Show 3D visualization of window")
     args = parser.parse_args()
     

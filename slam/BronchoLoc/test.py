@@ -9,8 +9,8 @@ import pyvista as pv
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial import cKDTree
 
-from deep_lung_st import ActionPredictor
-from deep_lung_dataset import DeepLungDataset
+from ant import ActionPredictor
+from ant_dataset import AntDataset
 from constants import NORM_MAP_SCALE, MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS
 from utils import load_centerline_points, filter_connected_component, farthest_point_sample
 
@@ -131,7 +131,7 @@ def test(args):
     os.makedirs(args.output_dir, exist_ok=True)
     
     # Initialize dataset (window_size/frame_skip loaded from config inside dataset)
-    full_dataset = DeepLungDataset(
+    full_dataset = AntDataset(
         data_root=os.path.join(args.data_root, "sequences"),
         mode='test',
         img_size=args.img_size
@@ -218,7 +218,7 @@ def test(args):
         print(f"[WARNING] Lung mesh not found at {lung_path}")
     
     # Load centerline
-    graph_path = os.path.join(args.data_root, "static", "deep_lung_graph.npz")
+    graph_path = os.path.join(args.data_root, "static", "centerline.npz")
     centerline_pts = load_centerline_points(graph_path)
     centerline_tree = None
     if centerline_pts is not None:

@@ -91,9 +91,9 @@ def farthest_point_sampling(points, num_points):
 
 def main():
     parser = argparse.ArgumentParser(description="Downsample centerline points")
-    parser.add_argument('--input', type=str, default='./dataset/static/deep_lung_graph.npz',
+    parser.add_argument('--input', type=str, default='./dataset/static/centerline.npz',
                        help='Input centerline file')
-    parser.add_argument('--output', type=str, default='./dataset/static/deep_lung_graph_downsampled.npz',
+    parser.add_argument('--output', type=str, default='./dataset/static/centerline_downsampled.npz',
                        help='Output centerline file')
     parser.add_argument('--method', type=str, default='voxel', choices=['voxel', 'uniform', 'fps'],
                        help='Downsampling method')

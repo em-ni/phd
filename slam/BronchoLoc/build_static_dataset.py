@@ -23,14 +23,14 @@ class LungGraphBuilder:
 
     def export_static_dataset(self, output_dir="dataset/static"):
         """
-        Exports files needed for the Deep-Lung-ST Network:
-        1. deep_lung_graph.npz (Centerline Points)
+        Exports files needed for the ANT Network:
+        1. centerline.npz (Centerline Points)
         """
         os.makedirs(output_dir, exist_ok=True)
         print(f"Exporting static dataset to '{output_dir}/'...")
 
         # --- 1. Export Centerline Points ---
-        npz_path = os.path.join(output_dir, "deep_lung_graph.npz")
+        npz_path = os.path.join(output_dir, "centerline.npz")
         # We save 'centerline_points' and also 'node_pos' as a fallback/alias for compatibility
         np.savez(npz_path, 
                  centerline_points=self.centerline_points,

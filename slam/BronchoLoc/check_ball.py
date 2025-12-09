@@ -100,7 +100,7 @@ def visualize_ball(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--graph_path', type=str, default='./dataset/static/deep_lung_graph.npz')
+    parser.add_argument('--graph_path', type=str, default='./dataset/static/centerline.npz')
     parser.add_argument('--lung_obj', type=str, default='./patient/lungs.obj')
     parser.add_argument('--max_points', type=int, default=DEFAULT_MAX_MAP_POINTS,
                        help='Max points after FPS (same as dataset max_map_points)')

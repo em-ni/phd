@@ -1,3 +1,5 @@
+# Airways Neighborhood Tracker (ANT) + Bronchial Inference Route Determination (BIRD)
+
 # --- MAP CONFIGURATION ---
 MAP_QUERY_RADIUS = 10.0 # mm
 

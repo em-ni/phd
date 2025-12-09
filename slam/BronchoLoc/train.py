@@ -8,8 +8,8 @@ import torch.optim as optim
 from tqdm import tqdm
 from datetime import datetime
 
-from deep_lung_st import ActionPredictor
-from deep_lung_dataset import DeepLungDataset 
+from ant import ActionPredictor
+from ant_dataset import AntDataset 
 from constants import NORM_MAP_SCALE, DEFAULT_MAX_MAP_POINTS
 
 # Global flag to prevent saving during an ongoing save
@@ -68,7 +68,7 @@ def train(args):
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     
     # Initialize full dataset
-    full_dataset = DeepLungDataset(
+    full_dataset = AntDataset(
         data_root=os.path.join(args.data_root, "sequences"), 
         mode='train', 
         img_size=args.img_size

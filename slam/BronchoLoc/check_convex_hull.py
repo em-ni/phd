@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 from scipy.spatial import ConvexHull, Delaunay
-from deep_lung_dataset import DeepLungDataset
+from ant_dataset import AntDataset
 from constants import NORM_MAP_SCALE
 
 
@@ -52,7 +52,7 @@ def main():
     
     # Load dataset (use sequences folder where seq_test is located for overfitting analysis)
     data_root = './dataset/sequences'
-    dataset = DeepLungDataset(data_root, mode='test')
+    dataset = AntDataset(data_root, mode='test')
     
     if len(dataset) == 0:
         print("[ERROR] No samples found!")
