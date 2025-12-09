@@ -34,7 +34,7 @@ MODEL_CONFIGS = {
     'm': {
         'embed_dim': 1024,
         'num_heads': 16,
-        'vi_layers': 12,
+        'vi_layers': 16,
         'mlp_expansion': 4,
         'patch_size': 16,
         'map_encoder_hidden': [128, 256]
