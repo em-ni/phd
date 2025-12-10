@@ -237,8 +237,8 @@ def test(args):
         print(f"[WARNING] Lung mesh not found at {lung_path}")
     
     # Load centerline
-    graph_path = os.path.join(args.data_root, "static", "centerline.npz")
-    centerline_pts = load_centerline_points(graph_path)
+    centerline_path = os.path.join(args.data_root, "static", "centerline.npz")
+    centerline_pts = load_centerline_points(centerline_path)
     centerline_tree = None
     if centerline_pts is not None:
         print(f"[INFO] Loaded {len(centerline_pts)} centerline points")

@@ -21,9 +21,9 @@ def visualize_ball(args):
         print(f"[WARNING] Lung object not found at {args.lung_obj}")
 
     # 2. Load Centerline
-    points = load_centerline_points(args.graph_path)
+    points = load_centerline_points(args.centerline_path)
     if points is None:
-        print(f"[ERROR] Could not load centerline from {args.graph_path}")
+        print(f"[ERROR] Could not load centerline from {args.centerline_path}")
         return
         
     print(f"[INFO] Loaded {len(points)} centerline points")
@@ -104,7 +104,7 @@ def visualize_ball(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--graph_path', type=str, default='../dataset/static/centerline.npz')
+    parser.add_argument('--centerline_path', type=str, default='../dataset/static/centerline.npz')
     parser.add_argument('--lung_obj', type=str, default='../patient/lungs.obj')
     parser.add_argument('--max_points', type=int, default=DEFAULT_MAX_MAP_POINTS,
                        help='Max points after FPS (same as dataset max_map_points)')

@@ -10,10 +10,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.utils import load_centerline_points
 
 class TrajectoryVisualizer:
-    def __init__(self, data_root, cad_path, graph_path=None):
+    def __init__(self, data_root, cad_path, centerline_path=None):
         self.data_root = data_root
         self.cad_path = cad_path
-        self.graph_path = graph_path
+        self.centerline_path = centerline_path
         self.cad_mesh = None
         self.centerline_points = None
         
@@ -25,8 +25,8 @@ class TrajectoryVisualizer:
             print(f"[WARNING] CAD file not found at {self.cad_path}. Visualizing trajectories only.")
         
         # Load Centerline once
-        if self.graph_path:
-            self.centerline_points = load_centerline_points(self.graph_path)
+        if self.centerline_path:
+            self.centerline_points = load_centerline_points(self.centerline_path)
             if self.centerline_points is not None:
                 print(f"[INFO] Loaded {len(self.centerline_points)} centerline points")
 
@@ -168,7 +168,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--filter", type=str, default=None, help="Filter sequences by name (substring match)")
-    parser.add_argument("--graph_path", type=str, default='./dataset/static/centerline.npz', help="Path to centerline graph file")
+    parser.add_argument("--centerline_path", type=str, default='./dataset/static/centerline.npz', help="Path to centerline centerline file")
     args = parser.parse_args()
 
     # --- CONFIGURATION ---
@@ -176,10 +176,10 @@ if __name__ == "__main__":
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATASET_ROOT = os.path.join(BASE_DIR, "dataset", "sequences")
     CAD_FILE = os.path.join(BASE_DIR, "patient", "lungs.obj")
-    GRAPH_FILE = os.path.join(BASE_DIR, args.graph_path) if not os.path.isabs(args.graph_path) else args.graph_path
+    Centerline_FILE = os.path.join(BASE_DIR, args.centerline_path) if not os.path.isabs(args.centerline_path) else args.centerline_path
     # ---------------------
     
-    viz = TrajectoryVisualizer(DATASET_ROOT, CAD_FILE, GRAPH_FILE)
+    viz = TrajectoryVisualizer(DATASET_ROOT, CAD_FILE, Centerline_FILE)
     
     # Monkey patch run to support filter (or modify run method, but this is cleaner for now without changing class signature)
     original_run = viz.run

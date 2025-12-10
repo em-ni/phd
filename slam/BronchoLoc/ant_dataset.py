@@ -89,13 +89,13 @@ class AntDataset(Dataset):
         # Assume static data is in parent of 'sequences' or 'test'
         # data_root is usually .../dataset/sequences
         parent_dir = os.path.dirname(self.data_root)
-        graph_path = os.path.join(parent_dir, "static", "centerline.npz")
+        centerline_path = os.path.join(parent_dir, "static", "centerline.npz")
         
         self.map_tree = None
         self.map_points = None
-        self.map_points = load_centerline_points(graph_path)
+        self.map_points = load_centerline_points(centerline_path)
         if self.map_points is not None:
-            print(f"[DATASET] Loaded {len(self.map_points)} centerline points from {graph_path}")
+            print(f"[DATASET] Loaded {len(self.map_points)} centerline points from {centerline_path}")
             # Build a KDTree for fast spatial queries (finding nearest map points).
             self.map_tree = cKDTree(self.map_points)
         else:
@@ -341,8 +341,8 @@ if __name__ == "__main__":
         
         # Load centerline once
         parent_dir = os.path.dirname(args.data_root)
-        graph_path = os.path.join(parent_dir, "static", "centerline.npz")
-        centerline_pts = load_centerline_points(graph_path)
+        centerline_path = os.path.join(parent_dir, "static", "centerline.npz")
+        centerline_pts = load_centerline_points(centerline_path)
         
         # Load lung mesh once
         lung_mesh = None

@@ -7,28 +7,28 @@ from sklearn.cluster import DBSCAN
 from constants import CONNECTIVITY_THRESHOLD
 
 
-def load_centerline_points(graph_path):
+def load_centerline_points(centerline_path):
     """
-    Loads centerline points from a graph .npz file.
+    Loads centerline points from a centerline .npz file.
     
     Args:
-        graph_path: Path to the .npz file containing centerline data.
+        centerline_path: Path to the .npz file containing centerline data.
         
     Returns:
         np.array: (N, 3) array of centerline points, or None if not found.
     """
-    if not os.path.exists(graph_path):
-        print(f"[WARNING] Graph file not found at {graph_path}")
+    if not os.path.exists(centerline_path):
+        print(f"[WARNING] Centerline file not found at {centerline_path}")
         return None
         
-    gdata = np.load(graph_path)
+    gdata = np.load(centerline_path)
     
     if 'centerline_points' in gdata:
         return gdata['centerline_points']
     elif 'node_pos' in gdata:
         return gdata['node_pos']
     else:
-        print("[WARNING] No centerline points found in graph file.")
+        print("[WARNING] No centerline points found in centerline file.")
         return None
 
 

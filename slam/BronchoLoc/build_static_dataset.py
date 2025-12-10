@@ -2,7 +2,7 @@ import pyvista as pv
 import numpy as np  
 import os
     
-class LungGraphBuilder:
+class LungCenterlineBuilder:
     def __init__(self, vtk_path, cad_path):
         self.vtk_path = vtk_path
         self.cad_path = cad_path
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     vtk_file = "patient/centerline.vtk" 
     cad_file = "patient/lungs.obj" 
     
-    builder = LungGraphBuilder(vtk_file, cad_file)
+    builder = LungCenterlineBuilder(vtk_file, cad_file)
     builder.process()
     
     # Creates the 'static' folder with all 3 required files

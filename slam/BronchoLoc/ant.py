@@ -214,7 +214,7 @@ class MapEncoder(nn.Module):
 
 class ActionPredictor(nn.Module):
     """
-    Main Model Class: Graph Selector Architecture.
+    Main Model Class: Centerline Selector Architecture.
     Predicts the next position by attending to visual features and selecting/weighting 
     candidates from the K local map points.
     """
