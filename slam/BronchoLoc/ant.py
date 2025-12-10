@@ -242,15 +242,17 @@ class ActionPredictor(nn.Module):
         
         self.scale = embed_dim ** -0.5
 
-    def forward(self, video, map_points=None, map_mask=None):
+    def forward(self, video, map_points=None, map_mask=None, return_features=False):
         """
         Args:
             video: Video tensor (B, T, C, H, W)
             map_points: Local map candidates (B, T, K, 3)
             map_mask: Boolean mask (B, T, K) - True for valid points, False for padding
+            return_features: If True, also return visual_tokens for BIRD module
             
         Returns:
             pred_delta: Predicted position update (B, T, 3)
+            visual_tokens: (optional) Visual features (B, T, D) if return_features=True
         """
         # video: (B, T, C, H, W)
         # map_points: (B, T, K, 3)
@@ -258,7 +260,10 @@ class ActionPredictor(nn.Module):
         
         if map_points is None:
             # Fallback (shouldn't happen in normal flow)
-            return torch.zeros(video.shape[0], video.shape[1], 3, device=video.device)
+            zeros = torch.zeros(video.shape[0], video.shape[1], 3, device=video.device)
+            if return_features:
+                return zeros, torch.zeros(video.shape[0], video.shape[1], self.config['embed_dim'], device=video.device)
+            return zeros
             
         # 1. Extract Visual Features (Query)
         # Get frame-wise visual embeddings: (B, T, D)
@@ -300,4 +305,6 @@ class ActionPredictor(nn.Module):
         
         # Return only translation (B, T, 3)
         # We rely on the map's geometry.
+        if return_features:
+            return pred_delta, visual_tokens
         return pred_delta
