@@ -17,7 +17,7 @@ from einops import rearrange, repeat
 MODEL_CONFIGS = {
     's': {
         'embed_dim': 128,
-        'num_heads': 32,
+        'num_heads': 4,
         'vi_layers': 16,
         'mlp_expansion': 4,
         'patch_size': 16,

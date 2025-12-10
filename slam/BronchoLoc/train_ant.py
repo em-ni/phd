@@ -192,7 +192,7 @@ def train(args):
     log_dir = os.path.join(args.checkpoint_dir, "logs", checkpoint_name)
     writer = SummaryWriter(log_dir=log_dir)
     print(f"[INFO] TensorBoard logs at: {log_dir}")
-    print(f"[INFO] Run: tensorboard --logdir={os.path.join(args.checkpoint_dir, 'logs')}")
+    print(f"[INFO] Run: tensorboard --logdir={log_dir}")
     
     # --- EARLY STOPPING SETUP ---
     best_val_loss = float('inf')
