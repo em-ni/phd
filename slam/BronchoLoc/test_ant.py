@@ -12,7 +12,7 @@ from scipy.spatial import cKDTree
 from ant import ActionPredictor
 from ant_dataset import AntDataset
 from constants import NORM_MAP_SCALE, MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS
-from utils import load_centerline_points, filter_connected_component, farthest_point_sample
+from utils.utils import load_centerline_points, filter_connected_component, farthest_point_sample
 
 
 def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,

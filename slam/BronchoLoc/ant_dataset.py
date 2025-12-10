@@ -8,7 +8,7 @@ from tqdm import tqdm
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation as R
 from constants import MAP_QUERY_RADIUS, NORM_MAP_SCALE, DEFAULT_MAX_MAP_POINTS
-from utils import filter_connected_component, load_centerline_points, farthest_point_sample
+from utils.utils import filter_connected_component, load_centerline_points, farthest_point_sample
 
 def get_stats(data_root):
     """

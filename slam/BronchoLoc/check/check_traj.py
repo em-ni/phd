@@ -1,9 +1,13 @@
 import os
+import sys
 import glob
 import numpy as np
 import pyvista as pv
 from scipy.spatial.transform import Rotation as R
-from utils import load_centerline_points
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.utils import load_centerline_points
 
 class TrajectoryVisualizer:
     def __init__(self, data_root, cad_path, graph_path=None):
@@ -168,7 +172,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # --- CONFIGURATION ---
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    # BASE_DIR is the parent of check folder (BronchoLoc root)
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATASET_ROOT = os.path.join(BASE_DIR, "dataset", "sequences")
     CAD_FILE = os.path.join(BASE_DIR, "patient", "lungs.obj")
     GRAPH_FILE = os.path.join(BASE_DIR, args.graph_path) if not os.path.isabs(args.graph_path) else args.graph_path

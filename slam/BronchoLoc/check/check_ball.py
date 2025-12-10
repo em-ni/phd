@@ -1,10 +1,14 @@
 import os
+import sys
 import argparse
 import numpy as np
 import pyvista as pv
 from scipy.spatial import cKDTree
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from constants import MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS
-from utils import filter_connected_component, load_centerline_points, farthest_point_sample
+from utils.utils import filter_connected_component, load_centerline_points, farthest_point_sample
 
 
 def visualize_ball(args):
@@ -100,8 +104,8 @@ def visualize_ball(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--graph_path', type=str, default='./dataset/static/centerline.npz')
-    parser.add_argument('--lung_obj', type=str, default='./patient/lungs.obj')
+    parser.add_argument('--graph_path', type=str, default='../dataset/static/centerline.npz')
+    parser.add_argument('--lung_obj', type=str, default='../patient/lungs.obj')
     parser.add_argument('--max_points', type=int, default=DEFAULT_MAX_MAP_POINTS,
                        help='Max points after FPS (same as dataset max_map_points)')
     args = parser.parse_args()

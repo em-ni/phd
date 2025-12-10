@@ -1,11 +1,15 @@
 import numpy as np
 import glob
 import os
+import sys
 import argparse
 import pyvista as pv
 from scipy.spatial import cKDTree
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 from constants import MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS
-from utils import load_centerline_points, filter_connected_component, farthest_point_sample
+from utils.utils import load_centerline_points, filter_connected_component, farthest_point_sample
 
 
 def visualize_window_3d(positions, frame_indices, lung_path, graph_path, seq_name, max_points=DEFAULT_MAX_MAP_POINTS):
@@ -236,18 +240,22 @@ def analyze_dataset(data_root, frame_skip=1, window_size=None, lung_path=None, g
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_root', type=str, default='./dataset/sequences')
+    parser.add_argument('--data_root', type=str, default='../dataset/sequences')
     parser.add_argument('--frame_skip', type=int, default=10, help="Frame skipping interval")
     parser.add_argument('--window_size', type=int, default=16, help="Number of frames in one sample window")
-    parser.add_argument('--lung_path', type=str, default='./patient/lungs.obj', help="Path to lungs mesh")
-    parser.add_argument('--graph_path', type=str, default='./dataset/static/centerline.npz', help="Path to centerline graph")
+    parser.add_argument('--lung_path', type=str, default='../patient/lungs.obj', help="Path to lungs mesh")
+    parser.add_argument('--graph_path', type=str, default='../dataset/static/centerline.npz', help="Path to centerline graph")
     parser.add_argument('--visualize', action='store_true', default=True, help="Show 3D visualization of window")
     args = parser.parse_args()
     
-    # Resolve paths
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    lung_path = os.path.join(BASE_DIR, args.lung_path) if not os.path.isabs(args.lung_path) else args.lung_path
-    graph_path = os.path.join(BASE_DIR, args.graph_path) if not os.path.isabs(args.graph_path) else args.graph_path
+    # Resolve paths - BASE_DIR is now the parent of check folder (BronchoLoc root)
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # Handle relative paths - if relative, resolve from BASE_DIR (root)
+    if not os.path.isabs(args.data_root):
+        args.data_root = os.path.join(BASE_DIR, args.data_root.lstrip('../').lstrip('./'))
+    lung_path = os.path.join(BASE_DIR, args.lung_path.lstrip('../').lstrip('./')) if not os.path.isabs(args.lung_path) else args.lung_path
+    graph_path = os.path.join(BASE_DIR, args.graph_path.lstrip('../').lstrip('./')) if not os.path.isabs(args.graph_path) else args.graph_path
     
     analyze_dataset(args.data_root, args.frame_skip, args.window_size, lung_path, graph_path, args.visualize)
     

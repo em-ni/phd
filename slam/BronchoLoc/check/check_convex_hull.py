@@ -8,10 +8,15 @@ The model predicts positions as a weighted sum of K map points:
 This means predictions are CONSTRAINED to the convex hull of the K candidates.
 If GT is outside this hull, MSE cannot reach 0 no matter the model capacity.
 """
+import os
+import sys
 import numpy as np
 import torch
 from tqdm import tqdm
 from scipy.spatial import ConvexHull, Delaunay
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ant_dataset import AntDataset
 from constants import NORM_MAP_SCALE
 
@@ -51,7 +56,9 @@ def main():
     print("Checking if GT targets lie within convex hull of K map candidates...")
     
     # Load dataset (use sequences folder where seq_test is located for overfitting analysis)
-    data_root = './dataset/sequences'
+    # Path relative to parent directory (BronchoLoc root)
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_root = os.path.join(base_dir, 'dataset', 'sequences')
     dataset = AntDataset(data_root, mode='test')
     
     if len(dataset) == 0:

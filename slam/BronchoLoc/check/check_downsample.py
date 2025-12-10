@@ -91,9 +91,9 @@ def farthest_point_sampling(points, num_points):
 
 def main():
     parser = argparse.ArgumentParser(description="Downsample centerline points")
-    parser.add_argument('--input', type=str, default='./dataset/static/centerline.npz',
+    parser.add_argument('--input', type=str, default='../dataset/static/centerline.npz',
                        help='Input centerline file')
-    parser.add_argument('--output', type=str, default='./dataset/static/centerline_downsampled.npz',
+    parser.add_argument('--output', type=str, default='../dataset/static/centerline_downsampled.npz',
                        help='Output centerline file')
     parser.add_argument('--method', type=str, default='voxel', choices=['voxel', 'uniform', 'fps'],
                        help='Downsampling method')
@@ -103,7 +103,7 @@ def main():
                        help='Keep every N-th point (for uniform method)')
     parser.add_argument('--num_points', type=int, default=2000,
                        help='Target number of points (for fps method)')
-    parser.add_argument('--lung_path', type=str, default='./patient/lungs.obj',
+    parser.add_argument('--lung_path', type=str, default='../patient/lungs.obj',
                        help='Path to lung mesh for visualization')
     parser.add_argument('--visualize', action='store_true', default=True,
                        help='Visualize before and after')
