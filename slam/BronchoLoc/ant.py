@@ -15,37 +15,42 @@ from einops import rearrange, repeat
 #   - patch_size: Size of image patches for ViT (img_size must be divisible by this)
 #   - map_encoder_hidden: List of hidden layer sizes for MapEncoder MLP (input is 3, output is embed_dim)
 MODEL_CONFIGS = {
-    's': {
-        'embed_dim': 128,
-        'num_heads': 4,
-        'vi_layers': 16,
+    # try to keep head_dim = 64
+    's': {  # Small: ~7M params
+        'embed_dim': 256,
+        'num_heads': 4,       
+        'vi_layers': 6,
         'mlp_expansion': 4,
         'patch_size': 16,
-        'map_encoder_hidden': [64, 128]
+        'map_encoder_hidden': [64, 128],
+        'suggested_lr': 1e-4
     },
-    'b': {
+    'b': {  # Base: ~50M params
         'embed_dim': 512,
-        'num_heads': 8,
-        'vi_layers': 8,
+        'num_heads': 8, 
+        'vi_layers': 12,
         'mlp_expansion': 4,
         'patch_size': 16,
-        'map_encoder_hidden': [64, 128]
+        'map_encoder_hidden': [128, 256],
+        'suggested_lr': 5e-5
     },
-    'm': {
+    'm': {  # Medium: ~115M params
+        'embed_dim': 768,
+        'num_heads': 12,
+        'vi_layers': 12,
+        'mlp_expansion': 4,
+        'patch_size': 16,
+        'map_encoder_hidden': [192, 384],
+        'suggested_lr': 2e-5
+    },
+    'l': {  # Large: ~400M params
         'embed_dim': 1024,
         'num_heads': 16,
-        'vi_layers': 16,
-        'mlp_expansion': 4,
-        'patch_size': 16,
-        'map_encoder_hidden': [128, 256]
-    },
-    'l': {
-        'embed_dim': 2048,
-        'num_heads': 32,
         'vi_layers': 24,
         'mlp_expansion': 4,
         'patch_size': 16,
-        'map_encoder_hidden': [256, 512]
+        'map_encoder_hidden': [256, 512],
+        'suggested_lr': 1e-5
     }
 }
 
@@ -306,5 +311,6 @@ class ActionPredictor(nn.Module):
         # Return only translation (B, T, 3)
         # We rely on the map's geometry.
         if return_features:
-            return pred_delta, visual_tokens
+            # Return visual tokens AND attention probs for BIRD and CE loss
+            return pred_delta, visual_tokens, probs
         return pred_delta

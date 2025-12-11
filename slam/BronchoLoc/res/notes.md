@@ -77,7 +77,9 @@ This effectively selects a position within the convex hull of the candidate cent
 The result is the action tensor of shape (window_size, 3).
 
 ## Training
-The model is trained using a simple MSE loss between the predicted action and the target action i.e. for each batch the loss is computed between the action tensor and the target action tensor  of each frame of the window, for each window in the batch (B, window_size, 3).
+The model is trained using
+- MSE loss between the predicted action and the target action i.e. for each batch the loss is computed between the action tensor and the target action tensor  of each frame of the window, for each window in the batch (B, window_size, 3).
+- Cross-entropy loss on the attention weights, this is to make the model sharper in the prediction, avoiding smoothing the probability distribution and spreading it across all points.
 
 ## Inference
 The model is used to predict the action for each frame of the window, for each window in the batch (B, window_size, 3). The very first frame of the video is initialized as the starting position of the centerline, then each subsequent first frame of subsequent windows is initialized as the predicted position from the previous window.
@@ -86,3 +88,5 @@ This can lead to a trajectory that is not smooth and drifts away from the real t
 For this reason we need the BIRD model.
 
 # Full BIRD pipeline explained from first principles
+# Model
+The input of the model are the output window of the ant

@@ -9,7 +9,7 @@ from tqdm import tqdm
 from datetime import datetime
 from torch.utils.tensorboard import SummaryWriter
 
-from ant import ActionPredictor
+from ant import ActionPredictor, MODEL_CONFIGS
 from ant_dataset import AntDataset 
 from constants import NORM_MAP_SCALE, DEFAULT_MAX_MAP_POINTS
 
@@ -124,7 +124,13 @@ def train(args):
     print(f"[INFO] Trainable parameters: {total_params:,}")
     
     # Optimization Setup
-    optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    # Use model's suggested LR if user didn't specify one
+    if args.lr is None:
+        lr = MODEL_CONFIGS[args.model_mode]['suggested_lr']
+        print(f"[INFO] Using model's suggested LR: {lr}")
+    else:
+        lr = args.lr
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     
     # Scheduler Setup
     if args.scheduler == 'cosine':
@@ -214,27 +220,41 @@ def train(args):
                 gt_deltas = batch['actions'].to(device)
                 map_points = batch['map_points'].to(device)
                 map_mask = batch['map_mask'].to(device)
+                target_indices = batch['target_indices'].to(device)  # (B, T)
                 
                 optimizer.zero_grad()
                 
-                pred_trans = model(video, map_points=map_points, map_mask=map_mask)
+                # Get predictions and attention probs for CE loss
+                pred_trans, _, attn_probs = model(video, map_points=map_points, map_mask=map_mask, return_features=True)
                 # NOTE: gt_deltas are already normalized in the dataset (see ant_dataset.py line 293)
                 gt_trans = gt_deltas[:, :, :3]  # Already normalized
                 
-                base_loss = criterion(pred_trans, gt_trans)
+                # MSE Loss on position predictions
+                mse_loss = criterion(pred_trans, gt_trans).mean()
+                
+                # Cross-Entropy Loss on attention weights
+                # This directly supervises attention to select the correct point
+                # attn_probs: (B, T, K), target_indices: (B, T)
+                B, T, K = attn_probs.shape
+                attn_flat = attn_probs.view(B * T, K)  # (B*T, K)
+                target_flat = target_indices.view(B * T)  # (B*T,)
+                # Use NLL loss with log probs (cross_entropy already applies log, so use nll_loss)
+                log_probs = torch.log(attn_flat.clamp(min=1e-10))  # Clamp to prevent log(0)
+                ce_loss = torch.nn.functional.nll_loss(log_probs, target_flat)
+                
+                # Combined loss: MSE + CE
+                loss = mse_loss + args.ce_weight * ce_loss
                 
                 if args.motion_weight > 0:
                     pred_variance = pred_trans.var(dim=1).mean()
                     motion_term = -args.motion_weight * pred_variance
-                    loss = base_loss.mean() + motion_term
-                else:
-                    loss = base_loss.mean()
+                    loss = loss + motion_term
                 
                 loss.backward()
                 optimizer.step()
                 
                 run_loss += loss.item()
-                pbar.set_postfix({"MSE": f"{loss.item():.6f}"})
+                pbar.set_postfix({"MSE": f"{mse_loss.item():.6f}", "CE": f"{ce_loss.item():.4f}"})
             
             avg_train_loss = run_loss / len(train_loader)
             
@@ -308,7 +328,8 @@ if __name__ == "__main__":
     parser.add_argument('--model_mode', type=str, default='s', choices=['s', 'b', 'm', 'l'])
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--lr', type=float, default=None,
+                        help="Learning rate (default: use model's suggested_lr)")
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--overfit', action='store_true', help="Overfit on seq_test only")
     parser.add_argument('--debug_one', action='store_true', help="Overfit on a SINGLE batch")
@@ -318,7 +339,9 @@ if __name__ == "__main__":
     parser.add_argument('--reset_lr', type=float, default=1e-6, help="Reset learning rate to this value when resuming")
     parser.add_argument('--scheduler', type=str, default='plateau', choices=['plateau', 'cosine'],
                         help="LR scheduler: 'plateau' (default) or 'cosine' for warmup + cosine decay")
-    parser.add_argument('--early_stop_patience', type=int, default=50,
+    parser.add_argument('--early_stop_patience', type=int, default=100,
                         help="Stop if val loss doesn't improve for N epochs (0=disabled)")
+    parser.add_argument('--ce_weight', type=float, default=1.0,
+                        help="Weight for cross-entropy loss on attention (0=disabled, 1.0=equal to MSE)")
     args = parser.parse_args()
     train(args)

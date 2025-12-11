@@ -4,7 +4,7 @@
 MAP_QUERY_RADIUS = 10.0 # mm
 
 # Normalization for Map Points and Targets 
-NORM_MAP_SCALE = 10.0 # mm (10.0 means 10mm -> 1.0 normalized)
+NORM_MAP_SCALE = 1.0 # mm - using 1.0 keeps values in mm scale (matches working commit)
 
 # Maximum map points to pass to model (after FPS downsampling)
 DEFAULT_MAX_MAP_POINTS = 16

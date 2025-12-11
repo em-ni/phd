@@ -272,6 +272,7 @@ class AntDataset(Dataset):
         # We want to predict where the true centerline point is for each frame i, 
         # but expressed in the coordinate system of frame 0. This is a sequence-to-sequence regression task.
         actions = []
+        target_indices = []  # Track which map point index is the target for CE loss
         for i in range(self.window_size):
             p_curr = positions[i]
             
@@ -282,8 +283,10 @@ class AntDataset(Dataset):
                 dists = np.linalg.norm(model_map_points_global - p_curr, axis=1)
                 nn_idx = np.argmin(dists)
                 target_global = model_map_points_global[nn_idx]
+                target_indices.append(nn_idx)  # Store index for CE loss
             else:
                 target_global = p_curr # Fallback to identity (learn nothing) if no map
+                target_indices.append(0)  # Placeholder
             
             # Transform this global target into the Local Frame of START (T=0)
             # Vector from Camera 0 to Target
@@ -298,10 +301,12 @@ class AntDataset(Dataset):
             actions.append(action)
             
         action_tensor = torch.tensor(np.array(actions, dtype=np.float32)).float() # (T, 6)
+        target_idx_tensor = torch.tensor(target_indices, dtype=torch.long)  # (T,)
 
         return {
             "video": video_tensor,
             "actions": action_tensor, # (T, 6) - local frame of T=0
+            "target_indices": target_idx_tensor, # (T,) - index of correct point for CE loss
             "map_points": map_points_tensor, # (T, K, 3) - local frame of T=0
             "map_mask": map_mask_tensor,  # (T, K) - True for valid points
             # For visualization: first frame's global pose to transform back
