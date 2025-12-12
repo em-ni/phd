@@ -16,6 +16,16 @@ from einops import rearrange, repeat
 #   - map_encoder_hidden: List of hidden layer sizes for MapEncoder MLP (input is 3, output is embed_dim)
 MODEL_CONFIGS = {
     # try to keep head_dim = 64
+    'xs': {  # Extra-Small: ~1.5M params
+        'embed_dim': 128,
+        'num_heads': 2,
+        'vi_layers': 4,
+        'mlp_expansion': 4,
+        'patch_size': 16,
+        'map_encoder_hidden': [32, 64],
+        'suggested_lr': 2e-4,
+        'dropout': 0.1
+    },
     's': {  # Small: ~7M params
         'embed_dim': 256,
         'num_heads': 4,       
@@ -23,7 +33,8 @@ MODEL_CONFIGS = {
         'mlp_expansion': 4,
         'patch_size': 16,
         'map_encoder_hidden': [64, 128],
-        'suggested_lr': 1e-4
+        'suggested_lr': 1e-4,
+        'dropout': 0.1
     },
     'b': {  # Base: ~50M params
         'embed_dim': 512,
@@ -32,7 +43,8 @@ MODEL_CONFIGS = {
         'mlp_expansion': 4,
         'patch_size': 16,
         'map_encoder_hidden': [128, 256],
-        'suggested_lr': 5e-5
+        'suggested_lr': 5e-5,
+        'dropout': 0.2
     },
     'm': {  # Medium: ~115M params
         'embed_dim': 768,
@@ -41,7 +53,8 @@ MODEL_CONFIGS = {
         'mlp_expansion': 4,
         'patch_size': 16,
         'map_encoder_hidden': [192, 384],
-        'suggested_lr': 2e-5
+        'suggested_lr': 2e-5,
+        'dropout': 0.2
     },
     'l': {  # Large: ~400M params
         'embed_dim': 1024,
@@ -50,7 +63,8 @@ MODEL_CONFIGS = {
         'mlp_expansion': 4,
         'patch_size': 16,
         'map_encoder_hidden': [256, 512],
-        'suggested_lr': 1e-5
+        'suggested_lr': 1e-5,
+        'dropout': 0.3
     }
 }
 
@@ -62,15 +76,23 @@ class SpatioTemporalBlock(nn.Module):
     1. Spatial Attention: Attends between patches within the same frame.
     2. Temporal Attention: Attends between the same spatial location across different frames.
     """
-    def __init__(self, dim, num_heads, window_size, mlp_expansion=4):
+    def __init__(self, dim, num_heads, window_size, mlp_expansion=4, dropout=0.1):
         super().__init__()
-        self.spatial_attn = nn.MultiheadAttention(dim, num_heads, batch_first=True)
-        self.temporal_attn = nn.MultiheadAttention(dim, num_heads, batch_first=True)
+        self.spatial_attn = nn.MultiheadAttention(dim, num_heads, batch_first=True, dropout=dropout)
+        self.temporal_attn = nn.MultiheadAttention(dim, num_heads, batch_first=True, dropout=dropout)
         self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
         self.norm3 = nn.LayerNorm(dim)
         hidden_dim = dim * mlp_expansion
-        self.mlp = nn.Sequential(nn.Linear(dim, hidden_dim), nn.GELU(), nn.Linear(hidden_dim, dim))
+        self.mlp = nn.Sequential(
+            nn.Linear(dim, hidden_dim), 
+            nn.GELU(), 
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, dim),
+            nn.Dropout(dropout)
+        )
+        self.drop1 = nn.Dropout(dropout)
+        self.drop2 = nn.Dropout(dropout)
         self.window_size = window_size
 
     def forward(self, x):
@@ -79,7 +101,7 @@ class SpatioTemporalBlock(nn.Module):
         # 1. Spatial Attention
         # Standard self-attention over N_patches
         attn_out, _ = self.spatial_attn(x, x, x)
-        x = self.norm1(x + attn_out)
+        x = self.norm1(x + self.drop1(attn_out))
         
         # Reshape for Temporal Attention
         bt, n, d = x.shape
@@ -92,7 +114,7 @@ class SpatioTemporalBlock(nn.Module):
         
         # 2. Temporal Attention
         attn_out, _ = self.temporal_attn(x, x, x)
-        x = self.norm2(x + attn_out)
+        x = self.norm2(x + self.drop2(attn_out))
         
         # Restore original shape: (B*T, N, D)
         x = rearrange(x, '(b n) t d -> (b t) n d', b=b)
@@ -112,6 +134,7 @@ class STViViT(nn.Module):
         layers = config['vi_layers']
         heads = config['num_heads']
         mlp_expansion = config.get('mlp_expansion', 4)
+        dropout = config.get('dropout', 0.1)
         self.patch_size = config.get('patch_size', 16)
         
         # Convolutional Patch Embedding: Splits image into patches and projects to dim
@@ -121,9 +144,12 @@ class STViViT(nn.Module):
         # Learnable Positional Embedding: (1, T, N, D) adds info about space and time
         self.pos_embed = nn.Parameter(torch.randn(1, window_size, self.num_patches, dim))
         
-        # Stack of SpatioTemporal Blocks
+        # Dropout after positional embedding
+        self.pos_drop = nn.Dropout(dropout)
+        
+        # Stack of SpatioTemporal Blocks (now with dropout)
         self.blocks = nn.ModuleList([
-            SpatioTemporalBlock(dim, heads, window_size, mlp_expansion) 
+            SpatioTemporalBlock(dim, heads, window_size, mlp_expansion, dropout=dropout) 
             for _ in range(layers)
         ])
         
@@ -165,7 +191,7 @@ class STViViT(nn.Module):
 
         # Add Positional Embeddings
         pos = repeat(pos, '1 t n d -> (b t) n d', b=B)
-        x = x + pos
+        x = self.pos_drop(x + pos)
         
         # Transformer Blocks
         for block in self.blocks:
@@ -189,8 +215,9 @@ class MapEncoder(nn.Module):
     Args:
         out_dim: Output dimension
         hidden_sizes: List of hidden layer sizes (default: [64, 128])
+        dropout: Dropout rate (default: 0.1)
     """
-    def __init__(self, out_dim=64, hidden_sizes=None):
+    def __init__(self, out_dim=64, hidden_sizes=None, dropout=0.1):
         super().__init__()
         if hidden_sizes is None:
             hidden_sizes = [64, 128]
@@ -201,6 +228,7 @@ class MapEncoder(nn.Module):
         for h_dim in hidden_sizes:
             layers.append(nn.Linear(in_dim, h_dim))
             layers.append(nn.GELU())
+            layers.append(nn.Dropout(dropout))
             in_dim = h_dim
         layers.append(nn.Linear(in_dim, out_dim))
         
@@ -229,6 +257,7 @@ class ActionPredictor(nn.Module):
         self.config = MODEL_CONFIGS[mode]
         embed_dim = self.config['embed_dim']
         map_encoder_hidden = self.config.get('map_encoder_hidden', [64, 128])
+        dropout = self.config.get('dropout', 0.1)
         
         # Visual Encoder
         self.visual_encoder = STViViT(self.config, img_size=img_size, window_size=window_size)
@@ -236,7 +265,7 @@ class ActionPredictor(nn.Module):
         # Map Encoder
         # We ensure map features match visual feature dimension for dot product attention.
         self.map_dim = embed_dim 
-        self.map_encoder = MapEncoder(out_dim=self.map_dim, hidden_sizes=map_encoder_hidden)
+        self.map_encoder = MapEncoder(out_dim=self.map_dim, hidden_sizes=map_encoder_hidden, dropout=dropout)
         
         # Selection Head (Attention)
         # Projects visual features to query space

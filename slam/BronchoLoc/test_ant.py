@@ -428,7 +428,7 @@ if __name__ == "__main__":
     parser.add_argument('--data_root', type=str, default='./dataset')
     parser.add_argument('--checkpoint_dir', type=str, default='./checkpoints')
     parser.add_argument('--checkpoint', type=str, default=None, help="Path to specific checkpoint file")
-    parser.add_argument('--model_mode', type=str, default='s', choices=['s', 'b', 'm', 'l'])
+    parser.add_argument('--model_mode', type=str, default='s', choices=['xs', 's', 'b', 'm', 'l'])
     parser.add_argument('--batch_size', type=int, default=1, help="Batch size (1 recommended for video)")
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--overfit', action='store_true', help="Test on seq_test only (matches overfit training)")
