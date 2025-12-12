@@ -63,7 +63,7 @@ class AntDataset(Dataset):
     Handles loading video frames, trajectories, and static airway maps, 
     and generating training samples consisting of video clips, map points, and target actions.
     """
-    def __init__(self, data_root, mode='train', max_map_points=DEFAULT_MAX_MAP_POINTS, img_size=128, chain_mode=False):
+    def __init__(self, data_root, mode='train', max_map_points=DEFAULT_MAX_MAP_POINTS, img_size=128, chain_mode=False, augment=True):
         """
         Args:
             data_root (str): Path to the directory containing sequence folders.
@@ -72,12 +72,14 @@ class AntDataset(Dataset):
                                   If ball contains more, FPS downsampling is applied.
             img_size (int): Spatial resolution to resize video frames to (img_size x img_size).
             chain_mode (bool): If True, windows overlap by 1 frame (for chained prediction testing).
+            augment (bool): If True and mode='train', apply data augmentation (color jitter, noise).
         """
         self.data_root = data_root
         self.mode = mode
         self.max_map_points = max_map_points
         self.img_size = img_size
         self.chain_mode = chain_mode
+        self.augment = augment and (mode == 'train')  # Only augment during training
         self.samples = []
         
         # Load window config from file
@@ -191,6 +193,34 @@ class AntDataset(Dataset):
         
         # Normalize Video to [-1, 1] (Assuming input was 0-255)
         video_tensor = (video_tensor / 127.5) - 1.0
+        
+        # --- DATA AUGMENTATION (training only) ---
+        if self.augment:
+            # Color jitter: brightness, contrast, saturation
+            # Apply same augmentation to all frames in the window
+            brightness = 1.0 + np.random.uniform(-0.2, 0.2)
+            contrast = 1.0 + np.random.uniform(-0.2, 0.2)
+            saturation = 1.0 + np.random.uniform(-0.2, 0.2)
+            
+            # video_tensor is (T, C, H, W), normalized to [-1, 1]
+            # Apply brightness (add offset)
+            video_tensor = video_tensor + (brightness - 1.0)
+            
+            # Apply contrast (scale around mean)
+            video_tensor = (video_tensor - video_tensor.mean()) * contrast + video_tensor.mean()
+            
+            # Apply saturation (blend with grayscale)
+            # Convert to grayscale by averaging channels
+            gray = video_tensor.mean(dim=1, keepdim=True)  # (T, 1, H, W)
+            video_tensor = saturation * video_tensor + (1 - saturation) * gray
+            
+            # Add Gaussian noise (small)
+            noise_std = 0.05
+            noise = torch.randn_like(video_tensor) * noise_std
+            video_tensor = video_tensor + noise
+            
+            # Clamp to [-1, 1] after augmentation
+            video_tensor = video_tensor.clamp(-1.0, 1.0)
         
         # --- ACTION EXTRACTION (Continuous Regression) ---
         # 1. Get Global Poses (Pos + Quat)
