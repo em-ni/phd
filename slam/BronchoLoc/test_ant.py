@@ -202,13 +202,8 @@ def test(args):
     if args.checkpoint:
         ckpt_path = args.checkpoint
     else:
-        # Default fallback names (for backwards compatibility)
-        if args.debug_one:
-            ckpt_path = os.path.join(args.checkpoint_dir, "debug_one_model.pth")
-        elif args.overfit:
-            ckpt_path = os.path.join(args.checkpoint_dir, "overfit_model.pth")
-        else:
-            ckpt_path = os.path.join(args.checkpoint_dir, "best_model.pth")
+        print("[ERROR] No checkpoint specified!")
+        return
     
     if not os.path.exists(ckpt_path):
         print(f"[ERROR] Checkpoint not found: {ckpt_path}")

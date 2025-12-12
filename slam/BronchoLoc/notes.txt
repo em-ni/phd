@@ -1,0 +1,3 @@
+to try:
+- when downsampling keep density constant in place of number of points, e.g. select points at regular intervals of 1mm distance from eahc other
+- make impossible to jump from one branch to the other
