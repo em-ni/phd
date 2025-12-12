@@ -99,6 +99,11 @@ parser.add_argument(
     default=None,
     help="Randomly pick N centerlines to combine (overrides all_branches_bool)",
 )
+parser.add_argument(
+    "-variations",
+    action="store_true",
+    help="Record all VTP files in variations/ subfolder (inside centerlines folder)",
+)
 
 args = parser.parse_args()
 
@@ -553,6 +558,11 @@ Viewer.ViewpointZ: -1.8
         self.record_mode = args.record
         self.autopilot = args.autopilot
         self.results_mode = args.results
+        self.variations_mode = args.variations
+        
+        # If variations mode is enabled, automatically enable record mode and separate branches
+        if self.variations_mode:
+            self.separate_branches = True  # Process each variation file separately
 
         print("\nCommand line arguments:")
         print(f"-View: {self.view_mode}")
@@ -560,6 +570,7 @@ Viewer.ViewpointZ: -1.8
         print(f"-Record: {self.record_mode}")
         print(f"-Autopilot: {self.autopilot}")
         print(f"-Results mode: {self.results_mode}")
+        print(f"-Variations mode: {self.variations_mode}")
         print(f"-Separate Branches: {self.separate_branches}\n")
 
         # Initialize keyMap with default values to ensure it always exists
@@ -814,6 +825,32 @@ Viewer.ViewpointZ: -1.8
             self.setup_line_multibranch(fs_frames)
             print("[INFO] Random path built successfully")
             self.points = points
+
+        elif self.variations_mode:
+            # Process all VTP files in the variations subfolder
+            centerline_folder_name = self.app_config["PATHS"]["all_branches_folder"]
+            variations_folder_path = os.path.join(
+                self.data_folder, centerline_folder_name, "variations"
+            )
+            
+            if not os.path.isdir(variations_folder_path):
+                print(f"[ERROR] Variations folder not found: {variations_folder_path}")
+                print("[INFO] Generate variations first using: python utils/centerline_variations.py ...")
+                sys.exit(1)
+            
+            # Get all VTP files in variations folder
+            self.branch_files_queue = [
+                os.path.join(centerline_folder_name, "variations", f)
+                for f in os.listdir(variations_folder_path)
+                if f.endswith(".vtp")
+            ]
+            
+            if not self.branch_files_queue:
+                print(f"[ERROR] No .vtp files found in {variations_folder_path}")
+                sys.exit(1)
+            
+            print(f"[INFO] Found {len(self.branch_files_queue)} variation files to record.")
+            self.load_next_branch()
 
         elif self.all_branches_bool == "1":
             if self.separate_branches:
