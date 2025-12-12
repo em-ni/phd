@@ -13,6 +13,33 @@ from ant import MODEL_CONFIGS
 from constants import NORM_MAP_SCALE
 
 
+# ==============================================================================
+# BIRD CONFIGURATIONS
+# ==============================================================================
+# Configs that depend on ANT model size
+BIRD_CONFIGS = {
+    's': {
+        'memory_dim': 128,
+        'num_memory_layers': 2,
+        'num_heads': 4,
+    },
+    'b': {
+        'memory_dim': 256,
+        'num_memory_layers': 2,
+        'num_heads': 4,
+    },
+    'm': {
+        'memory_dim': 256,
+        'num_memory_layers': 2,
+        'num_heads': 8,
+    },
+    'l': {
+        'memory_dim': 512,
+        'num_memory_layers': 3,
+        'num_heads': 8,
+    }
+}
+
 class CenterlineEncoder(nn.Module):
     """
     Pre-encodes the downsampled centerline points into feature vectors.
@@ -176,35 +203,6 @@ class BIRD(nn.Module):
         """
         return None  # Memory state is None initially
 
-
-# ==============================================================================
-# BIRD CONFIGURATIONS
-# ==============================================================================
-# Configs that depend on ANT model size
-BIRD_CONFIGS = {
-    's': {
-        'memory_dim': 128,
-        'num_memory_layers': 2,
-        'num_heads': 4,
-    },
-    'b': {
-        'memory_dim': 256,
-        'num_memory_layers': 2,
-        'num_heads': 4,
-    },
-    'm': {
-        'memory_dim': 256,
-        'num_memory_layers': 2,
-        'num_heads': 8,
-    },
-    'l': {
-        'memory_dim': 512,
-        'num_memory_layers': 3,
-        'num_heads': 8,
-    }
-}
-
-
 def create_bird(ant_mode='m', num_centerline_pts=1024):
     """
     Factory function to create a BIRD module with config matching ANT.
@@ -224,3 +222,5 @@ def create_bird(ant_mode='m', num_centerline_pts=1024):
         num_heads=config['num_heads'],
         num_centerline_pts=num_centerline_pts
     )
+
+
