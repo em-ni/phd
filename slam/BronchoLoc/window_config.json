@@ -1,4 +1,4 @@
 {
-  "window_size": 16,
-  "frame_skip": 10
+  "window_size": 10,
+  "frame_skip": 40
 }

@@ -4,7 +4,9 @@ import os
 import sys
 import argparse
 import pyvista as pv
+import random
 from scipy.spatial import cKDTree
+from tqdm import tqdm
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
@@ -134,7 +136,84 @@ def visualize_window_3d(positions, frame_indices, lung_path, centerline_path, se
     p.add_axes()
     p.show()
 
-def analyze_dataset(data_root, frame_skip=1, window_size=None, lung_path=None, centerline_path=None, visualize=False):
+
+def analyze_window_containment(data_root, frame_skip, window_size, num_samples=100):
+    """
+    Sample random windows and check how many frames are inside/outside the ball radius.
+    """
+    seq_dirs = sorted(glob.glob(os.path.join(data_root, "seq_*")))
+    
+    # Collect all valid windows across all sequences
+    all_windows = []
+    effective_len = (window_size - 1) * frame_skip + 1
+    
+    for seq_dir in seq_dirs:
+        traj_path = os.path.join(seq_dir, "trajectory.npy")
+        if not os.path.exists(traj_path):
+            continue
+        traj = np.load(traj_path)
+        positions = traj[:, :3]
+        
+        # Find all valid window start positions
+        for start_idx in range(0, len(positions) - effective_len + 1, effective_len):
+            frame_indices = [start_idx + i * frame_skip for i in range(window_size)]
+            all_windows.append((positions, frame_indices, os.path.basename(seq_dir)))
+    
+    print(f"\n[INFO] Found {len(all_windows)} valid windows across {len(seq_dirs)} sequences")
+    
+    # Sample random windows
+    if num_samples > len(all_windows):
+        num_samples = len(all_windows)
+    sampled = random.sample(all_windows, num_samples)
+    
+    # Statistics
+    total_frames = 0
+    frames_inside = 0
+    frames_outside = 0
+    windows_with_out = 0
+    out_per_window = []
+    
+    for positions, frame_indices, seq_name in tqdm(sampled, desc="Checking windows"):
+        window_positions = positions[frame_indices]
+        p0 = window_positions[0]  # Ball center
+        
+        window_out = 0
+        for i, pos in enumerate(window_positions):
+            dist_to_center = np.linalg.norm(pos - p0)
+            total_frames += 1
+            if dist_to_center <= MAP_QUERY_RADIUS:
+                frames_inside += 1
+            else:
+                frames_outside += 1
+                window_out += 1
+        
+        out_per_window.append(window_out)
+        if window_out > 0:
+            windows_with_out += 1
+    
+    # Report
+    print("\n" + "="*60)
+    print(f"WINDOW CONTAINMENT ANALYSIS (radius={MAP_QUERY_RADIUS}mm)")
+    print("="*60)
+    print(f"Windows sampled:       {num_samples}")
+    print(f"Total frames:          {total_frames}")
+    print(f"Frames INSIDE ball:    {frames_inside} ({100*frames_inside/total_frames:.1f}%)")
+    print(f"Frames OUTSIDE ball:   {frames_outside} ({100*frames_outside/total_frames:.1f}%)")
+    print("-"*60)
+    print(f"Windows with any OUT:  {windows_with_out} ({100*windows_with_out/num_samples:.1f}%)")
+    out_arr = np.array(out_per_window)
+    print(f"Avg OUT per window:    {np.mean(out_arr):.2f}")
+    print(f"Max OUT per window:    {np.max(out_arr)}")
+    print("-"*60)
+    print("Distribution of OUT frames per window:")
+    for i in range(window_size + 1):
+        count = np.sum(out_arr == i)
+        if count > 0:
+            print(f"  {i} OUT: {count} windows ({100*count/num_samples:.1f}%)")
+    print("="*60)
+
+
+def analyze_dataset(data_root, frame_skip=1, window_size=None, lung_path=None, centerline_path=None, visualize=False, random_window=False):
     seq_dirs = sorted(glob.glob(os.path.join(data_root, "seq_*")))
     print(f"Found {len(seq_dirs)} sequences in {data_root}")
 
@@ -171,41 +250,15 @@ def analyze_dataset(data_root, frame_skip=1, window_size=None, lung_path=None, c
         else:
             dists = np.array([])
         
-        # --- Save Window Logic ---
-        if window_size is not None and not window_saved and os.path.exists(vid_path):
+        # --- Collect valid windows ---
+        if window_size is not None and os.path.exists(vid_path):
             effective_len = (window_size - 1) * frame_skip + 1
             if len(positions) >= effective_len:
-                print(f"[INFO] Found valid sequence for window extraction: {os.path.basename(seq_dir)}")
-                import cv2
-                # Load video
-                vid_data = np.load(vid_path, mmap_mode='r')
-                # Select frames: 0, frame_skip, 2*frame_skip, ... for window_size frames
-                frame_indices = [i * frame_skip for i in range(window_size)]
-                window_frames = vid_data[frame_indices]
-                
-                print(f"[INFO] Saving {len(window_frames)} frames...")
-                
-                # Setup Video Writer
-                h, w = window_frames[0].shape[:2]
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                out_vid_path = os.path.join(save_dir, "window_clip.mp4")
-                out_vid = cv2.VideoWriter(out_vid_path, fourcc, 5.0, (w, h))
-                
-                for idx, frame in enumerate(window_frames):
-                    # Frame is likely RGB or BGR. If RGB, convert to BGR for cv2
-                    if frame.shape[-1] == 3:
-                        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                    
-                    cv2.imwrite(os.path.join(save_dir, f"frame_{idx:04d}.png"), frame)
-                    out_vid.write(frame)
-                
-                out_vid.release()
-                print(f"[INFO] Saved frames and video to {save_dir}")
-                window_saved = True
-                
-                # 3D Visualization
-                if visualize and lung_path and centerline_path:
-                    visualize_window_3d(positions, frame_indices, lung_path, centerline_path, os.path.basename(seq_dir))
+                if 'valid_sequences' not in dir():
+                    valid_sequences = []
+                # Collect all valid starting positions in this sequence
+                max_start = len(positions) - effective_len
+                valid_sequences.append((seq_dir, vid_path, positions, effective_len, max_start))
 
         if i < 5:
             print(f"Seq: {os.path.basename(seq_dir)}")
@@ -213,6 +266,49 @@ def analyze_dataset(data_root, frame_skip=1, window_size=None, lung_path=None, c
             if len(dists) > 0:
                 print(f"  Mean Move (skip={frame_skip}): {np.mean(dists):.4f} mm")
                 print(f"  Max Move  (skip={frame_skip}): {np.max(dists):.4f} mm")
+    
+    # --- Process selected window ---
+    if window_size is not None and 'valid_sequences' in dir() and len(valid_sequences) > 0:
+        import cv2
+        
+        if random_window:
+            # Pick a random sequence and random start position
+            seq_dir, vid_path, positions, effective_len, max_start = random.choice(valid_sequences)
+            start_idx = random.randint(0, max_start)
+            print(f"[INFO] Randomly selected sequence: {os.path.basename(seq_dir)}, start_idx={start_idx}")
+        else:
+            # Use first valid sequence, start at 0
+            seq_dir, vid_path, positions, effective_len, max_start = valid_sequences[0]
+            start_idx = 0
+            print(f"[INFO] Using first valid sequence: {os.path.basename(seq_dir)}")
+        
+        # Load video and extract frames
+        vid_data = np.load(vid_path, mmap_mode='r')
+        frame_indices = [start_idx + j * frame_skip for j in range(window_size)]
+        window_frames = vid_data[frame_indices]
+        
+        print(f"[INFO] Saving {len(window_frames)} frames...")
+        
+        # Setup Video Writer
+        save_dir = "./check/window"
+        os.makedirs(save_dir, exist_ok=True)
+        h, w = window_frames[0].shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out_vid_path = os.path.join(save_dir, "window_clip.mp4")
+        out_vid = cv2.VideoWriter(out_vid_path, fourcc, 5.0, (w, h))
+        
+        for idx, frame in enumerate(window_frames):
+            if frame.shape[-1] == 3:
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(os.path.join(save_dir, f"frame_{idx:04d}.png"), frame)
+            out_vid.write(frame)
+        
+        out_vid.release()
+        print(f"[INFO] Saved frames and video to {save_dir}")
+        
+        # 3D Visualization
+        if visualize and lung_path and centerline_path:
+            visualize_window_3d(positions, frame_indices, lung_path, centerline_path, os.path.basename(seq_dir))
             
     if not all_frame_distances:
         print("No trajectory data found or sequences too short for frame_skip.")
@@ -241,11 +337,15 @@ def analyze_dataset(data_root, frame_skip=1, window_size=None, lung_path=None, c
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_root', type=str, default='../dataset/sequences')
-    parser.add_argument('--frame_skip', type=int, default=10, help="Frame skipping interval")
-    parser.add_argument('--window_size', type=int, default=16, help="Number of frames in one sample window")
+    parser.add_argument('--frame_skip', type=int, default=40, help="Frame skipping interval")
+    parser.add_argument('--window_size', type=int, default=10, help="Number of frames in one sample window")
     parser.add_argument('--lung_path', type=str, default='../patient/lungs.obj', help="Path to lungs mesh")
     parser.add_argument('--centerline_path', type=str, default='../dataset/static/centerline.npz', help="Path to centerline centerline")
     parser.add_argument('--visualize', action='store_true', default=True, help="Show 3D visualization of window")
+    parser.add_argument('--sample_windows', type=int, default=0, 
+                        help="If >0, sample N random windows and report containment stats")
+    parser.add_argument('--random_window', action='store_true', 
+                        help="Pick a random window for visualization instead of the first one")
     args = parser.parse_args()
     
     # Resolve paths - BASE_DIR is now the parent of check folder (BronchoLoc root)
@@ -257,7 +357,11 @@ if __name__ == "__main__":
     lung_path = os.path.join(BASE_DIR, args.lung_path.lstrip('../').lstrip('./')) if not os.path.isabs(args.lung_path) else args.lung_path
     centerline_path = os.path.join(BASE_DIR, args.centerline_path.lstrip('../').lstrip('./')) if not os.path.isabs(args.centerline_path) else args.centerline_path
     
-    analyze_dataset(args.data_root, args.frame_skip, args.window_size, lung_path, centerline_path, args.visualize)
+    analyze_dataset(args.data_root, args.frame_skip, args.window_size, lung_path, centerline_path, args.visualize, args.random_window)
+    
+    # Run window containment analysis if requested
+    if args.sample_windows > 0:
+        analyze_window_containment(args.data_root, args.frame_skip, args.window_size, args.sample_windows)
     
     # Save window config for other scripts to use
     import json
