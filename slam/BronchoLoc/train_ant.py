@@ -91,9 +91,40 @@ def train(args):
         train_ds = full_dataset
         val_ds = full_dataset
     else:
-        train_size = int(0.8 * len(full_dataset))
-        val_size = len(full_dataset) - train_size
-        train_ds, val_ds = random_split(full_dataset, [train_size, val_size])
+        # --- SEQUENCE-LEVEL SPLIT (PREVENTS DATA LEAKAGE) ---
+        # Group sample indices by sequence path
+        from collections import defaultdict
+        seq_to_indices = defaultdict(list)
+        for i, (vid_path, _, _) in enumerate(full_dataset.samples):
+            # Extract sequence name from video path (e.g., "seq_b1_1234")
+            seq_name = os.path.basename(os.path.dirname(vid_path))
+            seq_to_indices[seq_name].append(i)
+        
+        # Split sequences (not windows) into train/val
+        all_seqs = list(seq_to_indices.keys())
+        n_train_seqs = max(1, int(0.8 * len(all_seqs)))
+        
+        # Shuffle sequences for randomness
+        import random
+        random.shuffle(all_seqs)
+        train_seqs = all_seqs[:n_train_seqs]
+        val_seqs = all_seqs[n_train_seqs:]
+        
+        # Collect indices for each split
+        train_indices = []
+        val_indices = []
+        for seq in train_seqs:
+            train_indices.extend(seq_to_indices[seq])
+        for seq in val_seqs:
+            val_indices.extend(seq_to_indices[seq])
+        
+        print(f"[INFO] Sequence-level split: {len(train_seqs)} train seqs, {len(val_seqs)} val seqs")
+        print(f"[INFO] Train sequences: {train_seqs}")
+        print(f"[INFO] Val sequences: {val_seqs}")
+        print(f"[INFO] Windows: {len(train_indices)} train, {len(val_indices)} val")
+        
+        train_ds = torch.utils.data.Subset(full_dataset, train_indices)
+        val_ds = torch.utils.data.Subset(full_dataset, val_indices)
         
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
     
@@ -130,7 +161,7 @@ def train(args):
         print(f"[INFO] Using model's suggested LR: {lr}")
     else:
         lr = args.lr
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=5e-3)  # Increased regularization
     
     # Scheduler Setup
     if args.scheduler == 'cosine':
@@ -251,6 +282,10 @@ def train(args):
                     loss = loss + motion_term
                 
                 loss.backward()
+                
+                # Gradient clipping for training stability
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                
                 optimizer.step()
                 
                 run_loss += loss.item()
@@ -325,7 +360,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_root', type=str, default='./dataset')
     parser.add_argument('--checkpoint_dir', type=str, default='./checkpoints')
-    parser.add_argument('--model_mode', type=str, default='s', choices=['s', 'b', 'm', 'l'])
+    parser.add_argument('--model_mode', type=str, default='s', choices=['xs', 's', 'b', 'm', 'l'])
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=None,
