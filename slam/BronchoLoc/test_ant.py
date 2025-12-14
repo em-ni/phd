@@ -305,24 +305,30 @@ def test(args):
                         chain_pred_anchor = None
                     prev_seq_path = curr_seq_path
                 
-                # Determine anchor position for predictions
-                if args.chain and chain_pred_anchor is not None:
-                    # Use previous prediction as anchor
-                    p0_pred = chain_pred_anchor
-                    print(f"[CHAIN] Window {batch_idx+1}: Using predicted anchor at ({p0_pred[0]:.2f}, {p0_pred[1]:.2f}, {p0_pred[2]:.2f})")
-                else:
-                    # First window or non-chain mode: use GT anchor
-                    p0_pred = p0_gt
-                
                 # Transform LOCAL to GLOBAL coordinates
-                # GT always uses GT anchor (ground truth visualization)
+                # IMPORTANT: Predictions are in LOCAL frame of THIS window's frame 0
+                # So we MUST use p0_gt (the actual anchor of this window) for transformation
+                # This is true regardless of chain mode!
                 gt_window_global = rot_0.apply(gt_trans_local[b]) + p0_gt  # (T, 3)
-                # Predictions use chain anchor (or GT anchor if first window / non-chain)
-                pred_window_global = rot_0.apply(pred_trans_local[b]) + p0_pred  # (T, 3)
+                pred_window_global = rot_0.apply(pred_trans_local[b]) + p0_gt  # (T, 3)
                 
-                # Update chain anchor for next window (last predicted position)
+                # Chain mode: track cumulative error for analysis (not used for transformation)
                 if args.chain:
-                    chain_pred_anchor = pred_window_global[-1].copy()
+                    if chain_pred_anchor is None:
+                        # First window: initialize with GT
+                        chain_pred_anchor = p0_gt.copy()
+                    
+                    # Calculate prediction at last frame (in global coords)
+                    last_pred_global = pred_window_global[-1].copy()
+                    last_gt_global = gt_window_global[-1].copy()
+                    
+                    # Track cumulative offset (how far prediction is from GT at this point)
+                    chain_error = np.linalg.norm(last_pred_global - last_gt_global)
+                    if chain_error > 2.0:  # More than 2mm error
+                        print(f"[CHAIN] Window {batch_idx+1}: Accumulated error = {chain_error:.2f}mm")
+                    
+                    # Update anchor for logging (not for transformation)
+                    chain_pred_anchor = last_pred_global
                 
                 # Also keep local values for printing
                 gt_window_local = gt_trans_local[b]  # (T, 3)
