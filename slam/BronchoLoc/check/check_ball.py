@@ -7,8 +7,8 @@ from scipy.spatial import cKDTree
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from constants import MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS
-from utils.utils import filter_connected_component, load_centerline_points, farthest_point_sample
+from constants import MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS, MAP_POINT_SPACING
+from utils.utils import filter_connected_component, load_centerline_points, density_based_sample
 
 
 def visualize_ball(args):
@@ -48,18 +48,21 @@ def visualize_ball(args):
     mask[visited_indices] = False
     disconnected_neighbors = neighbors[mask]
     
-    # 6. Apply FPS Downsampling (same as dataset)
-    if len(connected_neighbors) > args.max_points:
+    # 6. Apply Density-based Downsampling (same as dataset)
+    if len(connected_neighbors) > 0:
         dists = np.linalg.norm(connected_neighbors - center_point, axis=1)
         start_idx = np.argmin(dists)
-        fps_points, fps_indices = farthest_point_sample(
-            connected_neighbors, args.max_points, start_idx=start_idx
+        fps_points, fps_indices = density_based_sample(
+            connected_neighbors, 
+            min_distance=MAP_POINT_SPACING, 
+            start_idx=start_idx,
+            max_points=args.max_points
         )
-        print(f"      FPS Downsampled: {len(fps_points)} points (from {len(connected_neighbors)})")
+        print(f"      Density-based Downsampled: {len(fps_points)} points (spacing={MAP_POINT_SPACING}mm)")
     else:
         fps_points = connected_neighbors
         fps_indices = np.arange(len(connected_neighbors))
-        print(f"      No FPS needed (only {len(connected_neighbors)} points)")
+        print(f"      No downsampling needed (0 points)")
     
     # 7. Visualize
     p = pv.Plotter(title="Centerline Ball + FPS Visualization")
@@ -83,10 +86,10 @@ def visualize_ball(args):
         p.add_mesh(pv.PolyData(connected_neighbors), color='orange', opacity=0.4, point_size=5, 
                   render_points_as_spheres=True, label=f'Connected ({len(connected_neighbors)})')
     
-    # Draw FPS Downsampled Points (Bright Red - what model sees)
+    # Draw Density-based Downsampled Points (Bright Red - what model sees)
     if len(fps_points) > 0:
         p.add_mesh(pv.PolyData(fps_points), color='red', point_size=10, 
-                  render_points_as_spheres=True, label=f'FPS Model Input ({len(fps_points)})')
+                  render_points_as_spheres=True, label=f'Density Sample ({len(fps_points)})')
 
     # Draw Disconnected Neighbors (Blue)
     if len(disconnected_neighbors) > 0:

@@ -22,7 +22,7 @@ from ant import ActionPredictor, MODEL_CONFIGS
 from bird import BIRD, BIRD_CONFIGS, create_bird
 from ant_dataset import AntDataset
 from constants import NORM_MAP_SCALE, DEFAULT_MAX_MAP_POINTS, load_window_config
-from utils.utils import load_centerline_points, farthest_point_sample
+from utils.utils import load_centerline_points, farthest_point_sample, density_based_sample
 
 
 # Global flag for atomic saving

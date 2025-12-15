@@ -96,3 +96,52 @@ def farthest_point_sample(points, num_points, start_idx=0):
     
     selected_idx = np.array(selected_idx)
     return points[selected_idx], selected_idx
+
+
+def density_based_sample(points, min_distance=2.0, start_idx=0, max_points=None):
+    """
+    Density-based downsampling: selects points at a constant distance interval.
+    Ensures uniform point density regardless of the number of branches in the region.
+    
+    Uses greedy FPS-like approach but stops when all remaining points are within
+    min_distance of already selected points.
+    
+    Args:
+        points: (N, 3) array of 3D points
+        min_distance: Minimum distance between selected points (mm). Default 2mm.
+        start_idx: Index of starting point (usually closest to camera).
+        max_points: Optional cap on number of points (for memory limits).
+        
+    Returns:
+        tuple: (sampled_points, sampled_indices)
+    """
+    N = len(points)
+    if N == 0:
+        return np.array([]), np.array([])
+    
+    # Start with the specified point
+    selected_idx = [start_idx]
+    distances = np.full(N, np.inf)
+    
+    while True:
+        # Update distances to nearest selected point
+        last_selected = points[selected_idx[-1]]
+        new_distances = np.linalg.norm(points - last_selected, axis=1)
+        distances = np.minimum(distances, new_distances)
+        
+        # Find point with maximum distance to any selected point
+        max_dist_idx = np.argmax(distances)
+        max_dist = distances[max_dist_idx]
+        
+        # Stop if all points are within min_distance of selected points
+        if max_dist < min_distance:
+            break
+            
+        # Stop if we've reached max_points limit
+        if max_points is not None and len(selected_idx) >= max_points:
+            break
+            
+        selected_idx.append(max_dist_idx)
+    
+    selected_idx = np.array(selected_idx)
+    return points[selected_idx], selected_idx

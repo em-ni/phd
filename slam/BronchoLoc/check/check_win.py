@@ -10,8 +10,8 @@ from tqdm import tqdm
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
-from constants import MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS
-from utils.utils import load_centerline_points, filter_connected_component, farthest_point_sample
+from constants import MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS, MAP_POINT_SPACING
+from utils.utils import load_centerline_points, filter_connected_component, density_based_sample
 
 
 def visualize_window_3d(positions, frame_indices, lung_path, centerline_path, seq_name, max_points=DEFAULT_MAX_MAP_POINTS):
@@ -59,11 +59,16 @@ def visualize_window_3d(positions, frame_indices, lung_path, centerline_path, se
         else:
             connected_points = ball_points
         
-        # Apply FPS downsampling (same as dataset)
-        if len(connected_points) > max_points:
+        # Apply density-based downsampling (same as dataset)
+        if len(connected_points) > 0:
             dists = np.linalg.norm(connected_points - p0, axis=1)
             start_idx = np.argmin(dists)
-            fps_points, _ = farthest_point_sample(connected_points, max_points, start_idx=start_idx)
+            fps_points, _ = density_based_sample(
+                connected_points, 
+                min_distance=MAP_POINT_SPACING, 
+                start_idx=start_idx,
+                max_points=max_points
+            )
         else:
             fps_points = connected_points
         

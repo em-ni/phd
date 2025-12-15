@@ -7,8 +7,8 @@ import cv2
 from tqdm import tqdm
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation as R
-from constants import MAP_QUERY_RADIUS, NORM_MAP_SCALE, DEFAULT_MAX_MAP_POINTS
-from utils.utils import filter_connected_component, load_centerline_points, farthest_point_sample
+from constants import MAP_QUERY_RADIUS, NORM_MAP_SCALE, DEFAULT_MAX_MAP_POINTS, MAP_POINT_SPACING
+from utils.utils import filter_connected_component, load_centerline_points, density_based_sample
 
 def get_stats(data_root):
     """
@@ -254,15 +254,18 @@ class AntDataset(Dataset):
             window_map_points_global = np.zeros((0, 3), dtype=np.float32)
 
         # 2. Downsample Map Points for Model Input
-        # Use FPS to reduce candidates while maintaining good spatial coverage
-        # This makes training faster while still covering the full trajectory
-        if len(window_map_points_global) > self.max_map_points:
-            # Find closest point to p0 to use as FPS starting point
+        # Use density-based sampling to ensure constant point spacing regardless of branch count
+        # This prevents sparse coverage in multi-branch areas and over-dense coverage in single branches
+        if len(window_map_points_global) > 0:
+            # Find closest point to p0 to use as starting point
             dists = np.linalg.norm(window_map_points_global - p0, axis=1)
             start_idx = np.argmin(dists)
-            # Downsample using Farthest Point Sampling
-            model_map_points_global, _ = farthest_point_sample(
-                window_map_points_global, self.max_map_points, start_idx=start_idx
+            # Downsample using density-based sampling (constant spacing)
+            model_map_points_global, _ = density_based_sample(
+                window_map_points_global, 
+                min_distance=MAP_POINT_SPACING, 
+                start_idx=start_idx,
+                max_points=self.max_map_points  # Cap for memory
             )
         else:
             model_map_points_global = window_map_points_global
@@ -341,7 +344,9 @@ class AntDataset(Dataset):
             "map_mask": map_mask_tensor,  # (T, K) - True for valid points
             # For visualization: first frame's global pose to transform back
             "first_frame_pos": torch.from_numpy(p0.astype(np.float32)),  # (3,)
-            "first_frame_quat": torch.from_numpy(q0.astype(np.float32))  # (4,)
+            "first_frame_quat": torch.from_numpy(q0.astype(np.float32)),  # (4,)
+            # Raw GT positions (global frame) for visualization
+            "raw_positions": torch.from_numpy(positions.astype(np.float32))  # (T, 3)
         }
 
 if __name__ == "__main__":

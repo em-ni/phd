@@ -11,13 +11,13 @@ from scipy.spatial import cKDTree
 
 from ant import ActionPredictor
 from ant_dataset import AntDataset
-from constants import NORM_MAP_SCALE, MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS
-from utils.utils import load_centerline_points, filter_connected_component, farthest_point_sample
+from constants import NORM_MAP_SCALE, MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS, MAP_POINT_SPACING
+from utils.utils import load_centerline_points, filter_connected_component, density_based_sample
 
 
 def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
-                   gt_traj_current, pred_traj_current,
-                   current_gt, current_pred, frame_idx, total_frames):
+                   gt_traj_current, pred_traj_current, raw_gt_traj_current,
+                   current_gt, current_pred, current_raw_gt, frame_idx, total_frames):
     """
     Renders the 3D trajectory view to a numpy array.
     Style matches check_ball.py and check_traj.py.
@@ -28,10 +28,12 @@ def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
         lung_mesh: Loaded lung mesh (pyvista object) or None
         centerline_pts: Centerline points array (N, 3) or None
         centerline_tree: KDTree for centerline points or None
-        gt_traj_current: GT trajectory up to current frame (M, 3)
+        gt_traj_current: GT trajectory (centerline-projected) up to current frame (M, 3)
         pred_traj_current: Pred trajectory up to current frame (M, 3)
-        current_gt: Current frame GT position (3,)
+        raw_gt_traj_current: Raw GT trajectory (actual camera positions) up to current frame (M, 3)
+        current_gt: Current frame GT position - centerline projected (3,)
         current_pred: Current frame Pred position (3,)
+        current_raw_gt: Current frame actual GT position (3,)
         frame_idx: Current frame index in window
         total_frames: Total frames in window
         
@@ -57,10 +59,15 @@ def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
         if len(ball_indices) > 0:
             ball_points = centerline_pts[ball_indices]
             connected_points, _ = filter_connected_component(p0, ball_points)
-            if len(connected_points) > DEFAULT_MAX_MAP_POINTS:
+            if len(connected_points) > 0:
                 dists = np.linalg.norm(connected_points - p0, axis=1)
                 start_idx = np.argmin(dists)
-                fps_points, _ = farthest_point_sample(connected_points, DEFAULT_MAX_MAP_POINTS, start_idx=start_idx)
+                fps_points, _ = density_based_sample(
+                    connected_points, 
+                    min_distance=MAP_POINT_SPACING, 
+                    start_idx=start_idx,
+                    max_points=DEFAULT_MAX_MAP_POINTS
+                )
             else:
                 fps_points = connected_points
     
@@ -78,26 +85,32 @@ def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
                         point_size=6, render_points_as_spheres=True, 
                         label=f'FPS Input ({len(fps_points)})')
     
-    # 6. Draw GT Trajectory (Blue - building up as frames proceed)
+    # 6. Draw Raw GT Trajectory (Green - actual camera positions)
+    if len(raw_gt_traj_current) > 1:
+        raw_gt_line = pv.lines_from_points(raw_gt_traj_current)
+        plotter.add_mesh(raw_gt_line, color='green', line_width=3, label='Raw GT (actual)')
+    
+    # 7. Draw Centerline-Projected GT Trajectory (Blue - what model predicts)
     if len(gt_traj_current) > 1:
         gt_line = pv.lines_from_points(gt_traj_current)
         plotter.add_mesh(gt_line, color='blue', line_width=4, label='GT Trajectory')
     
-    # 7. Draw Predicted Trajectory (Red - building up as frames proceed)  
+    # 8. Draw Predicted Trajectory (Red - building up as frames proceed)  
     if len(pred_traj_current) > 1:
         pred_line = pv.lines_from_points(pred_traj_current)
         plotter.add_mesh(pred_line, color='red', line_width=4, label='Pred Trajectory')
     
-    # 8. Draw current position markers (spheres)
-    plotter.add_mesh(pv.Sphere(radius=1.5, center=current_gt), color='blue')
-    plotter.add_mesh(pv.Sphere(radius=1.5, center=current_pred), color='red')
+    # 9. Draw current position markers (spheres)
+    plotter.add_mesh(pv.Sphere(radius=1.0, center=current_raw_gt), color='green')  # Raw GT
+    plotter.add_mesh(pv.Sphere(radius=1.5, center=current_gt), color='blue')  # Centerline GT
+    plotter.add_mesh(pv.Sphere(radius=1.5, center=current_pred), color='red')  # Prediction
     
-    # 9. Add Start label at first GT point
+    # 10. Add Start label at first GT point
     if len(gt_traj_current) > 0:
         plotter.add_point_labels([gt_traj_current[0]], ["Start"], point_size=8, 
                                  text_color='green', always_visible=True, font_size=12)
     
-    # 10. Add text overlay (black text for white background)
+    # 11. Add text overlay (black text for white background)
     text = f"Frame: {frame_idx+1}/{total_frames}\n"
     text += f"GT (mm):   X={current_gt[0]:+.2f} Y={current_gt[1]:+.2f} Z={current_gt[2]:+.2f}\n"
     text += f"Pred (mm): X={current_pred[0]:+.2f} Y={current_pred[1]:+.2f} Z={current_pred[2]:+.2f}"
@@ -266,6 +279,9 @@ def test(args):
             first_pos = batch['first_frame_pos'].numpy()  # (B, 3)
             first_quat = batch['first_frame_quat'].numpy()  # (B, 4)
             
+            # Get raw GT positions (global frame) for visualization
+            raw_positions = batch['raw_positions'].numpy()  # (B, T, 3)
+            
             # Forward pass
             pred_trans = model(video, map_points=map_points, map_mask=map_mask)  # (B, T, 3) - normalized output
             
@@ -357,6 +373,8 @@ def test(args):
                     # Trajectory up to current frame in window (GLOBAL for 3D)
                     gt_traj_current = gt_window_global[:t+1]
                     pred_traj_current = pred_window_global[:t+1]
+                    raw_gt_traj_current = raw_positions[b, :t+1]  # Raw GT positions
+                    current_raw_gt = raw_positions[b, t]  # Current raw GT position
                     
                     # Render 3D view (with lung mesh and centerline + FPS points)
                     img_3d = render_3d_view(
@@ -366,8 +384,10 @@ def test(args):
                         centerline_tree,
                         gt_traj_current,
                         pred_traj_current,
+                        raw_gt_traj_current,
                         current_gt_global,
                         current_pred_global,
+                        current_raw_gt,
                         t,
                         T
                     )
