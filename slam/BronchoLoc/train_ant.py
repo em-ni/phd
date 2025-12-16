@@ -18,10 +18,14 @@ _saving_in_progress = False
 
     
 def get_checkpoint_name(args, is_debug=False):
-    """Generate descriptive checkpoint filename."""
-    mode_prefix = "debug" if is_debug else ("overfit" if args.overfit else "train")
+    """Generate checkpoint filename: ant_model_{mode}_{timestamp}."""
+    prefix = "ant"
+    if is_debug:
+        prefix = "ant_debug"
+    elif args.overfit:
+        prefix = "ant_overfit"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    name = f"{mode_prefix}_model_{args.model_mode}_img_{args.img_size}_pts_{DEFAULT_MAX_MAP_POINTS}_{timestamp}"
+    name = f"{prefix}_model_{args.model_mode}_{timestamp}"
     return name
 
 
