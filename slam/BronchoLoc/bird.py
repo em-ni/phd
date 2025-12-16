@@ -10,32 +10,29 @@ import torch.nn as nn
 from titans_pytorch import NeuralMemory
 
 from ant import MODEL_CONFIGS
-from constants import NORM_MAP_SCALE
+from constants import NORM_MAP_SCALE, load_window_config
 
 
 # ==============================================================================
 # BIRD CONFIGURATIONS
 # ==============================================================================
 # Configs that depend on ANT model size
+# Note: chunk_size is not included here - it's always loaded from window_config
 BIRD_CONFIGS = {
     's': {
         'memory_dim': 128,
-        'num_memory_layers': 2,
         'num_heads': 4,
     },
     'b': {
         'memory_dim': 256,
-        'num_memory_layers': 2,
         'num_heads': 4,
     },
     'm': {
         'memory_dim': 256,
-        'num_memory_layers': 2,
         'num_heads': 8,
     },
     'l': {
         'memory_dim': 512,
-        'num_memory_layers': 3,
         'num_heads': 8,
     }
 }
@@ -81,7 +78,7 @@ class BIRD(nn.Module):
     def __init__(self, 
                  ant_mode='m',
                  memory_dim=256,
-                 num_memory_layers=2,
+                 chunk_size=10,
                  num_heads=4,
                  num_centerline_pts=1024):
         super().__init__()
@@ -101,8 +98,7 @@ class BIRD(nn.Module):
         # Surprise-based updates prioritize bifurcation events
         self.memory = NeuralMemory(
             dim=memory_dim,
-            chunk_size=16,  # Window size - processes in chunks
-            num_memory_layers=num_memory_layers,
+            chunk_size=chunk_size,
         )
         
         # Centerline encoder (applied once, cached)
@@ -203,22 +199,28 @@ class BIRD(nn.Module):
         """
         return None  # Memory state is None initially
 
-def create_bird(ant_mode='m', num_centerline_pts=1024):
+def create_bird(ant_mode='m', num_centerline_pts=1024, window_size=None):
     """
     Factory function to create a BIRD module with config matching ANT.
     
     Args:
         ant_mode: ANT model mode ('s', 'b', 'm', 'l')
         num_centerline_pts: Size of downsampled centerline
+        window_size: Window size for chunk_size. If None, loads from window_config.
         
     Returns:
         BIRD module configured for the given ANT mode
     """
     config = BIRD_CONFIGS[ant_mode]
+    
+    # Get window_size from config file if not provided
+    if window_size is None:
+        window_size, _ = load_window_config()
+    
     return BIRD(
         ant_mode=ant_mode,
         memory_dim=config['memory_dim'],
-        num_memory_layers=config['num_memory_layers'],
+        chunk_size=window_size,
         num_heads=config['num_heads'],
         num_centerline_pts=num_centerline_pts
     )

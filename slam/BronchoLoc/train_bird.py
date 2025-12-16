@@ -21,21 +21,18 @@ from torch.utils.tensorboard import SummaryWriter
 from ant import ActionPredictor, MODEL_CONFIGS
 from bird import BIRD, BIRD_CONFIGS, create_bird
 from ant_dataset import AntDataset
-from constants import NORM_MAP_SCALE, DEFAULT_MAX_MAP_POINTS, load_window_config
-from utils.utils import load_centerline_points, farthest_point_sample, density_based_sample
+from constants import NORM_MAP_SCALE, DEFAULT_MAX_MAP_POINTS, load_window_config, MAP_POINT_SPACING
+from utils.utils import load_centerline_points, density_based_sample
 
 
 # Global flag for atomic saving
 _saving_in_progress = False
 
-# Downsampled centerline size for BIRD cross-attention
-BIRD_CENTERLINE_SIZE = 1024
-
 
 def get_checkpoint_name(args):
-    """Generate descriptive checkpoint filename."""
+    """Generate checkpoint filename: bird_model_{mode}_{timestamp}."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    name = f"bird_model_{args.model_mode}_mem_{BIRD_CONFIGS[args.model_mode]['memory_dim']}_{timestamp}"
+    name = f"bird_model_{args.model_mode}_{timestamp}"
     return name
 
 
@@ -62,15 +59,13 @@ def save_checkpoint(path, bird_model, optimizer, scheduler, epoch, name):
         _saving_in_progress = False
 
 
-def downsample_centerline(centerline_pts, target_size=BIRD_CENTERLINE_SIZE):
+def downsample_centerline(centerline_pts, min_distance=MAP_POINT_SPACING):
     """
     Downsample centerline for efficient cross-attention.
-    Uses FPS for good spatial coverage.
+    Uses density-based sampling for uniform spacing, same as ANT model.
+    The number of points is determined naturally by the spacing.
     """
-    if len(centerline_pts) <= target_size:
-        return centerline_pts
-    
-    sampled, _ = farthest_point_sample(centerline_pts, target_size, start_idx=0)
+    sampled, _ = density_based_sample(centerline_pts, min_distance=min_distance, start_idx=0)
     return sampled
 
 
@@ -136,17 +131,37 @@ def train(args):
     print(f"[INFO] ANT frozen. Visual dim: {ant_config['embed_dim']}")
     
     # ===========================================================================
+    # Load and Downsample Centerline (BEFORE BIRD init so we know the size)
+    # ===========================================================================
+    centerline_path = os.path.join(args.data_root, "static", "centerline.npz")
+    centerline_pts = load_centerline_points(centerline_path)
+    if centerline_pts is None:
+        raise FileNotFoundError(f"Centerline not found at {centerline_path}")
+    
+    print(f"[INFO] Full centerline: {len(centerline_pts)} points")
+    
+    # Downsample using density-based sampling (same as ANT model)
+    centerline_ds = downsample_centerline(centerline_pts)
+    print(f"[INFO] Downsampled centerline: {len(centerline_ds)} points (spacing={MAP_POINT_SPACING}mm)")
+    
+    # ===========================================================================
     # Initialize BIRD
     # ===========================================================================
     bird_model = create_bird(
         ant_mode=args.model_mode,
-        num_centerline_pts=BIRD_CENTERLINE_SIZE
+        num_centerline_pts=len(centerline_ds)
+        # window_size auto-loaded from window_config
     ).to(device)
     
     bird_config = BIRD_CONFIGS[args.model_mode]
     trainable_params = sum(p.numel() for p in bird_model.parameters() if p.requires_grad)
     print(f"[INFO] BIRD initialized. Memory dim: {bird_config['memory_dim']}")
     print(f"[INFO] BIRD trainable parameters: {trainable_params:,}")
+    
+    # Normalize and encode centerline (detach to prevent graph issues)
+    centerline_normalized = torch.tensor(centerline_ds / NORM_MAP_SCALE, dtype=torch.float32).to(device)
+    with torch.no_grad():
+        centerline_encoded = bird_model.encode_centerline(centerline_normalized)
     
     # ===========================================================================
     # Load Dataset
@@ -162,24 +177,6 @@ def train(args):
     seq_to_indices = get_sequence_indices(dataset)
     seq_names = list(seq_to_indices.keys())
     print(f"[INFO] Found {len(seq_names)} sequences with {len(dataset)} total windows")
-    
-    # ===========================================================================
-    # Load and Downsample Centerline
-    # ===========================================================================
-    centerline_path = os.path.join(args.data_root, "static", "centerline.npz")
-    centerline_pts = load_centerline_points(centerline_path)
-    if centerline_pts is None:
-        raise FileNotFoundError(f"Centerline not found at {centerline_path}")
-    
-    print(f"[INFO] Full centerline: {len(centerline_pts)} points")
-    
-    # Downsample for efficient cross-attention
-    centerline_ds = downsample_centerline(centerline_pts, BIRD_CENTERLINE_SIZE)
-    print(f"[INFO] Downsampled centerline: {len(centerline_ds)} points")
-    
-    # Normalize and encode centerline
-    centerline_normalized = torch.tensor(centerline_ds / NORM_MAP_SCALE, dtype=torch.float32).to(device)
-    centerline_encoded = bird_model.encode_centerline(centerline_normalized)
     
     # ===========================================================================
     # Optimizer and Scheduler
@@ -241,13 +238,13 @@ def train(args):
                     video = batch['video'].unsqueeze(0).to(device)
                     map_points = batch['map_points'].unsqueeze(0).to(device)
                     map_mask = batch['map_mask'].unsqueeze(0).to(device)
-                    target = batch['actions'].unsqueeze(0).to(device)
+                    target = batch['actions'][:, :3].unsqueeze(0).to(device)  # Only use position (first 3), ignore rotation placeholders
                     
                     # Get frozen ANT predictions and features
                     with torch.no_grad():
-                        p_local, visual_tokens = ant_model(
+                        p_local, visual_tokens, _ = ant_model(
                             video, map_points, map_mask, return_features=True
-                        )
+                        )  # Note: ANT returns (pred, visual_tokens, probs), we ignore probs
                     
                     # BIRD refinement
                     p_global, mem_state = bird_model(
@@ -257,11 +254,6 @@ def train(args):
                         mem_state=mem_state
                     )
                     
-                    # Detach memory state to prevent backprop through time
-                    # (each window trains independently, but state carries over)
-                    if mem_state is not None:
-                        mem_state = mem_state.detach()
-                    
                     # Loss and backward
                     loss = criterion(p_global, target)
                     
@@ -269,6 +261,11 @@ def train(args):
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(bird_model.parameters(), 1.0)
                     optimizer.step()
+                    
+                    # Reset memory state after backward to prevent gradient accumulation
+                    # This means each window trains independently, but we still pass the 
+                    # memory state forward (without gradients) to maintain sequential context
+                    mem_state = None  # Reset to prevent "backward through graph twice" error
                     
                     epoch_loss += loss.item()
                     num_windows += 1
