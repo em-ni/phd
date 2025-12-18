@@ -83,8 +83,16 @@ def process_sequence(name, phantom_dir, output_root):
         phantom_dir: Path to phantom data folder
         output_root: Output folder for sequences
     """
-    txt_path = os.path.join(phantom_dir, f"{name}.txt")
-    video_path = os.path.join(phantom_dir, f"{name}.mp4")
+    txt_path = os.path.join(phantom_dir, f"{name}_gt.txt")
+    
+    # Try different video formats
+    video_path = None
+    for ext in ['.mp4', '.mkv', '.avi']:
+        candidate = os.path.join(phantom_dir, f"{name}{ext}")
+        if os.path.exists(candidate):
+            video_path = candidate
+            break
+    
     transform_path = os.path.join(phantom_dir, f"{name}_transform.json")
     
     print(f"\n{'='*60}")
@@ -96,8 +104,8 @@ def process_sequence(name, phantom_dir, output_root):
         print(f"  [ERROR] Trajectory not found: {txt_path}")
         return False
     
-    if not os.path.exists(video_path):
-        print(f"  [ERROR] Video not found: {video_path}")
+    if video_path is None or not os.path.exists(video_path):
+        print(f"  [ERROR] Video not found for: {name} (tried .mp4, .mkv, .avi)")
         return False
     
     if not os.path.exists(transform_path):
@@ -221,7 +229,7 @@ def process_sequence(name, phantom_dir, output_root):
 def main():
     # Paths
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    phantom_dir = os.path.join(base_dir, "dataset", "phantom")
+    phantom_dir = os.path.join(base_dir, "dataset", "phantom", "data")
     output_root = os.path.join(base_dir, "dataset", "sequences")
     
     os.makedirs(output_root, exist_ok=True)
@@ -232,16 +240,32 @@ def main():
     print(f"Phantom folder: {phantom_dir}")
     print(f"Output folder: {output_root}")
     
-    # Find all videos
-    video_files = glob.glob(os.path.join(phantom_dir, "*.mp4"))
+    # Find all videos (.mp4 and .mkv)
+    video_files = glob.glob(os.path.join(phantom_dir, "*.mp4")) + glob.glob(os.path.join(phantom_dir, "*.mkv"))
     
     if not video_files:
         print(f"\n[ERROR] No videos found in {phantom_dir}")
         return
     
     # Extract names
-    names = [os.path.splitext(os.path.basename(v))[0] for v in video_files]
-    print(f"\nFound {len(names)} videos: {names}")
+    all_names = [os.path.splitext(os.path.basename(v))[0] for v in video_files]
+    
+    # Filter: prefer _part1 version over base version
+    # e.g. if both "3" and "3_part1" exist, only keep "3_part1"
+    base_names = set()
+    part1_names = set()
+    for name in all_names:
+        if '_part1' in name:
+            part1_names.add(name)
+            # Extract base name (e.g. "3" from "3_part1")
+            base = name.replace('_part1', '')
+            base_names.add(base)
+    
+    # Remove base names that have a _part1 version
+    names = [n for n in all_names if n not in base_names]
+    names = sorted(set(names))  # Remove duplicates and sort
+    
+    print(f"\nFound {len(all_names)} videos, processing {len(names)}: {names}")
     
     # Process each
     success = []

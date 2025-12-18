@@ -1,4 +1,8 @@
 checkpoints/*
-dataset/*
+dataset/phantom/data/*
+dataset/phantom/old/*
+dataset/sequences/*
+dataset/static/*
+dataset/test/*
 check/videos/*
 check/window/*

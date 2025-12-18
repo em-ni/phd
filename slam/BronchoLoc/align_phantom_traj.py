@@ -605,7 +605,7 @@ def compute_and_validate_transform(sequence_name, base_dir, correspondences,
     T[:3, 3] = t
     
     # Save transformation with validation info
-    transform_path = os.path.join(base_dir, f"dataset/phantom/{sequence_name}_transform.json")
+    transform_path = os.path.join(base_dir, "dataset", "phantom", "data", f"{sequence_name}_transform.json")
     transform_data = {
         'scale': float(s),
         'rotation_matrix': R_mat.tolist(),
@@ -720,17 +720,51 @@ def main():
                        help='Reuse existing correspondences from JSON file')
     parser.add_argument('--constraint', action='store_true',
                        help='Apply constrained optimization to minimize points outside mesh')
+    parser.add_argument('--centerline', type=str, default=None,
+                       help='Path to centerline .vtk file (default: patient/centerline.vtk)')
     args = parser.parse_args()
     
     sequence_name = args.sequence_name
     
     # Paths
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    video_path = os.path.join(base_dir, f"dataset/phantom/{sequence_name}.mp4")
-    trajectory_path = os.path.join(base_dir, f"dataset/phantom/{sequence_name}.txt")
-    mesh_path = os.path.join(base_dir, "patient/lungs.obj")
-    centerline_path = os.path.join(base_dir, "patient/centerline.vtk")
-    corr_path = os.path.join(base_dir, f"dataset/phantom/{sequence_name}_correspondences.json")
+    data_dir = os.path.join(base_dir, "dataset", "phantom", "data")
+    patient_dir = os.path.join(base_dir, "patient")
+    
+    # Try different video formats
+    video_path = None
+    for ext in ['.mp4', '.mkv', '.avi']:
+        candidate = os.path.join(data_dir, f"{sequence_name}{ext}")
+        if os.path.exists(candidate):
+            video_path = candidate
+            break
+    
+    trajectory_path = os.path.join(data_dir, f"{sequence_name}_gt.txt")
+    mesh_path = os.path.join(patient_dir, "lungs.obj")
+    
+    # Determine centerline path
+    if args.centerline:
+        centerline_path = args.centerline
+    else:
+        # Look up centerline from CSV
+        csv_path = os.path.join(data_dir, "closest_centerline.csv")
+        centerline_name = None
+        if os.path.exists(csv_path):
+            with open(csv_path, 'r') as f:
+                for line in f:
+                    parts = line.strip().split(',')
+                    if len(parts) == 2 and parts[0] == sequence_name:
+                        centerline_name = parts[1]
+                        break
+        
+        if centerline_name:
+            centerline_path = os.path.join(patient_dir, "centerlines", f"{centerline_name}.vtp")
+            print(f"Using centerline from CSV lookup: {centerline_name}")
+        else:
+            centerline_path = os.path.join(patient_dir, "centerline.vtk")
+            print(f"No CSV mapping found for '{sequence_name}', using default centerline")
+    
+    corr_path = os.path.join(data_dir, f"{sequence_name}_correspondences.json")
     
     # Validate paths
     for path, name in [
@@ -759,8 +793,8 @@ def main():
         print(f"Loaded {len(correspondences)} correspondences from: {corr_path}")
     else:
         # Full annotation workflow
-        if not os.path.exists(video_path):
-            print(f"Error: Video not found: {video_path}")
+        if video_path is None:
+            print(f"Error: No video found for sequence '{sequence_name}' (tried .mp4, .mkv, .avi)")
             sys.exit(1)
         
         if os.path.exists(corr_path):
