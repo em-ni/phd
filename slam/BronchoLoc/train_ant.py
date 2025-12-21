@@ -82,8 +82,48 @@ def train(args):
     window_size = full_dataset.window_size
     print(f"[INFO] Using window_size={window_size}, frame_skip={full_dataset.frame_skip}")
     
-    # --- DEBUGGING / OVERFITTING MODES ---
-    if args.overfit:
+    # --- DEBUGGING / OVERFITTING / FINETUNING MODES ---
+    if args.finetune_phantom:
+        # Finetune on phantom sequences only
+        print("[INFO] Finetune-phantom mode: Training on 'seq_phantom_*' sequences only.")
+        indices = [i for i, (vp, _, _) in enumerate(full_dataset.samples) if "seq_phantom" in vp]
+        
+        if not indices:
+            print("[ERROR] No 'seq_phantom_*' sequences found in dataset!")
+            return
+        
+        # Use same sequence-level split logic for phantom data
+        from collections import defaultdict
+        seq_to_indices = defaultdict(list)
+        for idx in indices:
+            vid_path = full_dataset.samples[idx][0]
+            seq_name = os.path.basename(os.path.dirname(vid_path))
+            seq_to_indices[seq_name].append(idx)
+        
+        all_seqs = list(seq_to_indices.keys())
+        n_train_seqs = max(1, int(0.8 * len(all_seqs)))
+        
+        import random
+        random.shuffle(all_seqs)
+        train_seqs = all_seqs[:n_train_seqs]
+        val_seqs = all_seqs[n_train_seqs:]
+        
+        train_indices = []
+        val_indices = []
+        for seq in train_seqs:
+            train_indices.extend(seq_to_indices[seq])
+        for seq in val_seqs:
+            val_indices.extend(seq_to_indices[seq])
+        
+        print(f"[INFO] Phantom sequences: {len(train_seqs)} train, {len(val_seqs)} val")
+        print(f"[INFO] Train sequences: {train_seqs}")
+        print(f"[INFO] Val sequences: {val_seqs}")
+        print(f"[INFO] Windows: {len(train_indices)} train, {len(val_indices)} val")
+        
+        train_ds = torch.utils.data.Subset(full_dataset, train_indices)
+        val_ds = torch.utils.data.Subset(full_dataset, val_indices)
+        
+    elif args.overfit:
         print("[INFO] Overfitting mode: Training on 'seq_test' only.")
         indices = [i for i, (vp, _, _) in enumerate(full_dataset.samples) if "seq_test" in vp]
         
@@ -225,6 +265,11 @@ def train(args):
     # Generate checkpoint name if not resuming
     if checkpoint_name is None:
         checkpoint_name = get_checkpoint_name(args, is_debug=args.debug_one)
+    
+    # For finetune_phantom, append _finetuned to original checkpoint name
+    if args.finetune_phantom and args.resume:
+        # Use original checkpoint name with _finetuned suffix
+        checkpoint_name = checkpoint_name + "_finetuned"
     
     checkpoint_path = os.path.join(args.checkpoint_dir, f"{checkpoint_name}.pth")
     print(f"[INFO] Checkpoint will be saved as: {checkpoint_path}")
@@ -371,6 +416,8 @@ if __name__ == "__main__":
                         help="Learning rate (default: use model's suggested_lr)")
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--overfit', action='store_true', help="Overfit on seq_test only")
+    parser.add_argument('--finetune_phantom', action='store_true', 
+                        help="Finetune on phantom sequences (seq_phantom_*) only")
     parser.add_argument('--debug_one', action='store_true', help="Overfit on a SINGLE batch")
     parser.add_argument('--motion_weight', type=float, default=0.0, help="Weight for motion incentive")
     parser.add_argument('--img_size', type=int, default=128, help="Image resolution")
