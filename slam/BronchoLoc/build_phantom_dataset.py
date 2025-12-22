@@ -28,6 +28,32 @@ import numpy as np
 import cv2
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
+from scipy.signal import savgol_filter
+
+
+# ===========================================================================
+# SMOOTHING FUNCTIONS
+# ===========================================================================
+def smooth_positions_savgol(positions, window_length=300, polyorder=3):
+    """
+    Smooth trajectory positions using Savitzky-Golay filter.
+    This reduces magnetic sensor noise while preserving trajectory shape.
+    """
+    if window_length % 2 == 0:
+        window_length += 1
+    if window_length <= polyorder:
+        window_length = polyorder + 2
+        if window_length % 2 == 0:
+            window_length += 1
+    if window_length > len(positions):
+        window_length = len(positions) // 2 * 2 + 1
+        if window_length <= polyorder:
+            return positions.copy()
+    
+    smoothed = np.zeros_like(positions)
+    for i in range(3):
+        smoothed[:, i] = savgol_filter(positions[:, i], window_length, polyorder)
+    return smoothed
 
 
 def load_tum_trajectory(filepath):
@@ -145,6 +171,11 @@ def process_sequence(name, phantom_dir, output_root):
     original_rots = R.from_quat(quaternions)
     aligned_rots = R_align * original_rots
     quaternions_aligned = aligned_rots.as_quat()
+    
+    # 4. Smooth Trajectory (Reduces magnetic sensor noise)
+    # NOTE: Only positions are smoothed - orientation is not used in GT
+    print(f"  Smoothing trajectory (window=300)...")
+    positions_aligned = smooth_positions_savgol(positions_aligned, window_length=300)
     
     start_time = timestamps[0]
     end_time = timestamps[-1]
