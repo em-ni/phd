@@ -1,0 +1,4 @@
+object_detection/data/formatted_bronchoscopy/*
+object_detection/data/coco8/*
+object_detection/data/bronchoscopy
+object_detection/data_collection/data/labelImg/*
