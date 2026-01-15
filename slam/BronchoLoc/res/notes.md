@@ -1,92 +1,214 @@
-# Full ANT pipeline explained from first principles
-## Dataset
-The inputs needed by the model are:
-- A video of the bronchoscopy
-- A trajectory associated with the video
-- The lung centerline
+# ANT + BIRD Pipeline
 
-The video is a sequence of Nf frames.
-Each frame is a 2D image (WxH) of the bronchoscopy.
-Each pixel is a color value C = (R, G, B).
+## 1. Overview
+The system consists of two cascaded models:
+1.  **ANT (Airways Neighborhood Tracker):** A local window-based model that predicts 6DoF pose changes (VO) and selects a candidate position on the centerline using visual-to-map attention.
+2.  **BIRD (Bronchial Intraoperative Route Discriminator):** A global streaming model that uses Titans memory to refine ANT's predictions by attending to the *full* centerline, ensuring global consistency and smooth trajectory tracking.
 
-The trajectory is a sequence of Np points in 3D space.
-Each point is a vector (x, y, z).
+---
 
-The lung centerline is a sequence of Nc points in 3D space.
-Each point is a vector (x, y, z).
+## 2. Dataset & Preprocessing
 
-These must be transformed into a window, which is the model input:
-From a given frame, sample a window of size window_size, with a gap of frame_skip between each frame, basically reducing the fps of the video.
-Resize each video frame to img_size.
-Normalize each pixel value to [-1, 1].
-The result is the video tensor of shape (window_size, img_size, img_size, 3).
+### Inputs
+- **Video:** Bronchoscopy frames $I_0, ..., I_N$.
+- **Trajectory:** Ground Truth (GT) camera poses $P_0, ..., P_N$ (position $p$ + orientation $q$).
+- **Centerline:** Dense point cloud of the airway tree $C = \{c_1, ..., c_K\}$.
 
-Each window is associated with a set of canidate centerline points.
-These points are selected as follows:
-From the position of the first frame (either the starting position at the lung entrance or predicted at previous step) of the window, select all the points in the centerline that are within a radius of MAP_QUERY_RADIUS.
-Use DBSCAN filter to remove points from disconnected airways (not reachable without exiting the ball)
-Downsample using farthest point sampling.
-The result is a list of 3D coordinates and their associated index in the centerline (N, 3)
+### Window Generation
+The continuous stream is sliced into overlapping windows of size $T$ (e.g., 10) with a frame skip $\delta$ (e.g., 40).
+- **Video Tensor:** $(T, C, H, W)$ normalized to $[-1, 1]$.
+- **Local Frame:** Defined by the pose of the *first frame* in the window $(p_0, q_0)$. All targets and inputs for the window are expressed relative to this frame.
 
-These have to be transformed into local frame (relative to the first frame of the window):
-The first frame position is a (T, 7) vector (x0, y0, z0, qx0, qy0, qz0, qw0) where T is the timestamp.
-Hence each candidate point is transformed relative to the first frame position, by subtracting the first frame position (x0,y0,z0) to its coordinate and with the inverse rotation extracted from the first frame rotation (qx0, qy0, qz0, qw0).
-Normalize each point to [-1, 1] dividing by NORM_MAP_SCALE.
-Points are padded to DEFAULT_MAX_MAP_POINTS.
-A mask is created for valid points (i.e. non padded points)
-The result is the map points tensor of shape (window_size, DEFAULT_MAX_MAP_POINTS, 3) and the mask of shape (window_size, DEFAULT_MAX_MAP_POINTS)
+### Candidates (Map Points)
+Topological map candidates are selected for the window:
+1.  **Query:** Ball search radius $R$ around $p_0$ (or predicted anchor).
+2.  **Filter:** Connected component analysis ensures reachable points.
+3.  **Sample:** Density-based sampling reduces candidates to $K$ points.
+4.  **Transform:** Converted to Local Frame: $c_{local} = q_0^{-1} * (c_{global} - p_0)$.
+5.  **Normalize:** Divided by scale factor $S$.
+- **Result:** `map_points` $(T, K, 3)$.
 
-If the data is loaded for training, to each frame is associated a target action, otherwise that's what the model has to predict.
-The action is a vector associated to each frame of the window, built as follows for each frame:
-Take the ground truth position of the frame (x, y, z, qx, qy, qz, qw).
-Find the closest point in the centerline to the frame GT position.
-Transform the point into local frame (same as above)
-Normalize each point to [-1, 1] dividing by NORM_MAP_SCALE.
-(for now the orientation is not used)
-The result is the action tensor of shape (window_size, 3)
+### Targets
+- **ANT Position (`gt_pos`):** Nearest centerline point to $p_t$ in Local Frame.
+- **VO Position (`delta_pos`):** Frame-to-frame displacement: $R_0^{-1} * (p_t - p_{t-1})$.
+- **VO Orientation (`delta_quat`):** Orientation relative to start: $q_0^{-1} * q_t$.
 
-## Model
-The input of the model are the video tensor (window_size, img_size, img_size, 3) and the map points tensor (window_size, DEFAULT_MAX_MAP_POINTS, 3) and the mask of shape (window_size, DEFAULT_MAX_MAP_POINTS)
-The output of the model is the action tensor of shape (window_size, 3)
+---
 
-The video tensor goes to a Spatio-Temporal Vision Transformer (STViViT in ViViT-style).
-This output a single feature vector of dimension embed_dim per frame, so for a single window it outputs a tensor of shape (window_size, embed_dim). 
-(considering the batch size B, the output is the visual tokens tensor of shape (B, window_size, embed_dim))
-TODO: add details about the STViViT
+## 3. ANT Model (Local Estimator)
 
-The map points tensor goes to the Map Encoder, which is a MultiLayer Perceptron (MLP).
-It is composed of a sequence of Linear layers interleaved with GELU activations.
-The input dimension is 3 (the 3D coordinates).
-The hidden layers have sizes [64, 128].
-The final layer projects to output_dim.
-The MLP is applied point-wise to each map point, meaning no pooling is applied as we want to attend to individual points.
-This outputs a single feature vector of dimension output_dim per point, so for a single window it outputs a tensor of shape (window_size, output_dim). 
-(considering the batch size B, the output is the map features tensor of shape (B, window_size, output_dim)).
-output_dim is equal to embed_dim.
+### Inputs
+- **Video:** $(B, T, C, H, W)$
+- **Map Points:** $(B, T, K, 3)$
 
-The visual tokens are projected to the Query space via a Linear layer, resulting in a tensor of shape (B, window_size, embed_dim).
-The map features are projected to the Key space via a Linear layer, resulting in a tensor of shape (B, window_size, DEFAULT_MAX_MAP_POINTS, embed_dim).
+### Architecture
+```
+┌───────────────────────────────────────────────────────────────┐
+│              ANT (Airways Neighborhood Tracker)               │
+├───────────────────────────────────────────────────────────────┤
+│  Video (B, T, C, H, W)                                        │
+│         ↓                                                     │
+│  ┌─────────────┐                                              │
+│  │   STViViT   │ → visual_tokens (B, T, D)                    │
+│  └─────────────┘        ↓                                     │
+│         │        ┌─────────────────┐                          │
+│         └──────→ │     VO Head     │ → delta_pos, delta_quat  │
+│                  └─────────────────┘        ↓                 │
+│         ┌───────────────────────────────────┘                 │
+│         ↓                                                     │
+│  [visual_tokens + deltas] → Query (B, T, D)                   │
+│                                           ↓                   │
+│  Map Candidates (K, 3) → [Map Encoder] → Keys (B, T, K, D)    │
+│                                           ↓                   │
+│  ┌────────────────────────┐                                   │
+│  │       Attention        │ ← Dot Product (Q @ K)             │
+│  └────────────────────────┘                                   │
+│         ↓                                                     │
+│  probs (B, T, K)                                              │
+│         ↓                                                     │
+│  ant_pos = Σ (probs * map_candidates)                         │
+└───────────────────────────────────────────────────────────────┘
+```
+1.  **Visual Encoder (STViViT):**
+    -   Extracts Spatio-Temporal features from video.
+    -   **Output:** `visual_tokens` $(B, T, D)$.
 
-The attention scores are computed as the dot product between the Queries and the Keys.
-The scores are scaled by the inverse square root of embed_dim.
-The mask is applied to set the scores of padded points to negative infinity.
-The scores are normalized with a softmax layer to obtain probabilities of shape (B, window_size, DEFAULT_MAX_MAP_POINTS).
+2.  **Visual Odometry (VO) Head:**
+    -   Parallel MLPs predict motion dynamics from `visual_tokens`.
+    -   **Position:** `pred_delta_pos` $(B, T, 3)$ - Step vector in Local Frame.
+    -   **Orientation:** `pred_delta_quat` $(B, T, 4)$ - Orientation relative to Local Frame (normalized).
 
-The final prediction is computed as the weighted sum of the original map points (3D coordinates), using the attention probabilities as weights.
-This effectively selects a position within the convex hull of the candidate centerline points.
-The result is the action tensor of shape (window_size, 3).
+3.  **Map Encoder:**
+    -   Point-wise MLP encodes geometric layout of candidates.
+    -   **Output:** `map_features` $(B, T, K, D)$.
 
-## Training
-The model is trained using
-- MSE loss between the predicted action and the target action i.e. for each batch the loss is computed between the action tensor and the target action tensor  of each frame of the window, for each window in the batch (B, window_size, 3).
-- Cross-entropy loss on the attention weights, this is to make the model sharper in the prediction, avoiding smoothing the probability distribution and spreading it across all points.
+4.  **Attention Mechanism (Selection):**
+    -   **Query Construction:** Concatenation of visual and VO features.
+        $$Q = \text{Proj}([ \text{visual\_tokens}, \text{delta\_pos}, \text{delta\_quat} ])$$
+        Shape: $(B, T, D)$.
+    -   **Key/Value:** Project `map_features` to $K$ and $V$.
+    -   **Attention Scores:** Dot product $QK^T$ scaled by $\frac{1}{\sqrt{D}}$.
+    -   **Probabilities:** Softmax over $K$ candidates -> `probs` $(B, T, K)$.
 
-## Inference
-The model is used to predict the action for each frame of the window, for each window in the batch (B, window_size, 3). The very first frame of the video is initialized as the starting position of the centerline, then each subsequent first frame of subsequent windows is initialized as the predicted position from the previous window.
-The global trajectory is then built by concatenating the predicted positions of each window.
-This can lead to a trajectory that is not smooth and drifts away from the real trajectory, as the model is not aware of previous windows.
-For this reason we need the BIRD model.
+5.  **Output Generation:**
+    -   **Refined Position:** Weighted sum of map points: $p_{ant} = \sum (\text{probs} \cdot \text{map\_points})$.
+    -   **Returns:** `ant_pos` (3), `delta_pos` (3), `delta_quat` (4), `visual_tokens` (D).
 
-# Full BIRD pipeline explained from first principles
-# Model
-The input of the model are the output window of the ant
+### Training Loss
+$$L_{ANT} = L_{MSE}(p_{ant}, p_{gt}) + \lambda_{VO}(L_{MSE}(\delta p, \delta p_{gt}) + L_{MSE}(\delta q, \delta q_{gt})) + \lambda_{CE}(L_{CE}(\text{probs}, \text{idx}_{gt}))$$
+
+---
+
+## 4. BIRD Model (Global Refiner)
+
+### Inputs
+- **From ANT:** `ant_pos`, `delta_pos`, `delta_quat`, `visual_tokens`.
+- **Global Context:** `centerline_points` $(N, 3)$ - The full airway tree (downsampled).
+
+### Architecture
+```
+┌───────────────────────────────────────────────────────────────┐
+│        BIRD (Bronchial Intraoperative Route Discriminator)    │
+├───────────────────────────────────────────────────────────────┤
+│  ANT Outputs: ant_pos, delta_pos/quat, visual_tokens          │
+│         ↓                                                     │
+│  ┌─────────────┐                                              │
+│  │ Input Proj  │ → input_embed (B, T, Dm)                     │
+│  └─────────────┘                                              │
+│         ↓                                                     │
+│  ┌─────────────┐      ┌───────────────┐                       │
+│  │ Titans Mem  │ ───→ │   Mem State   │ (Streaming)           │
+│  └─────────────┘      └───────┬───────┘                       │
+│         ↓                     │                               │
+│  mem_out (B, T, Dm)           ↺ Recursive                     │
+│         ↓                                                     │
+│  ┌─────────────┐                                              │
+│  │ Cross Attn  │ ← Full Centerline (N, 3) → [Encoder] → Keys  │
+│  └─────────────┘                                              │
+│         ↓                                                     │
+│  attn_out (B, T, Dm)                                          │
+│         ↓                                                     │
+│  Q_sel = QueryHead(attn_out)                                  │
+│         ↓                                                     │
+│  ┌────────────────────────┐                                   │
+│  │ Centerline Selection   │ ← Scores = Q_sel @ Keys           │
+│  │ (with Dist Penalty)    │                                   │
+│  └────────────────────────┘                                   │
+│         ↓                                                     │
+│  p_refined = Σ (probs * centerline_pts)                       │
+└───────────────────────────────────────────────────────────────┘
+```
+1.  **Input Projection:**
+    -   Fuses all local signals into a single stream.
+    -   $x = \text{Linear}([p_{ant}, \delta p, \delta q, \text{vis}])$ -> $(B, T, D_m)$.
+
+2.  **Titans Neural Memory:**
+    -   Recurrent memory module that maintains a persistent state `mem_state` across windows.
+    -   Learns sequence history and "surprise" (e.g., branching decisions).
+    -   **Output:** `mem_out` $(B, T, D_m)$.
+
+3.  **Cross-Attention (Global Context):**
+    -   Memory attends to the **Full Centerline** (encoded once).
+    -   Allows the model to localize the current window within the global anatomy.
+    -   **Query:** `mem_out`. **Key/Value:** `centerline_embeddings`.
+    -   **Output:** `attn_out` $(B, T, D_m)$.
+
+4.  **Refinement Head:**
+    -   **Selection:** Computes attention scores over all $N$ centerline points.
+    -   **Distance Penalty:** Soft $L_2$ penalty suppresses physically distant points (prevents teleportation) but allows correction of branch errors.
+    -   **Normalization:** Softmax over $N$.
+    -   **Weighted Sum:** Selects the optimal point on the global centerline.
+    -   **Output:** `p_refined` $(B, T, 3)$.
+
+### Training Strategy: Surprise-Based Window Selection
+
+**Problem:** Ideally BIRD should be aware of the entire trajectory, but backpropagating through all windows per sequence causes memory explosion and gradient issues.
+
+**Solution:** Train on only the **top-K most surprising windows** per sequence, where surprise is measured by Titans memory's internal prediction error:
+
+1.  **Forward all windows** in sequence order → collect (loss, surprise) pairs
+2.  **Rank by surprise** (descending) → select top-K
+3.  **Backprop only on selected windows** → focus learning on informative moments
+
+**Rationale:** High-surprise windows are typically:
+- **Bifurcations** (unexpected branch choices)
+- **Direction changes** (memory state transition points)
+- **Difficult regions** where the model struggles
+
+This focuses training on the most informative windows while maintaining memory streaming across the full sequence.
+
+### Training Loss
+$$L_{BIRD} = \frac{1}{K} \sum_{i \in \text{top-K}} L_{MSE}(p_{refined}^{(i)}, p_{gt}^{(i)})$$
+- $K$ = `--top_k_surprise` (default: 4)
+- Gradients are **not** backpropagated to ANT (ANT is frozen).
+
+---
+
+## 5. Inference Pipeline
+
+### Closed-Loop Feedback
+At inference, BIRD provides the anchor for the *next* window, creating a closed loop:
+1.  **Window $t$:** ANT predicts → BIRD refines → $P_{refined}$.
+2.  **Feedback:** The last point of $P_{refined}$ becomes the center for candidate selection (ball search) for Window $t+1$.
+3.  **Streaming:** BIRD passes `mem_state` to the next window, maintaining continuous tracking history.
+
+### Surprise: Training vs. Inference
+
+| Aspect | Training | Inference |
+|--------|----------|-----------|
+| Window selection | Top-K surprising only | All windows, sequentially |
+| Surprise usage | Explicit (gradient selection) | Implicit (baked into memory) |
+
+**How training transfers to inference:**
+-   Training focuses on high-surprise windows (bifurcations, direction changes).
+-   Titans memory's internal weights learn to detect and respond to these patterns.
+-   At inference, the memory **internally** uses surprise for state updates:
+    -   High surprise → stronger memory writes
+    -   Low surprise → gentle updates (already predicted)
+-   Result: Memory naturally "remembers" bifurcations more than straight sections.
+
+### Output Coordinate Reconstruction
+Final global trajectory is reconstructed from Local Frame predictions:
+$$P_{global} = P_{anchor} + R_{anchor} \cdot (P_{local} \times S)$$
+- $S$: Normalization scale (`NORM_MAP_SCALE`).
+- $P_{anchor}, R_{anchor}$: Pose of the window's first frame (or BIRD's feedback).

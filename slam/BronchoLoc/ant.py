@@ -245,11 +245,55 @@ class MapEncoder(nn.Module):
         x = x.view(B, T, K, -1)
         return x
 
+class VOHead(nn.Module):
+    """
+    Visual Odometry Head: Predicts delta pose (position + quaternion) from visual features.
+    
+    At inference, these deltas are chained to track absolute pose.
+    Training uses GT delta poses as supervision.
+    """
+    def __init__(self, embed_dim, dropout=0.1):
+        super().__init__()
+        
+        # Shared feature projection
+        self.fc1 = nn.Linear(embed_dim, embed_dim)
+        self.dropout = nn.Dropout(dropout)
+        
+        # Position delta head: predicts (dx, dy, dz) in local frame
+        self.pos_head = nn.Linear(embed_dim, 3)
+        
+        # Orientation delta head: predicts (dqx, dqy, dqz, dqw)
+        # Output is normalized to unit quaternion
+        self.quat_head = nn.Linear(embed_dim, 4)
+    
+    def forward(self, visual_tokens):
+        """
+        Args:
+            visual_tokens: (B, T, D) - per-frame visual embeddings
+            
+        Returns:
+            delta_pos: (B, T, 3) - predicted position delta
+            delta_quat: (B, T, 4) - predicted quaternion delta (normalized)
+        """
+        x = F.gelu(self.fc1(visual_tokens))
+        x = self.dropout(x)
+        
+        # Position delta (unnormalized, will be matched to GT)
+        delta_pos = self.pos_head(x)  # (B, T, 3)
+        
+        # Quaternion delta (normalized to unit quaternion)
+        delta_quat = self.quat_head(x)  # (B, T, 4)
+        delta_quat = F.normalize(delta_quat, p=2, dim=-1)  # Unit quaternion
+        
+        return delta_pos, delta_quat
+
+
 class ActionPredictor(nn.Module):
     """
-    Main Model Class: Centerline Selector Architecture.
-    Predicts the next position by attending to visual features and selecting/weighting 
-    candidates from the K local map points.
+    Main Model Class: Centerline Selector Architecture with Visual Odometry.
+    
+    Uses visual features to predict pose (position + orientation) and then
+    attends to centerline candidates to select the best matching position.
     """
     def __init__(self, window_size, mode='s', img_size=128): 
         super().__init__()
@@ -262,14 +306,18 @@ class ActionPredictor(nn.Module):
         # Visual Encoder
         self.visual_encoder = STViViT(self.config, img_size=img_size, window_size=window_size)
         
+        # Visual Odometry Head (predicts delta pose from visual tokens)
+        self.vo_head = VOHead(embed_dim, dropout=dropout)
+        
         # Map Encoder
         # We ensure map features match visual feature dimension for dot product attention.
         self.map_dim = embed_dim 
         self.map_encoder = MapEncoder(out_dim=self.map_dim, hidden_sizes=map_encoder_hidden, dropout=dropout)
         
         # Selection Head (Attention)
-        # Projects visual features to query space
-        self.query_proj = nn.Linear(embed_dim, embed_dim)
+        # Query includes: visual_tokens (D) + delta_pos (3) + delta_quat (4) = D+7
+        # Project back to embed_dim for matching
+        self.query_proj = nn.Linear(embed_dim + 7, embed_dim)
         
         # Projects map features to key space
         self.key_proj = nn.Linear(embed_dim, embed_dim)
@@ -294,52 +342,57 @@ class ActionPredictor(nn.Module):
         
         if map_points is None:
             # Fallback (shouldn't happen in normal flow)
-            zeros = torch.zeros(video.shape[0], video.shape[1], 3, device=video.device)
+            B, T = video.shape[0], video.shape[1]
+            D = self.config['embed_dim']
+            zeros_pos = torch.zeros(B, T, 3, device=video.device)
+            zeros_quat = torch.zeros(B, T, 4, device=video.device)
+            zeros_visual = torch.zeros(B, T, D, device=video.device)
+            zeros_probs = torch.zeros(B, T, 1, device=video.device)
             if return_features:
-                return zeros, torch.zeros(video.shape[0], video.shape[1], self.config['embed_dim'], device=video.device)
-            return zeros
+                return zeros_pos, zeros_pos, zeros_quat, zeros_visual, zeros_probs
+            return zeros_pos, zeros_quat
             
-        # 1. Extract Visual Features (Query)
+        # 1. Extract Visual Features
         # Get frame-wise visual embeddings: (B, T, D)
         visual_tokens = self.visual_encoder(video)
-        queries = self.query_proj(visual_tokens) # (B, T, D)
         
-        # 2. Extract Map Features (Keys)
+        # 2. Visual Odometry: Predict delta pose from visual tokens
+        # delta_pos: (B, T, 3), delta_quat: (B, T, 4)
+        delta_pos, delta_quat = self.vo_head(visual_tokens)
+        
+        # 3. Build Query: visual_tokens + delta_pos + delta_quat
+        # This allows the model to use predicted pose when selecting candidates
+        query_input = torch.cat([visual_tokens, delta_pos, delta_quat], dim=-1)  # (B, T, D+7)
+        queries = self.query_proj(query_input)  # (B, T, D)
+        
+        # 4. Extract Map Features (Keys)
         # Get point-wise map embeddings: (B, T, K, D)
         map_features = self.map_encoder(map_points)
-        keys = self.key_proj(map_features) # (B, T, K, D)
+        keys = self.key_proj(map_features)  # (B, T, K, D)
         
-        # 3. Compute Attention Scores (Dot Product)
-        # We calculate similarity between visual state (Query) and each map point (Key).
-        # Q: (B, T, 1, D)
-        # K: (B, T, K, D)
-        # Scores: (B, T, K) - Each map point gets a score at each timestep.
-        queries = queries.unsqueeze(2) # (B, T, 1, D)
-        scores = torch.sum(queries * keys, dim=-1) * self.scale # (B, T, K)
+        # 5. Compute Attention Scores (Dot Product)
+        # Q: (B, T, 1, D), K: (B, T, K, D) -> Scores: (B, T, K)
+        queries = queries.unsqueeze(2)  # (B, T, 1, D)
+        scores = torch.sum(queries * keys, dim=-1) * self.scale  # (B, T, K)
         
-        # 4. Apply Mask (set padding positions to -inf before softmax)
+        # 6. Apply Mask (set padding positions to -inf before softmax)
         if map_mask is not None:
-            # map_mask is True for valid, False for padding
-            # Set padding positions to -inf so they get 0 probability after softmax
             scores = scores.masked_fill(~map_mask, float('-inf'))
         
-        # 5. Compute Probabilities
-        # Softmax normalizes scores to sum to 1 (only over valid points).
-        probs = F.softmax(scores, dim=-1) # (B, T, K)
-        
-        # Handle case where all points are masked (shouldn't happen but be safe)
+        # 7. Compute Probabilities
+        probs = F.softmax(scores, dim=-1)  # (B, T, K)
         probs = torch.nan_to_num(probs, nan=0.0)
         
-        # 6. Weighted Sum of Map Points (Soft Selection)
-        # We predict the delta by taking the expected value over the map points.
-        # This constrains predictions to lie in the convex hull of the map candidates
-        # (effectively "selecting" a point on the centerline).
-        # (B, T, K, 1) * (B, T, K, 3) -> (B, T, K, 3) -> Sum -> (B, T, 3)
-        pred_delta = torch.sum(probs.unsqueeze(-1) * map_points, dim=2)
+        # 8. Weighted Sum of Map Points (Soft Selection)
+        # Output position is constrained to convex hull of candidates
+        pred_pos = torch.sum(probs.unsqueeze(-1) * map_points, dim=2)  # (B, T, 3)
         
-        # Return only translation (B, T, 3)
-        # We rely on the map's geometry.
         if return_features:
-            # Return visual tokens AND attention probs for BIRD and CE loss
-            return pred_delta, visual_tokens, probs
-        return pred_delta
+            # Return all features for BIRD:
+            # - pred_pos: selected position from candidates (B, T, 3)
+            # - delta_pos: VO position estimate (B, T, 3)  
+            # - delta_quat: VO orientation estimate (B, T, 4)
+            # - visual_tokens: visual features (B, T, D)
+            # - probs: attention weights over candidates (B, T, K)
+            return pred_pos, delta_pos, delta_quat, visual_tokens, probs
+        return pred_pos, delta_quat

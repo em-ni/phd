@@ -12,7 +12,7 @@ from scipy.spatial import cKDTree
 from ant import ActionPredictor
 from ant_dataset import AntDataset
 from constants import NORM_MAP_SCALE, MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS, MAP_POINT_SPACING
-from utils.utils import load_centerline_points, filter_connected_component, density_based_sample
+from utils.utils import load_centerline_points, filter_connected_component, density_based_sample, find_centerline_path, interpolate_trajectory
 
 
 def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
@@ -133,6 +133,117 @@ def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
     return img
 
 
+def load_full_window_frames(vid_path, start_idx, window_size, frame_skip, img_size):
+    """
+    Loads ALL frames within a window span (not just the skipped ones).
+    
+    Args:
+        vid_path: Path to the video.npy file
+        start_idx: Starting frame index
+        window_size: Number of prediction points
+        frame_skip: Frames between each prediction
+        img_size: Size to resize frames to (for model input, not display)
+        
+    Returns:
+        display_frames: np.array of original resolution frames for display (N, H, W, 3) RGB uint8
+        keyframe_indices: List of indices in all_frames that correspond to prediction points
+    """
+    vid_mmap = np.load(vid_path, mmap_mode='r')
+    
+    # Total frames in window: from start to start + (window_size-1)*frame_skip
+    total_frames = (window_size - 1) * frame_skip + 1
+    end_idx = start_idx + total_frames
+    
+    # Make sure we don't go past the end of the video
+    actual_end = min(end_idx, len(vid_mmap))
+    
+    # Load all frames in range
+    all_frames_raw = vid_mmap[start_idx:actual_end]
+    
+    # Keep original quality frames for display (convert to HWC RGB format)
+    display_frames = []
+    for frame in all_frames_raw:
+        frame = np.array(frame)  # Copy from mmap
+        
+        # Convert to HWC format for display
+        if len(frame.shape) == 3 and frame.shape[0] == 3:
+            # Channel-first (C, H, W) -> (H, W, C)
+            frame = np.transpose(frame, (1, 2, 0))
+        elif len(frame.shape) == 3 and frame.shape[-1] == 3:
+            # Already HWC format
+            pass
+        else:
+            # Grayscale - stack to 3 channels
+            if len(frame.shape) == 2:
+                frame = np.stack([frame, frame, frame], axis=-1)
+        
+        # Convert BGR to RGB if needed (assume video is BGR from OpenCV)
+        frame_rgb = cv2.cvtColor(frame.astype(np.uint8), cv2.COLOR_BGR2RGB)
+        display_frames.append(frame_rgb)
+    
+    display_frames = np.array(display_frames)
+    
+    # Keyframe indices (the frames where we have predictions)
+    keyframe_indices = [i * frame_skip for i in range(window_size) if i * frame_skip < len(display_frames)]
+    
+    return display_frames, keyframe_indices
+
+
+def interpolate_positions_for_frames(pred_positions, keyframe_indices, total_frames, 
+                                     centerline_pts, centerline_tree):
+    """
+    Interpolate positions for ALL frames based on predictions at keyframes.
+    Uses centerline path for smooth interpolation.
+    
+    Args:
+        pred_positions: (K, 3) array of predicted positions at keyframes
+        keyframe_indices: List of frame indices where we have predictions
+        total_frames: Total number of frames
+        centerline_pts: Centerline points for path interpolation
+        centerline_tree: KDTree for centerline queries
+        
+    Returns:
+        frame_positions: (N, 3) array of positions for each frame
+    """
+    frame_positions = np.zeros((total_frames, 3))
+    
+    # Set positions at keyframes
+    for i, kf_idx in enumerate(keyframe_indices):
+        if kf_idx < total_frames:
+            frame_positions[kf_idx] = pred_positions[i]
+    
+    # Interpolate between keyframes
+    for i in range(len(keyframe_indices) - 1):
+        start_kf = keyframe_indices[i]
+        end_kf = keyframe_indices[i + 1]
+        
+        if end_kf >= total_frames:
+            end_kf = total_frames - 1
+            
+        start_pos = pred_positions[i]
+        end_pos = pred_positions[i + 1] if i + 1 < len(pred_positions) else pred_positions[i]
+        
+        # Get centerline path between the two positions
+        if centerline_tree is not None:
+            path = find_centerline_path(start_pos, end_pos, centerline_pts, centerline_tree)
+        else:
+            # Linear interpolation fallback
+            path = np.array([start_pos, end_pos])
+        
+        # Distribute path points across the frame range
+        num_frames_between = end_kf - start_kf + 1
+        path_len = len(path)
+        
+        for f_idx in range(start_kf, end_kf + 1):
+            # Map frame index to path index
+            t = (f_idx - start_kf) / max(1, end_kf - start_kf)  # 0 to 1
+            path_idx = int(t * (path_len - 1))
+            path_idx = min(path_idx, path_len - 1)
+            frame_positions[f_idx] = path[path_idx]
+    
+    return frame_positions
+
+
 def test(args):
     """
     Main test function.
@@ -156,6 +267,9 @@ def test(args):
         if args.batch_size != 1:
             print("[WARNING] Chain mode requires batch_size=1, setting to 1.")
             args.batch_size = 1
+    
+    if args.interpolate:
+        print("[INFO] Interpolation enabled: trajectories will follow centerline for smooth visualization.")
     
     # Get window_size from dataset (loaded from config)
     window_size = full_dataset.window_size
@@ -282,16 +396,16 @@ def test(args):
             # Get raw GT positions (global frame) for visualization
             raw_positions = batch['raw_positions'].numpy()  # (B, T, 3)
             
-            # Forward pass
-            pred_trans = model(video, map_points=map_points, map_mask=map_mask)  # (B, T, 3) - normalized output
+            # Forward pass - model returns (pred_pos, delta_quat)
+            pred_pos, pred_quat = model(video, map_points=map_points, map_mask=map_mask)
             
-            # Get GT translation (first 3 dims of actions) - LOCAL frame
-            # Dataset stores actions NORMALIZED (divided by NORM_MAP_SCALE in ant_dataset.py line 293)
+            # Get GT translation - LOCAL frame
+            # Dataset stores actions NORMALIZED (divided by NORM_MAP_SCALE in ant_dataset.py)
             # So we need to denormalize to get mm
-            gt_trans_local = gt_deltas[:, :, :3].cpu().numpy() * NORM_MAP_SCALE  # (B, T, 3)
+            gt_trans_local = gt_deltas.cpu().numpy() * NORM_MAP_SCALE  # (B, T, 3)
             
             # Denormalize prediction to mm (model outputs normalized values to match training targets)
-            pred_trans_local = pred_trans.cpu().numpy() * NORM_MAP_SCALE  # (B, T, 3)
+            pred_pos_local = pred_pos.cpu().numpy() * NORM_MAP_SCALE  # (B, T, 3)
             # Convert video back to displayable format
             # Dataset stores RGB, normalized to [-1, 1]
             video_np = video.cpu().numpy()  # (B, T, C, H, W)
@@ -322,98 +436,157 @@ def test(args):
                     prev_seq_path = curr_seq_path
                 
                 # Transform LOCAL to GLOBAL coordinates
-                # IMPORTANT: Predictions are in LOCAL frame of THIS window's frame 0
-                # So we MUST use p0_gt (the actual anchor of this window) for transformation
-                # This is true regardless of chain mode!
+                # GT always uses the actual GT anchor (for reference/comparison)
                 gt_window_global = rot_0.apply(gt_trans_local[b]) + p0_gt  # (T, 3)
-                pred_window_global = rot_0.apply(pred_trans_local[b]) + p0_gt  # (T, 3)
                 
-                # Chain mode: track cumulative error for analysis (not used for transformation)
+                # For predictions: in chain mode, use the chained anchor instead of GT anchor
                 if args.chain:
                     if chain_pred_anchor is None:
-                        # First window: initialize with GT
+                        # First window: initialize with GT first frame
                         chain_pred_anchor = p0_gt.copy()
+                        print(f"[CHAIN] Window 1: Starting from GT anchor at {p0_gt}")
                     
-                    # Calculate prediction at last frame (in global coords)
-                    last_pred_global = pred_window_global[-1].copy()
-                    last_gt_global = gt_window_global[-1].copy()
+                    # Use the chain anchor (previous prediction end point) instead of GT
+                    # The model predicts in LOCAL frame of window start, so we transform
+                    # predictions relative to the chain anchor
+                    pred_window_global = rot_0.apply(pred_pos_local[b]) + chain_pred_anchor  # (T, 3)
                     
-                    # Track cumulative offset (how far prediction is from GT at this point)
-                    chain_error = np.linalg.norm(last_pred_global - last_gt_global)
-                    if chain_error > 2.0:  # More than 2mm error
-                        print(f"[CHAIN] Window {batch_idx+1}: Accumulated error = {chain_error:.2f}mm")
+                    # Calculate error compared to GT
+                    chain_error = np.linalg.norm(pred_window_global[-1] - gt_window_global[-1])
+                    print(f"[CHAIN] Window {batch_idx+1}: Pred anchor offset = {np.linalg.norm(chain_pred_anchor - p0_gt):.2f}mm, End error = {chain_error:.2f}mm")
                     
-                    # Update anchor for logging (not for transformation)
-                    chain_pred_anchor = last_pred_global
+                    # Update chain anchor to the END of this window's prediction
+                    # This becomes the START anchor for the next window
+                    chain_pred_anchor = pred_window_global[-1].copy()
+                else:
+                    # Normal mode: predictions use GT anchor (no cascading)
+                    pred_window_global = rot_0.apply(pred_pos_local[b]) + p0_gt  # (T, 3)
                 
                 # Also keep local values for printing
                 gt_window_local = gt_trans_local[b]  # (T, 3)
-                pred_window_local = pred_trans_local[b]  # (T, 3)
+                pred_window_local = pred_pos_local[b]  # (T, 3)
                 
-                # Process each frame in window
-                for t in range(T):
-                    # Get input frame (C, H, W) -> (H, W, C)
-                    # Note: Different sequences may have different color orders
-                    # Simulator sequences are BGR, phantom sequences are RGB
-                    # We'll convert assuming BGR (most common for OpenCV-saved data)
-                    frame_bgr = video_np[b, t].transpose(1, 2, 0)
-                    frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                # === FRAME PROCESSING ===
+                # When interpolate mode is enabled, we load ALL frames and compute positions for each.
+                # Otherwise, we just use the keyframes from the dataset.
+                
+                if args.interpolate:
+                    # --- FULL FRAME INTERPOLATION MODE ---
+                    # Get sample info to load full video
+                    if hasattr(test_ds, 'dataset'):  # Subset
+                        sample_idx_for_path = test_ds.indices[batch_idx * args.batch_size + b]
+                        vid_path, _, start_idx = test_ds.dataset.samples[sample_idx_for_path]
+                        frame_skip = test_ds.dataset.frame_skip
+                    else:
+                        vid_path, _, start_idx = test_ds.samples[batch_idx * args.batch_size + b]
+                        frame_skip = test_ds.frame_skip
                     
-                    # Current positions (LOCAL for printing, GLOBAL for 3D viz)
-                    current_gt_local = gt_window_local[t]
-                    current_pred_local = pred_window_local[t]
-                    current_gt_global = gt_window_global[t]
-                    current_pred_global = pred_window_global[t]
+                    # Load ALL frames in this window (not just keyframes) - original quality for display
+                    display_frames, keyframe_indices = load_full_window_frames(
+                        vid_path, start_idx, window_size, frame_skip, args.img_size
+                    )
+                    total_full_frames = len(display_frames)
                     
-                    # Print frame info to console (local frame values)
-                    print(f"[Batch {batch_idx+1} | Sample {b+1} | Frame {t+1}/{T}] "
-                          f"GT: ({current_gt_global[0]:+.3f}, {current_gt_global[1]:+.3f}, {current_gt_global[2]:+.3f}) mm | "
-                          f"Pred: ({current_pred_global[0]:+.3f}, {current_pred_global[1]:+.3f}, {current_pred_global[2]:+.3f}) mm")
+                    # Load raw trajectory (actual camera positions) for all frames in this window
+                    traj_path = vid_path.replace('video.npy', 'trajectory.npy')
+                    traj_mmap = np.load(traj_path, mmap_mode='r')
+                    raw_traj_full = traj_mmap[start_idx:start_idx + total_full_frames, :3].copy()  # (N, 3) positions only
                     
-                    # Trajectory up to current frame in window (GLOBAL for 3D)
-                    gt_traj_current = gt_window_global[:t+1]
-                    pred_traj_current = pred_window_global[:t+1]
-                    raw_gt_traj_current = raw_positions[b, :t+1]  # Raw GT positions
-                    current_raw_gt = raw_positions[b, t]  # Current raw GT position
-                    
-                    # Render 3D view (with lung mesh and centerline + FPS points)
-                    img_3d = render_3d_view(
-                        plotter,
-                        lung_mesh,
-                        centerline_pts,
-                        centerline_tree,
-                        gt_traj_current,
-                        pred_traj_current,
-                        raw_gt_traj_current,
-                        current_gt_global,
-                        current_pred_global,
-                        current_raw_gt,
-                        t,
-                        T
+                    # Interpolate GT positions for all frames
+                    gt_all_positions = interpolate_positions_for_frames(
+                        gt_window_global, keyframe_indices, total_full_frames,
+                        centerline_pts, centerline_tree
                     )
                     
-                    # Get dimensions
-                    h_3d, w_3d = img_3d.shape[:2]
-                    h_frame, w_frame = frame_rgb.shape[:2]
+                    # Interpolate Predicted positions for all frames
+                    pred_all_positions = interpolate_positions_for_frames(
+                        pred_window_global, keyframe_indices, total_full_frames,
+                        centerline_pts, centerline_tree
+                    )
                     
-                    # Resize video frame to match 3D view height while preserving aspect ratio
-                    scale = h_3d / h_frame
-                    new_w_frame = int(w_frame * scale)
-                    frame_resized = cv2.resize(frame_rgb, (new_w_frame, h_3d))
+                    # Process each frame (display_frames is already RGB uint8, HWC format)
+                    for f_idx in range(total_full_frames):
+                        # Use original quality frame directly (already RGB)
+                        frame_rgb = display_frames[f_idx]
+                        
+                        current_gt_global = gt_all_positions[f_idx]
+                        current_pred_global = pred_all_positions[f_idx]
+                        
+                        # Trajectory up to current frame
+                        gt_traj_current = gt_all_positions[:f_idx+1]
+                        pred_traj_current = pred_all_positions[:f_idx+1]
+                        # Use actual raw trajectory positions
+                        raw_gt_traj_current = raw_traj_full[:f_idx+1]
+                        current_raw_gt = raw_traj_full[f_idx]
+                        
+                        # Render 3D view
+                        img_3d = render_3d_view(
+                            plotter, lung_mesh, centerline_pts, centerline_tree,
+                            gt_traj_current, pred_traj_current, raw_gt_traj_current,
+                            current_gt_global, current_pred_global, current_raw_gt,
+                            f_idx, total_full_frames
+                        )
+                        
+                        # Combine video frame and 3D view
+                        h_3d, w_3d = img_3d.shape[:2]
+                        h_frame, w_frame = frame_rgb.shape[:2]
+                        scale = h_3d / h_frame
+                        new_w_frame = int(w_frame * scale)
+                        frame_resized = cv2.resize(frame_rgb, (new_w_frame, h_3d))
+                        combined_rgb = np.hstack([frame_resized, img_3d])
+                        combined_bgr = cv2.cvtColor(combined_rgb, cv2.COLOR_RGB2BGR)
+                        
+                        # Add overlay
+                        cv2.putText(combined_bgr, f"Window: {batch_idx+1}", (10, 30),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        cv2.putText(combined_bgr, f"Frame: {f_idx+1}/{total_full_frames} (interpolated)", (10, 60),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        
+                        all_frames.append(combined_bgr)
                     
-                    # Create side-by-side frame (RGB)
-                    combined_rgb = np.hstack([frame_resized, img_3d])
+                    print(f"[Batch {batch_idx+1} | Sample {b+1}] Processed {total_full_frames} frames (full interpolation)")
                     
-                    # Convert RGB to BGR for OpenCV video writing
-                    combined_bgr = cv2.cvtColor(combined_rgb, cv2.COLOR_RGB2BGR)
-                    
-                    # Add frame info overlay on input side
-                    cv2.putText(combined_bgr, f"Window: {batch_idx+1}", (10, 30),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                    cv2.putText(combined_bgr, f"Frame: {t+1}/{T}", (10, 60),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                    
-                    all_frames.append(combined_bgr)
+                else:
+                    # --- KEYFRAME ONLY MODE (original behavior) ---
+                    for t in range(T):
+                        frame_bgr = video_np[b, t].transpose(1, 2, 0)
+                        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                        
+                        current_gt_local = gt_window_local[t]
+                        current_pred_local = pred_window_local[t]
+                        current_gt_global = gt_window_global[t]
+                        current_pred_global = pred_window_global[t]
+                        
+                        print(f"[Batch {batch_idx+1} | Sample {b+1} | Frame {t+1}/{T}] "
+                              f"GT: ({current_gt_global[0]:+.3f}, {current_gt_global[1]:+.3f}, {current_gt_global[2]:+.3f}) mm | "
+                              f"Pred: ({current_pred_global[0]:+.3f}, {current_pred_global[1]:+.3f}, {current_pred_global[2]:+.3f}) mm")
+                        
+                        raw_gt_traj_current = raw_positions[b, :t+1]
+                        current_raw_gt = raw_positions[b, t]
+                        gt_traj_current = gt_window_global[:t+1]
+                        pred_traj_current = pred_window_global[:t+1]
+                        
+                        img_3d = render_3d_view(
+                            plotter, lung_mesh, centerline_pts, centerline_tree,
+                            gt_traj_current, pred_traj_current, raw_gt_traj_current,
+                            current_gt_global, current_pred_global, current_raw_gt,
+                            t, T
+                        )
+                        
+                        h_3d, w_3d = img_3d.shape[:2]
+                        h_frame, w_frame = frame_rgb.shape[:2]
+                        scale = h_3d / h_frame
+                        new_w_frame = int(w_frame * scale)
+                        frame_resized = cv2.resize(frame_rgb, (new_w_frame, h_3d))
+                        combined_rgb = np.hstack([frame_resized, img_3d])
+                        combined_bgr = cv2.cvtColor(combined_rgb, cv2.COLOR_RGB2BGR)
+                        
+                        cv2.putText(combined_bgr, f"Window: {batch_idx+1}", (10, 30),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        cv2.putText(combined_bgr, f"Frame: {t+1}/{T}", (10, 60),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        
+                        all_frames.append(combined_bgr)
     
     plotter.close()
     
@@ -461,6 +634,7 @@ if __name__ == "__main__":
     parser.add_argument('--output_dir', type=str, default='./dataset/test/results', help="Output directory for videos")
     parser.add_argument('--fps', type=int, default=10, help="Output video FPS")
     parser.add_argument('--chain', action='store_true', help="Chain predictions: last pred of window N becomes anchor for window N+1")
+    parser.add_argument('--interpolate', action='store_true', help="Interpolate trajectory along centerline for smooth visualization")
     
     args = parser.parse_args()
     test(args)

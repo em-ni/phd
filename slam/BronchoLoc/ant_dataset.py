@@ -8,7 +8,7 @@ from tqdm import tqdm
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation as R
 from constants import MAP_QUERY_RADIUS, NORM_MAP_SCALE, DEFAULT_MAX_MAP_POINTS, MAP_POINT_SPACING
-from utils.utils import filter_connected_component, load_centerline_points, density_based_sample
+from utils.utils import filter_connected_component, load_centerline_points, load_centerline_poses, density_based_sample
 
 def get_stats(data_root):
     """
@@ -328,25 +328,46 @@ class AntDataset(Dataset):
             # Normalize to match the map points (which are also normalized)
             target_local = target_local / NORM_MAP_SCALE
             
-            # We construct a 6D action vector (3 pos + 3 rot), but currently only use position.
-            # Zeros for rotation placeholders.
-            action = np.concatenate([target_local, np.zeros(3)])
-            actions.append(action)
+            actions.append(target_local)
             
-        action_tensor = torch.tensor(np.array(actions, dtype=np.float32)).float() # (T, 6)
+        action_tensor = torch.tensor(np.array(actions, dtype=np.float32)).float() # (T, 3)
         target_idx_tensor = torch.tensor(target_indices, dtype=torch.long)  # (T,)
+        
+        # Compute delta quaternions: q_delta_t = q0_inv * q_t (rotation from frame 0 to frame t)
+        # This puts orientations in the local frame of the first frame
+        q0_rot = R.from_quat(q0)
+        q0_inv = q0_rot.inv()
+        delta_quats = []
+        for i in range(len(quats)):
+            q_t = R.from_quat(quats[i])
+            q_delta = q0_inv * q_t  # Rotation from frame 0 to frame t
+            delta_quats.append(q_delta.as_quat())
+        delta_quats = np.array(delta_quats, dtype=np.float32)  # (T, 4)
+        
+        # Compute delta positions (frame-to-frame deltas in local frame)
+        # delta_pos[t] = R0_inv * (p[t] - p[t-1]) for t > 0, delta_pos[0] = [0,0,0]
+        delta_positions = np.zeros((len(positions), 3), dtype=np.float32)
+        for i in range(1, len(positions)):
+            dp_global = positions[i] - positions[i-1]
+            delta_positions[i] = inv_rot_0.apply(dp_global)
+        # Normalize deltas same as actions
+        delta_positions = delta_positions / NORM_MAP_SCALE  # (T, 3)
 
         return {
             "video": video_tensor,
-            "actions": action_tensor, # (T, 6) - local frame of T=0
+            "actions": action_tensor, # (T, 3) - local frame of T=0
             "target_indices": target_idx_tensor, # (T,) - index of correct point for CE loss
             "map_points": map_points_tensor, # (T, K, 3) - local frame of T=0
             "map_mask": map_mask_tensor,  # (T, K) - True for valid points
             # For visualization: first frame's global pose to transform back
             "first_frame_pos": torch.from_numpy(p0.astype(np.float32)),  # (3,)
             "first_frame_quat": torch.from_numpy(q0.astype(np.float32)),  # (4,)
-            # Raw GT positions (global frame) for visualization
-            "raw_positions": torch.from_numpy(positions.astype(np.float32))  # (T, 3)
+            # Raw GT positions and orientations (global frame) for visualization
+            "raw_positions": torch.from_numpy(positions.astype(np.float32)),  # (T, 3)
+            "raw_quats": torch.from_numpy(quats.astype(np.float32)),  # (T, 4)
+            # Delta values for VO training (local frame, true deltas)
+            "delta_quats": torch.from_numpy(delta_quats),  # (T, 4) - relative to q0
+            "delta_positions": torch.from_numpy(delta_positions),  # (T, 3) - frame-to-frame
         }
 
 if __name__ == "__main__":

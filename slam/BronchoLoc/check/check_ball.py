@@ -10,6 +10,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from constants import MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS, MAP_POINT_SPACING
 from utils.utils import filter_connected_component, load_centerline_points, density_based_sample
 
+# temp
+MAP_QUERY_RADIUS = 15
 
 def visualize_ball(args):
     # 1. Load Lungs (Optional Context)
@@ -72,10 +74,10 @@ def visualize_ball(args):
         p.add_mesh(lung_mesh, color='wheat', opacity=0.1, label='Lungs')
         
     # Draw Full Centerline (Faint)
-    p.add_mesh(pv.PolyData(points), color='black', opacity=0.2, point_size=3, render_points_as_spheres=True, label='Full Centerline')
+    p.add_mesh(pv.PolyData(points), color='black', opacity=1, point_size=3, render_points_as_spheres=True, label='Full Centerline')
     
     # Draw Selected Point (Green)
-    p.add_mesh(pv.Sphere(radius=2.0, center=center_point), color='green', label='Query Center')
+    p.add_mesh(pv.Sphere(radius=1.0, center=center_point), color='red', label='Query Center')
     
     # Draw Sphere (Wireframe)
     sphere = pv.Sphere(radius=MAP_QUERY_RADIUS, center=center_point, theta_resolution=20, phi_resolution=20)
@@ -83,17 +85,17 @@ def visualize_ball(args):
     
     # Draw Connected Neighbors (Faint - these are filtered but before FPS)
     if len(connected_neighbors) > 0:
-        p.add_mesh(pv.PolyData(connected_neighbors), color='orange', opacity=0.4, point_size=5, 
+        p.add_mesh(pv.PolyData(connected_neighbors), color='light blue', opacity=0.4, point_size=5, 
                   render_points_as_spheres=True, label=f'Connected ({len(connected_neighbors)})')
     
     # Draw Density-based Downsampled Points (Bright Red - what model sees)
     if len(fps_points) > 0:
-        p.add_mesh(pv.PolyData(fps_points), color='red', point_size=10, 
+        p.add_mesh(pv.PolyData(fps_points), color='green', point_size=10, 
                   render_points_as_spheres=True, label=f'Density Sample ({len(fps_points)})')
 
     # Draw Disconnected Neighbors (Blue)
     if len(disconnected_neighbors) > 0:
-        p.add_mesh(pv.PolyData(disconnected_neighbors), color='blue', point_size=4, opacity=0.3,
+        p.add_mesh(pv.PolyData(disconnected_neighbors), color='blue', point_size=6, opacity=0.3,
                   render_points_as_spheres=True, label=f'Disconnected ({len(disconnected_neighbors)})')
     
     # Camera

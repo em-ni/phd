@@ -32,6 +32,31 @@ def load_centerline_points(centerline_path):
         return None
 
 
+def load_centerline_poses(centerline_path):
+    """
+    Loads centerline with full poses (position + quaternion) from TUM format file.
+    TUM format: timestamp x y z qx qy qz qw (space-separated)
+    
+    Args:
+        centerline_path: Path to .txt (TUM) file containing centerline poses.
+        
+    Returns:
+        np.array: (N, 7) array of [x, y, z, qx, qy, qz, qw], or None if not found.
+    """
+    if not os.path.exists(centerline_path):
+        print(f"[WARNING] Centerline file not found at {centerline_path}")
+        return None
+    
+    try:
+        data = np.loadtxt(centerline_path)
+        # Skip first column (timestamp), take columns 1-7 as pose
+        poses = data[:, 1:8].astype(np.float32)
+        return poses
+    except Exception as e:
+        print(f"[WARNING] Failed to load TUM centerline: {e}")
+        return None
+
+
 def filter_connected_component(center_point, neighbors):
     """
     Filters neighbors to keep only those in the same cluster as the center_point.
@@ -44,6 +69,7 @@ def filter_connected_component(center_point, neighbors):
     Returns:
         tuple: (connected_neighbors, connected_indices)
     """
+
     if len(neighbors) == 0:
         return np.array([]), np.array([])
         
@@ -145,3 +171,130 @@ def density_based_sample(points, min_distance=2.0, start_idx=0, max_points=None)
     
     selected_idx = np.array(selected_idx)
     return points[selected_idx], selected_idx
+
+
+def find_centerline_path(start_point, end_point, centerline_pts, centerline_tree, max_points=100):
+    """
+    Finds the path along the centerline between two points.
+    Uses a greedy approach: starting from start_point, iteratively move to the 
+    nearest neighbor that brings us closer to end_point until we reach it.
+    
+    Args:
+        start_point: (3,) array - starting position (predicted point at frame t)
+        end_point: (3,) array - ending position (predicted point at frame t+1)
+        centerline_pts: (N, 3) array of all centerline points
+        centerline_tree: cKDTree built from centerline_pts for fast queries
+        max_points: Maximum number of points to include in path (safety limit)
+        
+    Returns:
+        np.array: (M, 3) array of centerline points forming the path (includes start and end)
+    """
+    if centerline_tree is None or centerline_pts is None:
+        # No centerline available, return direct interpolation
+        return np.array([start_point, end_point])
+    
+    # Find nearest centerline points to start and end
+    _, start_idx = centerline_tree.query(start_point)
+    _, end_idx = centerline_tree.query(end_point)
+    
+    # If they're the same point, just return it
+    if start_idx == end_idx:
+        return np.array([centerline_pts[start_idx]])
+    
+    # Get the actual centerline positions
+    start_cl = centerline_pts[start_idx]
+    end_cl = centerline_pts[end_idx]
+    
+    # Greedy path finding: move along centerline towards end_cl
+    # Use connectivity threshold to find neighbors
+    path = [start_idx]
+    visited = {start_idx}
+    current_idx = start_idx
+    
+    # Distance from current point to end
+    dist_to_end = np.linalg.norm(centerline_pts[current_idx] - end_cl)
+    
+    iteration = 0
+    while current_idx != end_idx and iteration < max_points:
+        iteration += 1
+        current_pos = centerline_pts[current_idx]
+        
+        # Query nearby points (within connectivity threshold)
+        neighbor_indices = centerline_tree.query_ball_point(current_pos, r=CONNECTIVITY_THRESHOLD * 1.5)
+        
+        # Filter out visited points
+        unvisited = [idx for idx in neighbor_indices if idx not in visited]
+        
+        if not unvisited:
+            # No unvisited neighbors, we're stuck - try expanding search
+            neighbor_indices = centerline_tree.query_ball_point(current_pos, r=CONNECTIVITY_THRESHOLD * 3.0)
+            unvisited = [idx for idx in neighbor_indices if idx not in visited]
+            
+            if not unvisited:
+                # Still stuck, break and return what we have
+                break
+        
+        # Find the neighbor that gets us closest to end_cl
+        best_idx = None
+        best_dist = np.inf
+        for idx in unvisited:
+            dist = np.linalg.norm(centerline_pts[idx] - end_cl)
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = idx
+        
+        if best_idx is None:
+            break
+            
+        # Move to best neighbor
+        path.append(best_idx)
+        visited.add(best_idx)
+        current_idx = best_idx
+        
+        # Check if we've reached close enough to end
+        if best_dist < CONNECTIVITY_THRESHOLD:
+            # Make sure end_idx is included
+            if end_idx not in visited:
+                path.append(end_idx)
+            break
+    
+    # Convert indices to points
+    path_points = centerline_pts[path]
+    
+    return path_points
+
+
+def interpolate_trajectory(predictions, centerline_pts, centerline_tree):
+    """
+    Interpolate between consecutive predictions to create a smooth trajectory
+    that follows the centerline.
+    
+    Args:
+        predictions: (T, 3) array of predicted positions
+        centerline_pts: (N, 3) array of all centerline points
+        centerline_tree: cKDTree built from centerline_pts
+        
+    Returns:
+        np.array: (M, 3) array of interpolated trajectory points
+    """
+    if len(predictions) < 2:
+        return predictions
+    
+    full_trajectory = []
+    
+    for i in range(len(predictions) - 1):
+        start = predictions[i]
+        end = predictions[i + 1]
+        
+        # Find path along centerline
+        path = find_centerline_path(start, end, centerline_pts, centerline_tree)
+        
+        # Add all points except the last (to avoid duplicates)
+        if i == len(predictions) - 2:
+            # Last segment: include end point
+            full_trajectory.extend(path)
+        else:
+            # Not last segment: exclude end to avoid duplicate with next segment's start
+            full_trajectory.extend(path[:-1] if len(path) > 1 else path)
+    
+    return np.array(full_trajectory)

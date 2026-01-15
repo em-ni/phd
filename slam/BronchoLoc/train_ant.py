@@ -122,6 +122,46 @@ def train(args):
         
         train_ds = torch.utils.data.Subset(full_dataset, train_indices)
         val_ds = torch.utils.data.Subset(full_dataset, val_indices)
+    
+    elif args.sim_only:
+        # Train on simulation sequences only (exclude phantom)
+        print("[INFO] Sim-only mode: Training on simulation sequences (excluding 'seq_phantom_*').")
+        indices = [i for i, (vp, _, _) in enumerate(full_dataset.samples) if "seq_phantom" not in vp]
+        
+        if not indices:
+            print("[ERROR] No simulation sequences found in dataset!")
+            return
+        
+        # Use same sequence-level split logic
+        from collections import defaultdict
+        seq_to_indices = defaultdict(list)
+        for idx in indices:
+            vid_path = full_dataset.samples[idx][0]
+            seq_name = os.path.basename(os.path.dirname(vid_path))
+            seq_to_indices[seq_name].append(idx)
+        
+        all_seqs = list(seq_to_indices.keys())
+        n_train_seqs = max(1, int(0.8 * len(all_seqs)))
+        
+        import random
+        random.shuffle(all_seqs)
+        train_seqs = all_seqs[:n_train_seqs]
+        val_seqs = all_seqs[n_train_seqs:]
+        
+        train_indices = []
+        val_indices = []
+        for seq in train_seqs:
+            train_indices.extend(seq_to_indices[seq])
+        for seq in val_seqs:
+            val_indices.extend(seq_to_indices[seq])
+        
+        print(f"[INFO] Simulation sequences: {len(train_seqs)} train, {len(val_seqs)} val")
+        print(f"[INFO] Train sequences: {train_seqs}")
+        print(f"[INFO] Val sequences: {val_seqs}")
+        print(f"[INFO] Windows: {len(train_indices)} train, {len(val_indices)} val")
+        
+        train_ds = torch.utils.data.Subset(full_dataset, train_indices)
+        val_ds = torch.utils.data.Subset(full_dataset, val_indices)
         
     elif args.overfit:
         print("[INFO] Overfitting mode: Training on 'seq_test' only.")
@@ -297,36 +337,41 @@ def train(args):
             pbar = tqdm(train_loader)
             for batch in pbar:
                 video = batch['video'].to(device)
-                gt_deltas = batch['actions'].to(device)
+                gt_pos = batch['actions'].to(device)  # (B, T, 3) - already normalized
                 map_points = batch['map_points'].to(device)
                 map_mask = batch['map_mask'].to(device)
                 target_indices = batch['target_indices'].to(device)  # (B, T)
                 
+                # Get delta targets (local frame deltas for VO training)
+                gt_delta_quat = batch['delta_quats'].to(device)  # (B, T, 4) - relative to q0
+                gt_delta_pos = batch['delta_positions'].to(device)  # (B, T, 3) - frame-to-frame
+                
                 optimizer.zero_grad()
                 
-                # Get predictions and attention probs for CE loss
-                pred_trans, _, attn_probs = model(video, map_points=map_points, map_mask=map_mask, return_features=True)
-                # NOTE: gt_deltas are already normalized in the dataset (see ant_dataset.py line 293)
-                gt_trans = gt_deltas[:, :, :3]  # Already normalized
+                # Get predictions with 5-tuple return (delta_pos added for BIRD)
+                pred_pos, pred_delta_pos, pred_delta_quat, _, attn_probs = model(video, map_points=map_points, map_mask=map_mask, return_features=True)
                 
-                # MSE Loss on position predictions
-                mse_loss = criterion(pred_trans, gt_trans).mean()
+                # MSE Loss on position predictions (candidate selection)
+                mse_loss = criterion(pred_pos, gt_pos).mean()
+                
+                # VO Position Loss (train VO head to predict frame-to-frame deltas)
+                vo_pos_loss = criterion(pred_delta_pos, gt_delta_pos).mean()
+                
+                # Orientation Loss (quaternion MSE on delta quaternions)
+                quat_loss = criterion(pred_delta_quat, gt_delta_quat).mean()
                 
                 # Cross-Entropy Loss on attention weights
-                # This directly supervises attention to select the correct point
-                # attn_probs: (B, T, K), target_indices: (B, T)
                 B, T, K = attn_probs.shape
-                attn_flat = attn_probs.view(B * T, K)  # (B*T, K)
-                target_flat = target_indices.view(B * T)  # (B*T,)
-                # Use NLL loss with log probs (cross_entropy already applies log, so use nll_loss)
-                log_probs = torch.log(attn_flat.clamp(min=1e-10))  # Clamp to prevent log(0)
+                attn_flat = attn_probs.view(B * T, K)
+                target_flat = target_indices.view(B * T)
+                log_probs = torch.log(attn_flat.clamp(min=1e-10))
                 ce_loss = torch.nn.functional.nll_loss(log_probs, target_flat)
                 
-                # Combined loss: MSE + CE
-                loss = mse_loss + args.ce_weight * ce_loss
+                # Combined loss: MSE + VO + Quat + CE
+                loss = mse_loss + args.vo_weight * (vo_pos_loss + quat_loss) + args.ce_weight * ce_loss
                 
                 if args.motion_weight > 0:
-                    pred_variance = pred_trans.var(dim=1).mean()
+                    pred_variance = pred_pos.var(dim=1).mean()
                     motion_term = -args.motion_weight * pred_variance
                     loss = loss + motion_term
                 
@@ -338,7 +383,7 @@ def train(args):
                 optimizer.step()
                 
                 run_loss += loss.item()
-                pbar.set_postfix({"MSE": f"{mse_loss.item():.6f}", "CE": f"{ce_loss.item():.4f}"})
+                pbar.set_postfix({"MSE": f"{mse_loss.item():.4f}", "VO": f"{(vo_pos_loss + quat_loss).item():.4f}", "CE": f"{ce_loss.item():.4f}"})
             
             avg_train_loss = run_loss / len(train_loader)
             
@@ -348,15 +393,14 @@ def train(args):
             with torch.no_grad():
                 for batch in val_loader:
                     video = batch['video'].to(device)
-                    gt_deltas = batch['actions'].to(device)
+                    gt_pos = batch['actions'].to(device)
                     map_points = batch['map_points'].to(device)
                     map_mask = batch['map_mask'].to(device)
                     
-                    pred_trans = model(video, map_points=map_points, map_mask=map_mask)
-                    # NOTE: gt_deltas are already normalized in the dataset
-                    gt_trans = gt_deltas[:, :, :3]  # Already normalized
+                    # Model returns (pred_pos, delta_quat)
+                    pred_pos, _ = model(video, map_points=map_points, map_mask=map_mask)
                     
-                    loss = criterion(pred_trans, gt_trans).mean()
+                    loss = criterion(pred_pos, gt_pos).mean()
                     val_loss += loss.item()
                     
             avg_val_loss = val_loss / len(val_loader)
@@ -418,6 +462,8 @@ if __name__ == "__main__":
     parser.add_argument('--overfit', action='store_true', help="Overfit on seq_test only")
     parser.add_argument('--finetune_phantom', action='store_true', 
                         help="Finetune on phantom sequences (seq_phantom_*) only")
+    parser.add_argument('--sim_only', action='store_true', 
+                        help="Train on simulation sequences only (exclude seq_phantom_*)")
     parser.add_argument('--debug_one', action='store_true', help="Overfit on a SINGLE batch")
     parser.add_argument('--motion_weight', type=float, default=0.0, help="Weight for motion incentive")
     parser.add_argument('--img_size', type=int, default=128, help="Image resolution")
@@ -428,6 +474,8 @@ if __name__ == "__main__":
     parser.add_argument('--early_stop_patience', type=int, default=100,
                         help="Stop if val loss doesn't improve for N epochs (0=disabled)")
     parser.add_argument('--ce_weight', type=float, default=1.0,
-                        help="Weight for cross-entropy loss on attention (0=disabled, 1.0=equal to MSE)")
+                        help="Weight for cross-entropy loss on attention (0=disabled)")
+    parser.add_argument('--vo_weight', type=float, default=0.1,
+                        help="Weight for VO loss (position + quaternion, 0=disabled)")
     args = parser.parse_args()
     train(args)

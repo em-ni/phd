@@ -1,4 +1,0 @@
-train ant adding phantom trajectories
-implement orientation somehow
-filter output for better visualization, interpolate all points between selected candidates
-train bird
