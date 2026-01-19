@@ -83,7 +83,7 @@ class BIRD(nn.Module):
                  num_heads=4,
                  num_centerline_pts=1024,
                  distance_penalty_strength=5.0,
-                 dropout=0.1):
+                 dropout=0.05):
         super().__init__()
         
         # Get ANT visual feature dimension from config
@@ -222,11 +222,19 @@ class BIRD(nn.Module):
         # Strong attention can overcome this penalty (e.g., for branch correction)
         scores = scores - self.distance_penalty_strength * dists
         
-        # Softmax to get probabilities
+        # Softmax to get probabilities (soft, used for visualization/debugging)
         attn_probs = F.softmax(scores, dim=-1)  # (B, T, N)
         
-        # Weighted sum: select refined position from full centerline
-        p_refined = torch.bmm(attn_probs, cl_pts)  # (B, T, 3)
+        # Position Selection
+        # Training: soft selection (weighted sum) - allows gradient flow and overfitting
+        # Inference: hard selection (argmax) - prediction is EXACTLY on centerline
+        if self.training:
+            # Soft selection during training for stable gradients
+            p_refined = torch.bmm(attn_probs, cl_pts)  # (B, T, 3)
+        else:
+            # Inference: pure argmax (one-hot) - prediction is EXACTLY on centerline
+            hard_probs = F.one_hot(scores.argmax(dim=-1), num_classes=scores.size(-1)).float()
+            p_refined = torch.bmm(hard_probs, cl_pts)  # (B, T, 3)
         
         # Compute average surprise for this window (scalar per batch)
         # surprise_signal shape: (B, heads, T) - average over heads and time

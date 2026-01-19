@@ -245,7 +245,9 @@ def train(args):
         print(f"[INFO] Using model's suggested LR: {lr}")
     else:
         lr = args.lr
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=5e-3)  # Increased regularization
+    # Disable weight decay in debug/overfit modes to allow true overfitting
+    weight_decay = 0.0 if (args.debug_one or args.overfit) else 5e-3
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     
     # Scheduler Setup
     if args.scheduler == 'cosine':
@@ -388,7 +390,10 @@ def train(args):
             avg_train_loss = run_loss / len(train_loader)
             
             # Validation
-            model.eval()
+            # NOTE: Keep model in train mode so soft selection is used (not argmax)
+            # This allows validation MSE to show gradual improvement
+            # Hard selection (argmax) is only used for final inference/testing
+            model.train()  # Use soft selection for validation too
             val_loss = 0.0
             with torch.no_grad():
                 for batch in val_loader:

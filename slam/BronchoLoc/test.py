@@ -10,6 +10,7 @@ from scipy.spatial.transform import Rotation as R
 from scipy.spatial import cKDTree
 
 from ant import ActionPredictor
+from bird import BIRD, BIRD_CONFIGS
 from ant_dataset import AntDataset
 from constants import NORM_MAP_SCALE, MAP_QUERY_RADIUS, DEFAULT_MAX_MAP_POINTS, MAP_POINT_SPACING
 from utils.utils import load_centerline_points, filter_connected_component, density_based_sample, find_centerline_path, interpolate_trajectory
@@ -17,7 +18,8 @@ from utils.utils import load_centerline_points, filter_connected_component, dens
 
 def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
                    gt_traj_current, pred_traj_current, raw_gt_traj_current,
-                   current_gt, current_pred, current_raw_gt, frame_idx, total_frames):
+                   current_gt, current_pred, current_raw_gt, frame_idx, total_frames,
+                   bird_traj_current=None, current_bird=None):
     """
     Renders the 3D trajectory view to a numpy array.
     Style matches check_ball.py and check_traj.py.
@@ -29,13 +31,15 @@ def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
         centerline_pts: Centerline points array (N, 3) or None
         centerline_tree: KDTree for centerline points or None
         gt_traj_current: GT trajectory (centerline-projected) up to current frame (M, 3)
-        pred_traj_current: Pred trajectory up to current frame (M, 3)
+        pred_traj_current: ANT Pred trajectory up to current frame (M, 3)
         raw_gt_traj_current: Raw GT trajectory (actual camera positions) up to current frame (M, 3)
         current_gt: Current frame GT position - centerline projected (3,)
-        current_pred: Current frame Pred position (3,)
+        current_pred: Current frame ANT Pred position (3,)
         current_raw_gt: Current frame actual GT position (3,)
         frame_idx: Current frame index in window
         total_frames: Total frames in window
+        bird_traj_current: BIRD trajectory up to current frame (M, 3) or None
+        current_bird: Current frame BIRD position (3,) or None
         
     Returns:
         np.ndarray: Rendered image (H, W, 3) as uint8
@@ -98,22 +102,31 @@ def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
     # 8. Draw Predicted Trajectory (Red - building up as frames proceed)  
     if len(pred_traj_current) > 1:
         pred_line = pv.lines_from_points(pred_traj_current)
-        plotter.add_mesh(pred_line, color='red', line_width=4, label='Pred Trajectory')
+        plotter.add_mesh(pred_line, color='red', line_width=4, label='ANT Trajectory')
     
-    # 9. Draw current position markers (spheres)
+    # 9. Draw BIRD Trajectory (Cyan - if available)
+    if bird_traj_current is not None and len(bird_traj_current) > 1:
+        bird_line = pv.lines_from_points(bird_traj_current)
+        plotter.add_mesh(bird_line, color='cyan', line_width=4, label='BIRD Trajectory')
+    
+    # 10. Draw current position markers (spheres)
     plotter.add_mesh(pv.Sphere(radius=1.0, center=current_raw_gt), color='green')  # Raw GT
     plotter.add_mesh(pv.Sphere(radius=1.5, center=current_gt), color='blue')  # Centerline GT
-    plotter.add_mesh(pv.Sphere(radius=1.5, center=current_pred), color='red')  # Prediction
+    plotter.add_mesh(pv.Sphere(radius=1.5, center=current_pred), color='red')  # ANT Prediction
+    if current_bird is not None:
+        plotter.add_mesh(pv.Sphere(radius=1.5, center=current_bird), color='cyan')  # BIRD Prediction
     
-    # 10. Add Start label at first GT point
+    # 11. Add Start label at first GT point
     if len(gt_traj_current) > 0:
         plotter.add_point_labels([gt_traj_current[0]], ["Start"], point_size=8, 
                                  text_color='green', always_visible=True, font_size=12)
     
-    # 11. Add text overlay (black text for white background)
+    # 12. Add text overlay (black text for white background)
     text = f"Frame: {frame_idx+1}/{total_frames}\n"
     text += f"GT (mm):   X={current_gt[0]:+.2f} Y={current_gt[1]:+.2f} Z={current_gt[2]:+.2f}\n"
-    text += f"Pred (mm): X={current_pred[0]:+.2f} Y={current_pred[1]:+.2f} Z={current_pred[2]:+.2f}"
+    text += f"ANT (mm):  X={current_pred[0]:+.2f} Y={current_pred[1]:+.2f} Z={current_pred[2]:+.2f}"
+    if current_bird is not None:
+        text += f"\nBIRD (mm): X={current_bird[0]:+.2f} Y={current_bird[1]:+.2f} Z={current_bird[2]:+.2f}"
     plotter.add_text(text, position='upper_left', font_size=10, color='black')
     
     # 11. Set camera to good viewpoint (like check_ball.py)
@@ -259,11 +272,11 @@ def test(args):
         data_root=os.path.join(args.data_root, "sequences"),
         mode='test',
         img_size=args.img_size,
-        chain_mode=args.chain  # Enable overlapping windows for chain mode
+        chain_mode=args.chain_ant  # Enable overlapping windows for chain mode
     )
     
-    if args.chain:
-        print("[INFO] Chain mode enabled: windows overlap by 1 frame, predictions are chained.")
+    if args.chain_ant:
+        print("[INFO] Chain mode enabled for ANT: windows overlap by 1 frame, predictions are chained.")
         if args.batch_size != 1:
             print("[WARNING] Chain mode requires batch_size=1, setting to 1.")
             args.batch_size = 1
@@ -318,35 +331,80 @@ def test(args):
                 
         test_loader = SingleBatchLoader(first_batch)
     
-    # Load Model
-    model = ActionPredictor(
+    # Load ANT Model
+    ant_model = ActionPredictor(
         window_size=window_size,
         mode=args.model_mode,
         img_size=args.img_size
     ).to(device)
     
-    # Load checkpoint
-    if args.checkpoint:
-        ckpt_path = args.checkpoint
+    # Load ANT checkpoint
+    if args.ant_checkpoint:
+        ckpt_path = args.ant_checkpoint
     else:
-        print("[ERROR] No checkpoint specified!")
+        print("[ERROR] No ANT checkpoint specified (--ant_checkpoint)!")
         return
     
     if not os.path.exists(ckpt_path):
         print(f"[ERROR] Checkpoint not found: {ckpt_path}")
         return
         
-    print(f"[INFO] Loading checkpoint: {ckpt_path}")
+    print(f"[INFO] Loading ANT checkpoint: {ckpt_path}")
     checkpoint = torch.load(ckpt_path, map_location=device)
     
     # Handle both old (state_dict only) and new (full checkpoint) formats
     if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
-        print(f"[INFO] Loaded from epoch {checkpoint.get('epoch', '?')}")
+        ant_model.load_state_dict(checkpoint['model_state_dict'])
+        print(f"[INFO] ANT loaded from epoch {checkpoint.get('epoch', '?')}")
     else:
         # Old format: checkpoint IS the state dict
-        model.load_state_dict(checkpoint)
-    model.eval()
+        ant_model.load_state_dict(checkpoint)
+    ant_model.eval()
+    
+    # --- Load BIRD Model (optional) ---
+    bird_model = None
+    centerline_normalized = None
+    centerline_encoded = None
+    if args.bird_checkpoint:
+        print(f"[INFO] Loading BIRD checkpoint: {args.bird_checkpoint}")
+        bird_config = BIRD_CONFIGS[args.model_mode]
+        
+        # Load centerline for BIRD (needed for encoding)
+        centerline_path = os.path.join(args.data_root, "static", "centerline.npz")
+        centerline_pts_full = load_centerline_points(centerline_path)
+        
+        if centerline_pts_full is not None:
+            # Downsample centerline (like train_bird.py)
+            from utils.utils import density_based_sample
+            centerline_ds, _ = density_based_sample(centerline_pts_full, min_distance=MAP_POINT_SPACING)
+            print(f"[INFO] Downsampled centerline: {len(centerline_ds)} points")
+            
+            # Create BIRD model (pass ant_mode, BIRD gets visual_dim internally)
+            bird_model = BIRD(
+                ant_mode=args.model_mode,
+                **bird_config
+            ).to(device)
+            
+            # Load BIRD weights
+            bird_ckpt = torch.load(args.bird_checkpoint, map_location=device)
+            if isinstance(bird_ckpt, dict) and 'bird_state_dict' in bird_ckpt:
+                bird_model.load_state_dict(bird_ckpt['bird_state_dict'])
+                print(f"[INFO] BIRD loaded from epoch {bird_ckpt.get('epoch', '?')}")
+            elif isinstance(bird_ckpt, dict) and 'model_state_dict' in bird_ckpt:
+                bird_model.load_state_dict(bird_ckpt['model_state_dict'])
+                print(f"[INFO] BIRD loaded from epoch {bird_ckpt.get('epoch', '?')}")
+            else:
+                bird_model.load_state_dict(bird_ckpt)
+            bird_model.eval()
+            
+            # Encode centerline (normalized, like train_bird.py)
+            centerline_normalized = torch.tensor(centerline_ds / NORM_MAP_SCALE, dtype=torch.float32).to(device)
+            with torch.no_grad():
+                centerline_encoded = bird_model.encode_centerline(centerline_normalized)
+            print(f"[INFO] BIRD ready with {len(centerline_ds)} centerline points")
+        else:
+            print("[ERROR] Cannot load BIRD without centerline!")
+            args.bird_checkpoint = None
     
     # --- LOAD 3D ASSETS (like check_traj.py) ---
     # Load lung mesh
@@ -358,12 +416,12 @@ def test(args):
     else:
         print(f"[WARNING] Lung mesh not found at {lung_path}")
     
-    # Load centerline
+    # Load centerline (full, for visualization)
     centerline_path = os.path.join(args.data_root, "static", "centerline.npz")
     centerline_pts = load_centerline_points(centerline_path)
     centerline_tree = None
     if centerline_pts is not None:
-        print(f"[INFO] Loaded {len(centerline_pts)} centerline points")
+        print(f"[INFO] Loaded {len(centerline_pts)} centerline points for visualization")
         centerline_tree = cKDTree(centerline_pts)
     
     # --- INFERENCE AND VIDEO GENERATION ---
@@ -381,6 +439,7 @@ def test(args):
     # In chain mode, we carry forward the last predicted position as the anchor for the next window
     chain_pred_anchor = None  # Will be set after first window
     prev_seq_path = None  # Track sequence changes to reset chain
+    bird_mem_state = None  # BIRD memory state (chains across windows)
     
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(test_loader, desc="Processing batches")):
@@ -396,8 +455,13 @@ def test(args):
             # Get raw GT positions (global frame) for visualization
             raw_positions = batch['raw_positions'].numpy()  # (B, T, 3)
             
-            # Forward pass - model returns (pred_pos, delta_quat)
-            pred_pos, pred_quat = model(video, map_points=map_points, map_mask=map_mask)
+            # Forward pass - ANT model (get features if BIRD is enabled)
+            if bird_model is not None:
+                pred_pos, delta_pos, delta_quat, visual_tokens, attn_probs = ant_model(
+                    video, map_points=map_points, map_mask=map_mask, return_features=True
+                )
+            else:
+                pred_pos, pred_quat = ant_model(video, map_points=map_points, map_mask=map_mask)
             
             # Get GT translation - LOCAL frame
             # Dataset stores actions NORMALIZED (divided by NORM_MAP_SCALE in ant_dataset.py)
@@ -420,47 +484,78 @@ def test(args):
                 q0 = first_quat[b]  # (4,)
                 rot_0 = R.from_quat(q0)  # Rotation from frame 0's local to global
                 
-                # In chain mode, check if we're still in the same sequence
-                if args.chain:
-                    # Get current sequence path from dataset
-                    if hasattr(test_ds, 'dataset'):  # Subset
-                        sample_idx = test_ds.indices[batch_idx * args.batch_size + b]
-                        curr_seq_path = test_ds.dataset.samples[sample_idx][0]
-                    else:
-                        curr_seq_path = test_ds.samples[batch_idx * args.batch_size + b][0]
-                    
-                    # Reset chain if sequence changed
-                    if prev_seq_path is not None and curr_seq_path != prev_seq_path:
+                # Check if we're still in the same sequence (for chaining)
+                # Get current sequence path from dataset
+                if hasattr(test_ds, 'dataset'):  # Subset
+                    sample_idx = test_ds.indices[batch_idx * args.batch_size + b]
+                    curr_seq_path = test_ds.dataset.samples[sample_idx][0]
+                else:
+                    curr_seq_path = test_ds.samples[batch_idx * args.batch_size + b][0]
+                
+                # Reset chain if sequence changed
+                if prev_seq_path is not None and curr_seq_path != prev_seq_path:
+                    if args.chain_ant:
                         print(f"[CHAIN] New sequence detected, resetting chain anchor.")
                         chain_pred_anchor = None
-                    prev_seq_path = curr_seq_path
+                    if bird_model is not None:
+                        print(f"[BIRD] New sequence detected, resetting memory.")
+                        bird_mem_state = None
+                prev_seq_path = curr_seq_path
                 
                 # Transform LOCAL to GLOBAL coordinates
                 # GT always uses the actual GT anchor (for reference/comparison)
                 gt_window_global = rot_0.apply(gt_trans_local[b]) + p0_gt  # (T, 3)
                 
                 # For predictions: in chain mode, use the chained anchor instead of GT anchor
-                if args.chain:
+                if args.chain_ant:
                     if chain_pred_anchor is None:
                         # First window: initialize with GT first frame
                         chain_pred_anchor = p0_gt.copy()
-                        print(f"[CHAIN] Window 1: Starting from GT anchor at {p0_gt}")
+                        print(f"[Window 1] Starting from GT anchor at {p0_gt}")
                     
                     # Use the chain anchor (previous prediction end point) instead of GT
-                    # The model predicts in LOCAL frame of window start, so we transform
-                    # predictions relative to the chain anchor
                     pred_window_global = rot_0.apply(pred_pos_local[b]) + chain_pred_anchor  # (T, 3)
-                    
-                    # Calculate error compared to GT
-                    chain_error = np.linalg.norm(pred_window_global[-1] - gt_window_global[-1])
-                    print(f"[CHAIN] Window {batch_idx+1}: Pred anchor offset = {np.linalg.norm(chain_pred_anchor - p0_gt):.2f}mm, End error = {chain_error:.2f}mm")
+                    ant_anchor_offset = np.linalg.norm(chain_pred_anchor - p0_gt)
                     
                     # Update chain anchor to the END of this window's prediction
-                    # This becomes the START anchor for the next window
                     chain_pred_anchor = pred_window_global[-1].copy()
                 else:
                     # Normal mode: predictions use GT anchor (no cascading)
                     pred_window_global = rot_0.apply(pred_pos_local[b]) + p0_gt  # (T, 3)
+                    ant_anchor_offset = 0.0
+                
+                # --- BIRD Inference (if enabled) ---
+                bird_window_global = None
+                bird_anchor_offset = 0.0
+                if bird_model is not None:
+                    # Transform ANT predictions to global frame (normalized)
+                    ant_pos_global = torch.tensor(pred_window_global / NORM_MAP_SCALE, dtype=torch.float32).unsqueeze(0).to(device)
+                    
+                    # Get visual features for this sample
+                    vis_tokens_b = visual_tokens[b:b+1]  # (1, T, D)
+                    delta_pos_b = delta_pos[b:b+1]  # (1, T, 3)
+                    delta_quat_b = delta_quat[b:b+1]  # (1, T, 4)
+                    
+                    # Run BIRD (BIRD chains memory internally across windows of same sequence)
+                    p_refined, bird_mem_state, _, _ = bird_model(
+                        ant_pos_global, delta_pos_b, delta_quat_b, vis_tokens_b,
+                        centerline_encoded, centerline_normalized,
+                        mem_state=bird_mem_state
+                    )
+                    
+                    # Store BIRD predictions in global mm
+                    bird_window_global = p_refined.cpu().numpy()[0] * NORM_MAP_SCALE  # (T, 3)
+                    
+                    # Compute BIRD anchor offset (BIRD's first frame vs GT first frame)
+                    bird_anchor_offset = np.linalg.norm(bird_window_global[0] - gt_window_global[0])
+                
+                # --- Print Drift (BEFORE frame prints) ---
+                print_line = f"[Window {batch_idx+1}] ANT: drift={ant_anchor_offset:.2f}mm"
+                if bird_window_global is not None:
+                    drift_improvement = ant_anchor_offset - bird_anchor_offset
+                    drift_label = " (BIRD improved)" if drift_improvement > 0 else ""
+                    print_line += f" | BIRD: drift={bird_anchor_offset:.2f}mm | Δ={drift_improvement:+.2f}mm{drift_label}"
+                print(print_line)
                 
                 # Also keep local values for printing
                 gt_window_local = gt_trans_local[b]  # (T, 3)
@@ -519,12 +614,14 @@ def test(args):
                         raw_gt_traj_current = raw_traj_full[:f_idx+1]
                         current_raw_gt = raw_traj_full[f_idx]
                         
-                        # Render 3D view
+                        # Render 3D view (with optional BIRD trajectory)
+                        # Note: BIRD interpolation not implemented yet for interpolate mode
                         img_3d = render_3d_view(
                             plotter, lung_mesh, centerline_pts, centerline_tree,
                             gt_traj_current, pred_traj_current, raw_gt_traj_current,
                             current_gt_global, current_pred_global, current_raw_gt,
-                            f_idx, total_full_frames
+                            f_idx, total_full_frames,
+                            bird_traj_current=None, current_bird=None
                         )
                         
                         # Combine video frame and 3D view
@@ -557,20 +654,32 @@ def test(args):
                         current_gt_global = gt_window_global[t]
                         current_pred_global = pred_window_global[t]
                         
-                        print(f"[Batch {batch_idx+1} | Sample {b+1} | Frame {t+1}/{T}] "
+                        # Print GT, ANT Pred, and BIRD Pred for each frame
+                        print_line = (f"  [Frame {t+1}/{T}] "
                               f"GT: ({current_gt_global[0]:+.3f}, {current_gt_global[1]:+.3f}, {current_gt_global[2]:+.3f}) mm | "
-                              f"Pred: ({current_pred_global[0]:+.3f}, {current_pred_global[1]:+.3f}, {current_pred_global[2]:+.3f}) mm")
+                              f"ANT: ({current_pred_global[0]:+.3f}, {current_pred_global[1]:+.3f}, {current_pred_global[2]:+.3f}) mm")
+                        if bird_window_global is not None:
+                            current_bird_global = bird_window_global[t]
+                            print_line += f" | BIRD: ({current_bird_global[0]:+.3f}, {current_bird_global[1]:+.3f}, {current_bird_global[2]:+.3f}) mm"
+                        print(print_line)
                         
                         raw_gt_traj_current = raw_positions[b, :t+1]
                         current_raw_gt = raw_positions[b, t]
                         gt_traj_current = gt_window_global[:t+1]
                         pred_traj_current = pred_window_global[:t+1]
+                        # Get BIRD trajectory if available
+                        bird_traj_current = None
+                        current_bird_global = None
+                        if bird_window_global is not None:
+                            bird_traj_current = bird_window_global[:t+1]
+                            current_bird_global = bird_window_global[t]
                         
                         img_3d = render_3d_view(
                             plotter, lung_mesh, centerline_pts, centerline_tree,
                             gt_traj_current, pred_traj_current, raw_gt_traj_current,
                             current_gt_global, current_pred_global, current_raw_gt,
-                            t, T
+                            t, T,
+                            bird_traj_current=bird_traj_current, current_bird=current_bird_global
                         )
                         
                         h_3d, w_3d = img_3d.shape[:2]
@@ -587,6 +696,17 @@ def test(args):
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                         
                         all_frames.append(combined_bgr)
+                    
+                    # --- Print Error Summary (AFTER all frame prints) ---
+                    ant_error = np.linalg.norm(pred_window_global - gt_window_global, axis=1).mean()
+                    summary_line = f"[Window {batch_idx+1} Summary] ANT: error={ant_error:.2f}mm"
+                    if bird_window_global is not None:
+                        bird_error = np.linalg.norm(bird_window_global - gt_window_global, axis=1).mean()
+                        improvement = ant_error - bird_error
+                        improved_label = " (BIRD improved)" if improvement > 0 else ""
+                        summary_line += f" | BIRD: error={bird_error:.2f}mm | Δ={improvement:+.2f}mm{improved_label}"
+                    print(summary_line)
+
     
     plotter.close()
     
@@ -621,7 +741,8 @@ if __name__ == "__main__":
     # Same arguments as train.py
     parser.add_argument('--data_root', type=str, default='./dataset')
     parser.add_argument('--checkpoint_dir', type=str, default='./checkpoints')
-    parser.add_argument('--checkpoint', type=str, default=None, help="Path to specific checkpoint file")
+    parser.add_argument('--ant_checkpoint', type=str, default=None, help="Path to ANT checkpoint file (required)")
+    parser.add_argument('--bird_checkpoint', type=str, default=None, help="Path to BIRD checkpoint file (optional)")
     parser.add_argument('--model_mode', type=str, default='s', choices=['xs', 's', 'b', 'm', 'l'])
     parser.add_argument('--batch_size', type=int, default=1, help="Batch size (1 recommended for video)")
     parser.add_argument('--workers', type=int, default=4)
@@ -633,8 +754,9 @@ if __name__ == "__main__":
     # Test-specific arguments
     parser.add_argument('--output_dir', type=str, default='./dataset/test/results', help="Output directory for videos")
     parser.add_argument('--fps', type=int, default=10, help="Output video FPS")
-    parser.add_argument('--chain', action='store_true', help="Chain predictions: last pred of window N becomes anchor for window N+1")
+    parser.add_argument('--chain_ant', action='store_true', help="Chain ANT predictions: last pred of window N becomes anchor for window N+1")
     parser.add_argument('--interpolate', action='store_true', help="Interpolate trajectory along centerline for smooth visualization")
     
     args = parser.parse_args()
     test(args)
+

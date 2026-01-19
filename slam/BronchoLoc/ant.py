@@ -379,13 +379,20 @@ class ActionPredictor(nn.Module):
         if map_mask is not None:
             scores = scores.masked_fill(~map_mask, float('-inf'))
         
-        # 7. Compute Probabilities
+        # 7. Compute Probabilities (soft, used for CE loss during training)
         probs = F.softmax(scores, dim=-1)  # (B, T, K)
         probs = torch.nan_to_num(probs, nan=0.0)
         
-        # 8. Weighted Sum of Map Points (Soft Selection)
-        # Output position is constrained to convex hull of candidates
-        pred_pos = torch.sum(probs.unsqueeze(-1) * map_points, dim=2)  # (B, T, 3)
+        # 8. Position Selection
+        # Training: soft selection (weighted sum) - allows gradient flow and overfitting
+        # Inference: hard selection (argmax) - prediction is EXACTLY on centerline
+        if self.training:
+            # Soft selection during training for stable gradients
+            pred_pos = torch.sum(probs.unsqueeze(-1) * map_points, dim=2)  # (B, T, 3)
+        else:
+            # Inference: pure argmax (one-hot) - prediction is EXACTLY on centerline
+            hard_probs = F.one_hot(scores.argmax(dim=-1), num_classes=scores.size(-1)).float()
+            pred_pos = torch.sum(hard_probs.unsqueeze(-1) * map_points, dim=2)  # (B, T, 3)
         
         if return_features:
             # Return all features for BIRD:

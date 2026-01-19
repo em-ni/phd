@@ -290,19 +290,33 @@ def train(args):
                     video = batch['video'].unsqueeze(0).to(device)
                     map_points = batch['map_points'].unsqueeze(0).to(device)
                     map_mask = batch['map_mask'].unsqueeze(0).to(device)
-                    target = batch['actions'][:, :3].unsqueeze(0).to(device)
+                    # Use global raw_positions (not local actions) - normalized same as centerline
+                    target = (batch['raw_positions'] / NORM_MAP_SCALE).unsqueeze(0).to(device)  # (1, T, 3)
                     
-                    # Get frozen ANT predictions
+                    # Get first frame pose for local→global transform
+                    first_pos = batch['first_frame_pos'].numpy()  # (3,)
+                    first_quat = batch['first_frame_quat'].numpy()  # (4,)
+                    
+                    # Get frozen ANT predictions (in local frame)
                     with torch.no_grad():
-                        ant_pos, delta_pos, delta_quat, visual_tokens, _ = ant_model(
+                        ant_pos_local, delta_pos, delta_quat, visual_tokens, _ = ant_model(
                             video, map_points, map_mask, return_features=True
                         )
+                        
+                        # Transform ANT predictions from local to global frame
+                        # Local coords are relative to first frame, normalized by NORM_MAP_SCALE
+                        # ant_pos_local: (1, T, 3) normalized, need to denorm, rotate, translate, renorm
+                        from scipy.spatial.transform import Rotation as R
+                        rot = R.from_quat(first_quat)
+                        ant_pos_local_np = ant_pos_local.cpu().numpy()[0] * NORM_MAP_SCALE  # (T, 3) in mm
+                        ant_pos_global_np = rot.apply(ant_pos_local_np) + first_pos  # (T, 3) global mm
+                        ant_pos = torch.tensor(ant_pos_global_np / NORM_MAP_SCALE, dtype=torch.float32).unsqueeze(0).to(device)
                     
                     # Detach mem_state for proper streaming
                     if mem_state is not None:
                         mem_state = mem_state_detach(mem_state)
                     
-                    # BIRD forward (get surprise)
+                    # BIRD forward (get surprise) - now ant_pos is in global frame
                     p_refined, mem_state, _, avg_surprise = bird_model(
                         ant_pos, delta_pos, delta_quat, visual_tokens,
                         centerline_encoded, centerline_normalized,
@@ -357,8 +371,9 @@ def train(args):
             
             # =========================================================
             # VALIDATION PHASE
+            # NOTE: Keep model in train mode so soft selection is used
             # =========================================================
-            bird_model.eval()
+            bird_model.train()  # Use soft selection for validation too
             val_loss = 0.0
             val_windows = 0
             
@@ -375,11 +390,24 @@ def train(args):
                         video = batch['video'].unsqueeze(0).to(device)
                         map_points = batch['map_points'].unsqueeze(0).to(device)
                         map_mask = batch['map_mask'].unsqueeze(0).to(device)
-                        target = batch['actions'][:, :3].unsqueeze(0).to(device)
+                        # Use global raw_positions (not local actions) - normalized same as centerline
+                        target = (batch['raw_positions'] / NORM_MAP_SCALE).unsqueeze(0).to(device)  # (1, T, 3)
                         
-                        ant_pos, delta_pos, delta_quat, visual_tokens, _ = ant_model(
+                        # Get first frame pose for local→global transform
+                        first_pos = batch['first_frame_pos'].numpy()  # (3,)
+                        first_quat = batch['first_frame_quat'].numpy()  # (4,)
+                        
+                        # Get ANT predictions and transform to global
+                        ant_pos_local, delta_pos, delta_quat, visual_tokens, _ = ant_model(
                             video, map_points, map_mask, return_features=True
                         )
+                        
+                        # Transform ANT predictions from local to global frame
+                        from scipy.spatial.transform import Rotation as R
+                        rot = R.from_quat(first_quat)
+                        ant_pos_local_np = ant_pos_local.cpu().numpy()[0] * NORM_MAP_SCALE
+                        ant_pos_global_np = rot.apply(ant_pos_local_np) + first_pos
+                        ant_pos = torch.tensor(ant_pos_global_np / NORM_MAP_SCALE, dtype=torch.float32).unsqueeze(0).to(device)
                         
                         if mem_state is not None:
                             mem_state = mem_state_detach(mem_state)
@@ -441,7 +469,7 @@ if __name__ == "__main__":
                         help="Number of training epochs")
     parser.add_argument('--top_k_surprise', type=int, default=4,
                         help="Train on top-K most surprising windows per sequence")
-    parser.add_argument('--lr', type=float, default=1e-4,
+    parser.add_argument('--lr', type=float, default=3e-4,
                         help="Learning rate")
     
     # Checkpoints
