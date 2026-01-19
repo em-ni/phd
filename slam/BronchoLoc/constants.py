@@ -1,7 +1,7 @@
 # Airways Neighborhood Tracker (ANT) + Bronchial Intraoperative Route Discriminator (BIRD)
 
 # --- MAP CONFIGURATION ---
-MAP_QUERY_RADIUS = 20.0 # mm
+MAP_QUERY_RADIUS = 16.0 # mm
 
 # Normalization for Map Points and Targets 
 NORM_MAP_SCALE = 1.0 # mm - using 1.0 keeps values in mm scale (matches working commit)
@@ -10,7 +10,7 @@ NORM_MAP_SCALE = 1.0 # mm - using 1.0 keeps values in mm scale (matches working 
 DEFAULT_MAX_MAP_POINTS = 64
 
 # Minimum spacing between sampled map points (for density-based sampling)
-MAP_POINT_SPACING = 2.0  # mm - ensures constant density regardless of branch count
+MAP_POINT_SPACING = 1.5  # mm - ensures constant density regardless of branch count
 
 # Heuristic threshold for connectivity
 # Increased to 2.0mm to be robust against gaps in the centerline point cloud
