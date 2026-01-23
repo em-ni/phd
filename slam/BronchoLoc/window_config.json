@@ -1,4 +1,5 @@
 {
   "window_size": 10,
-  "frame_skip": 60
+  "frame_skip": 60,
+  "phantom_frame_skip": 20
 }

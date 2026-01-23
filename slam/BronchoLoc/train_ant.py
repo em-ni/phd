@@ -72,19 +72,34 @@ def train(args):
     
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     
-    # Initialize full dataset
-    full_dataset = AntDataset(
-        data_root=os.path.join(args.data_root, "sequences"), 
-        mode='train', 
+    # Determine frame_skip override for phantom finetuning
+    dataset_kwargs = dict(
+        data_root=os.path.join(args.data_root, "sequences"),
+        mode='train',
         img_size=args.img_size
     )
+    
+    if args.finetune_phantom:
+        # Load phantom_frame_skip from config
+        import json
+        config_path = os.path.join(args.data_root, "..", "window_config.json")
+        if not os.path.exists(config_path):
+            config_path = "window_config.json"
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        phantom_frame_skip = config.get('phantom_frame_skip', config.get('frame_skip', 60))
+        dataset_kwargs['frame_skip'] = phantom_frame_skip
+        print(f"[INFO] Using phantom_frame_skip={phantom_frame_skip}")
+    
+    # Initialize full dataset
+    full_dataset = AntDataset(**dataset_kwargs)
     
     window_size = full_dataset.window_size
     print(f"[INFO] Using window_size={window_size}, frame_skip={full_dataset.frame_skip}")
     
     # --- DEBUGGING / OVERFITTING / FINETUNING MODES ---
     if args.finetune_phantom:
-        # Finetune on phantom sequences only
+        # Finetune on phantom sequences only with k-fold CV
         print("[INFO] Finetune-phantom mode: Training on 'seq_phantom_*' sequences only.")
         indices = [i for i, (vp, _, _) in enumerate(full_dataset.samples) if "seq_phantom" in vp]
         
@@ -92,7 +107,7 @@ def train(args):
             print("[ERROR] No 'seq_phantom_*' sequences found in dataset!")
             return
         
-        # Use same sequence-level split logic for phantom data
+        # Group windows by sequence
         from collections import defaultdict
         seq_to_indices = defaultdict(list)
         for idx in indices:
@@ -100,28 +115,75 @@ def train(args):
             seq_name = os.path.basename(os.path.dirname(vid_path))
             seq_to_indices[seq_name].append(idx)
         
-        all_seqs = list(seq_to_indices.keys())
-        n_train_seqs = max(1, int(0.8 * len(all_seqs)))
+        all_seqs = sorted(list(seq_to_indices.keys()))
+        n_seqs = len(all_seqs)
         
-        import random
-        random.shuffle(all_seqs)
-        train_seqs = all_seqs[:n_train_seqs]
-        val_seqs = all_seqs[n_train_seqs:]
-        
-        train_indices = []
-        val_indices = []
-        for seq in train_seqs:
-            train_indices.extend(seq_to_indices[seq])
-        for seq in val_seqs:
-            val_indices.extend(seq_to_indices[seq])
-        
-        print(f"[INFO] Phantom sequences: {len(train_seqs)} train, {len(val_seqs)} val")
-        print(f"[INFO] Train sequences: {train_seqs}")
-        print(f"[INFO] Val sequences: {val_seqs}")
-        print(f"[INFO] Windows: {len(train_indices)} train, {len(val_indices)} val")
-        
-        train_ds = torch.utils.data.Subset(full_dataset, train_indices)
-        val_ds = torch.utils.data.Subset(full_dataset, val_indices)
+        if args.k_folds > 1 and n_seqs >= args.k_folds:
+            # K-fold CV: store folds for rotation during training
+            print(f"[INFO] Using {args.k_folds}-fold CV across {n_seqs} phantom sequences")
+            
+            # Create fold assignments
+            fold_size = n_seqs // args.k_folds
+            folds = []
+            for i in range(args.k_folds):
+                start_idx = i * fold_size
+                if i == args.k_folds - 1:
+                    # Last fold gets remaining sequences
+                    fold_seqs = all_seqs[start_idx:]
+                else:
+                    fold_seqs = all_seqs[start_idx:start_idx + fold_size]
+                fold_indices = []
+                for seq in fold_seqs:
+                    fold_indices.extend(seq_to_indices[seq])
+                folds.append((fold_seqs, fold_indices))
+                print(f"[INFO] Fold {i+1}: {fold_seqs} ({len(fold_indices)} windows)")
+            
+            # Store folds for use in training loop
+            args._phantom_folds = folds
+            args._phantom_all_indices = indices
+            args._phantom_seq_to_indices = seq_to_indices
+            
+            # Initial fold 0 as val, rest as train
+            val_fold_idx = 0
+            val_seqs, val_indices = folds[val_fold_idx]
+            train_indices = []
+            train_seqs = []
+            for i, (seqs, idxs) in enumerate(folds):
+                if i != val_fold_idx:
+                    train_indices.extend(idxs)
+                    train_seqs.extend(seqs)
+            
+            print(f"[INFO] Starting with Fold 0 as validation")
+            print(f"[INFO] Train sequences: {train_seqs}")
+            print(f"[INFO] Val sequences: {val_seqs}")
+            print(f"[INFO] Windows: {len(train_indices)} train, {len(val_indices)} val")
+            
+            train_ds = torch.utils.data.Subset(full_dataset, train_indices)
+            val_ds = torch.utils.data.Subset(full_dataset, val_indices)
+        else:
+            # Fallback to 80/20 split if not enough sequences for k-fold
+            print(f"[INFO] Using 80/20 split (not enough sequences for {args.k_folds}-fold CV)")
+            n_train_seqs = max(1, int(0.8 * n_seqs))
+            
+            import random
+            random.shuffle(all_seqs)
+            train_seqs = all_seqs[:n_train_seqs]
+            val_seqs = all_seqs[n_train_seqs:]
+            
+            train_indices = []
+            val_indices = []
+            for seq in train_seqs:
+                train_indices.extend(seq_to_indices[seq])
+            for seq in val_seqs:
+                val_indices.extend(seq_to_indices[seq])
+            
+            print(f"[INFO] Phantom sequences: {len(train_seqs)} train, {len(val_seqs)} val")
+            print(f"[INFO] Train sequences: {train_seqs}")
+            print(f"[INFO] Val sequences: {val_seqs}")
+            print(f"[INFO] Windows: {len(train_indices)} train, {len(val_indices)} val")
+            
+            train_ds = torch.utils.data.Subset(full_dataset, train_indices)
+            val_ds = torch.utils.data.Subset(full_dataset, val_indices)
     
     elif args.sim_only:
         # Train on simulation sequences only (exclude phantom)
@@ -333,6 +395,26 @@ def train(args):
         for epoch in range(start_epoch, args.epochs):
             print(f"\nEpoch {epoch+1}/{args.epochs}")
             
+            # K-fold rotation for phantom finetuning
+            if hasattr(args, '_phantom_folds') and args.k_folds > 1:
+                folds = args._phantom_folds
+                val_fold_idx = epoch % args.k_folds
+                val_seqs, val_indices = folds[val_fold_idx]
+                train_indices = []
+                for i, (seqs, idxs) in enumerate(folds):
+                    if i != val_fold_idx:
+                        train_indices.extend(idxs)
+                
+                # Recreate dataloaders with new fold split
+                train_ds = torch.utils.data.Subset(full_dataset, train_indices)
+                val_ds = torch.utils.data.Subset(full_dataset, val_indices)
+                train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
+                val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
+                
+                if epoch == start_epoch or (epoch % args.k_folds == 0):
+                    print(f"[FOLD] Epoch {epoch+1}: Val fold {val_fold_idx+1}/{args.k_folds} = {val_seqs}")
+            
+            
             model.train()
             run_loss = 0.0
             
@@ -467,6 +549,8 @@ if __name__ == "__main__":
     parser.add_argument('--overfit', action='store_true', help="Overfit on seq_test only")
     parser.add_argument('--finetune_phantom', action='store_true', 
                         help="Finetune on phantom sequences (seq_phantom_*) only")
+    parser.add_argument('--k_folds', type=int, default=5,
+                        help="Number of folds for k-fold CV during phantom finetuning (default: 5)")
     parser.add_argument('--sim_only', action='store_true', 
                         help="Train on simulation sequences only (exclude seq_phantom_*)")
     parser.add_argument('--debug_one', action='store_true', help="Overfit on a SINGLE batch")

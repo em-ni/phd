@@ -1,7 +1,7 @@
 # Airways Neighborhood Tracker (ANT) + Bronchial Intraoperative Route Discriminator (BIRD)
 
 # --- MAP CONFIGURATION ---
-MAP_QUERY_RADIUS = 16.0 # mm
+MAP_QUERY_RADIUS = 20.0 # mm
 
 # Normalization for Map Points and Targets 
 NORM_MAP_SCALE = 1.0 # mm - using 1.0 keeps values in mm scale (matches working commit)

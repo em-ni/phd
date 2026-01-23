@@ -268,12 +268,31 @@ def test(args):
     os.makedirs(args.output_dir, exist_ok=True)
     
     # Initialize dataset (window_size/frame_skip loaded from config inside dataset)
-    full_dataset = AntDataset(
+    # Override frame_skip if specified, or auto-detect for phantom sequences
+    dataset_kwargs = dict(
         data_root=os.path.join(args.data_root, "sequences"),
         mode='test',
         img_size=args.img_size,
         chain_mode=args.chain_ant  # Enable overlapping windows for chain mode
     )
+    
+    # Check if testing phantom sequences - use phantom_frame_skip
+    if args.frame_skip is not None:
+        dataset_kwargs['frame_skip'] = args.frame_skip
+        print(f"[INFO] Overriding frame_skip to {args.frame_skip}")
+    elif args.seq_filter and 'phantom' in args.seq_filter.lower():
+        # Auto-detect phantom sequence and use phantom_frame_skip
+        import json
+        config_path = os.path.join(args.data_root, "..", "window_config.json")
+        if not os.path.exists(config_path):
+            config_path = "window_config.json"
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        phantom_frame_skip = config.get('phantom_frame_skip', config.get('frame_skip', 60))
+        dataset_kwargs['frame_skip'] = phantom_frame_skip
+        print(f"[INFO] Detected phantom sequence, using phantom_frame_skip={phantom_frame_skip}")
+    
+    full_dataset = AntDataset(**dataset_kwargs)
     
     if args.chain_ant:
         print("[INFO] Chain mode enabled for ANT: windows overlap by 1 frame, predictions are chained.")
@@ -294,12 +313,41 @@ def test(args):
         indices = [i for i, (vp, _, _) in enumerate(full_dataset.samples) if args.seq_filter in vp]
         
         if not indices:
-            print(f"[ERROR] No sequences matching '{args.seq_filter}' found in dataset!")
-            return
-        
-        print(f"[INFO] Found {len(indices)} windows matching filter.")
-        full_dataset = torch.utils.data.Subset(full_dataset, indices)
-        test_ds = full_dataset
+            # Try as a relative path to a sequence directory
+            alt_seq_path = os.path.join(args.data_root, args.seq_filter)
+            if os.path.isdir(alt_seq_path):
+                print(f"[INFO] Sequence not in dataset/sequences, trying as path: {alt_seq_path}")
+                # Create a new dataset rooted at the parent of the sequence
+                parent_dir = os.path.dirname(alt_seq_path)
+                alt_dataset_kwargs = dict(
+                    data_root=parent_dir,
+                    mode='test',
+                    img_size=args.img_size,
+                    chain_mode=args.chain_ant
+                )
+                if args.frame_skip is not None:
+                    alt_dataset_kwargs['frame_skip'] = args.frame_skip
+                
+                full_dataset = AntDataset(**alt_dataset_kwargs)
+                # Filter to only the specified sequence
+                seq_name = os.path.basename(alt_seq_path)
+                indices = [i for i, (vp, _, _) in enumerate(full_dataset.samples) if seq_name in vp]
+                
+                if not indices:
+                    print(f"[ERROR] No sequences found at '{alt_seq_path}'!")
+                    return
+                    
+                print(f"[INFO] Found {len(indices)} windows at custom path.")
+                full_dataset = torch.utils.data.Subset(full_dataset, indices)
+                test_ds = full_dataset
+            else:
+                print(f"[ERROR] No sequences matching '{args.seq_filter}' found in dataset!")
+                print(f"[ERROR] Also tried as path: {alt_seq_path} (not found)")
+                return
+        else:
+            print(f"[INFO] Found {len(indices)} windows matching filter.")
+            full_dataset = torch.utils.data.Subset(full_dataset, indices)
+            test_ds = full_dataset
     # --- DEBUGGING / OVERFITTING MODES (same as train.py) ---
     elif args.overfit:
         print("[INFO] Overfitting mode: Testing on 'seq_test' only.")
@@ -599,6 +647,14 @@ def test(args):
                         centerline_pts, centerline_tree
                     )
                     
+                    # Interpolate BIRD positions if available
+                    bird_all_positions = None
+                    if bird_window_global is not None:
+                        bird_all_positions = interpolate_positions_for_frames(
+                            bird_window_global, keyframe_indices, total_full_frames,
+                            centerline_pts, centerline_tree
+                        )
+                    
                     # Process each frame (display_frames is already RGB uint8, HWC format)
                     for f_idx in range(total_full_frames):
                         # Use original quality frame directly (already RGB)
@@ -614,14 +670,20 @@ def test(args):
                         raw_gt_traj_current = raw_traj_full[:f_idx+1]
                         current_raw_gt = raw_traj_full[f_idx]
                         
-                        # Render 3D view (with optional BIRD trajectory)
-                        # Note: BIRD interpolation not implemented yet for interpolate mode
+                        # BIRD trajectory up to current frame
+                        bird_traj_current = None
+                        current_bird = None
+                        if bird_all_positions is not None:
+                            bird_traj_current = bird_all_positions[:f_idx+1]
+                            current_bird = bird_all_positions[f_idx]
+                        
+                        # Render 3D view (with BIRD trajectory)
                         img_3d = render_3d_view(
                             plotter, lung_mesh, centerline_pts, centerline_tree,
                             gt_traj_current, pred_traj_current, raw_gt_traj_current,
                             current_gt_global, current_pred_global, current_raw_gt,
                             f_idx, total_full_frames,
-                            bird_traj_current=None, current_bird=None
+                            bird_traj_current=bird_traj_current, current_bird=current_bird
                         )
                         
                         # Combine video frame and 3D view
@@ -721,8 +783,20 @@ def test(args):
     print(f"[INFO] Saving video to {output_path}")
     
     if len(all_frames) > 0:
+        # Check for inconsistent frame shapes
+        shapes = [f.shape for f in all_frames]
+        unique_shapes = set(shapes)
+        if len(unique_shapes) > 1:
+            print(f"[WARNING] Inconsistent frame shapes detected: {unique_shapes}")
+            # Find the most common shape and filter to only those frames
+            from collections import Counter
+            shape_counts = Counter(shapes)
+            most_common_shape = shape_counts.most_common(1)[0][0]
+            print(f"[WARNING] Keeping only frames with shape {most_common_shape}")
+            all_frames = [f for f in all_frames if f.shape == most_common_shape]
+        
         h, w = all_frames[0].shape[:2]
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # H.264 codec for better compatibility
         out = cv2.VideoWriter(output_path, fourcc, args.fps, (w, h))
         
         for frame in tqdm(all_frames, desc="Writing video"):
@@ -756,6 +830,7 @@ if __name__ == "__main__":
     parser.add_argument('--fps', type=int, default=10, help="Output video FPS")
     parser.add_argument('--chain_ant', action='store_true', help="Chain ANT predictions: last pred of window N becomes anchor for window N+1")
     parser.add_argument('--interpolate', action='store_true', help="Interpolate trajectory along centerline for smooth visualization")
+    parser.add_argument('--frame_skip', type=int, default=None, help="Override frame_skip (default: use config). Use 20 for phantom sequences.")
     
     args = parser.parse_args()
     test(args)

@@ -63,7 +63,7 @@ class AntDataset(Dataset):
     Handles loading video frames, trajectories, and static airway maps, 
     and generating training samples consisting of video clips, map points, and target actions.
     """
-    def __init__(self, data_root, mode='train', max_map_points=DEFAULT_MAX_MAP_POINTS, img_size=128, chain_mode=False, augment=True):
+    def __init__(self, data_root, mode='train', max_map_points=DEFAULT_MAX_MAP_POINTS, img_size=128, chain_mode=False, augment=True, frame_skip=None):
         """
         Args:
             data_root (str): Path to the directory containing sequence folders.
@@ -73,6 +73,7 @@ class AntDataset(Dataset):
             img_size (int): Spatial resolution to resize video frames to (img_size x img_size).
             chain_mode (bool): If True, windows overlap by 1 frame (for chained prediction testing).
             augment (bool): If True and mode='train', apply data augmentation (color jitter, noise).
+            frame_skip (int, optional): Override frame_skip from config. Use for phantom sequences with different FPS.
         """
         self.data_root = data_root
         self.mode = mode
@@ -84,7 +85,9 @@ class AntDataset(Dataset):
         
         # Load window config from file
         from constants import load_window_config
-        self.window_size, self.frame_skip = load_window_config()
+        self.window_size, config_frame_skip = load_window_config()
+        # Allow override of frame_skip
+        self.frame_skip = frame_skip if frame_skip is not None else config_frame_skip
         print(f"[DATASET] Loaded config: window_size={self.window_size}, frame_skip={self.frame_skip}")
         
         # --- LOAD MAP (CENTERLINE) ---

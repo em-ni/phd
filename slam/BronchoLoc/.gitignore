@@ -4,5 +4,6 @@ dataset/phantom/old/*
 dataset/sequences/*
 dataset/static/*
 dataset/test/*
+dataset/eval/*
 check/videos/*
 check/window/*
