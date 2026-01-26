@@ -582,6 +582,27 @@ TRIPLETS = [
     (1.5, 0.005, 300.0)
 ]
 
+def process_combination_subprocess(folder_path, folder_name, scan_output_dir, sigma, thresh, gamma, count, total_combinations):
+    """Wrapper that loads DICOM in the subprocess to avoid pickle issues on Windows."""
+    # Check if already exists first (skip early)
+    filename = f"{folder_name}_s{sigma}_t{thresh}_g{int(gamma)}.stl"
+    output_file = os.path.join(scan_output_dir, filename)
+    
+    if os.path.exists(output_file):
+        print(f"\n--- Combination {count}/{total_combinations}: Sigma={sigma}, Thresh={thresh}, Gamma={gamma} ---")
+        print(f"[Skip] {output_file} already exists.")
+        return
+    
+    # Load DICOM in subprocess
+    img, mod = loadLargestSeries(folder_path)
+    if img is None:
+        print(f"[Error] Could not load DICOM from {folder_path}")
+        return
+    
+    # Now process
+    process_combination_safe(img, folder_name, scan_output_dir, sigma, thresh, gamma, count, total_combinations)
+
+
 def process_folder(folder_path, output_dir):
     folder_name = os.path.basename(os.path.normpath(folder_path))
     
@@ -590,36 +611,37 @@ def process_folder(folder_path, output_dir):
     if not os.path.exists(scan_output_dir):
         os.makedirs(scan_output_dir)
 
-    # Check if all outputs already exist to skip loading DICOM
-    all_exist = True
+    # Check if all outputs already exist to skip this folder entirely
+    remaining_triplets = []
     for sigma, thresh, gamma in TRIPLETS:
         filename = f"{folder_name}_s{sigma}_t{thresh}_g{int(gamma)}.stl"
         output_file = os.path.join(scan_output_dir, filename)
         if not os.path.exists(output_file):
-            all_exist = False
-            break
+            remaining_triplets.append((sigma, thresh, gamma))
     
-    if all_exist:
+    if not remaining_triplets:
         print(f"[Skip] Scan {folder_name} already fully processed.")
         return
 
-    print(f"\n=== Processing {folder_name} ===")
+    print(f"\n=== Processing {folder_name} ({len(remaining_triplets)}/{len(TRIPLETS)} remaining) ===")
     
-    # 1. Load DICOM (Once per scan)
-    img, mod = loadLargestSeries(folder_path)
-    if img is None:
-        print(f"[Error] Could not load DICOM from {folder_path}")
-        return
-
     total_combinations = len(TRIPLETS)
     
     for i, (sigma, thresh, gamma) in enumerate(TRIPLETS):
         count = i + 1
         
+        # Check if this specific file already exists (for resume)
+        filename = f"{folder_name}_s{sigma}_t{thresh}_g{int(gamma)}.stl"
+        output_file = os.path.join(scan_output_dir, filename)
+        if os.path.exists(output_file):
+            print(f"[Skip] Combination {count}/{total_combinations} (s{sigma}_t{thresh}_g{gamma}) already exists.")
+            continue
+        
         # Run in a separate process to prevent OOM kills from stopping the batch
+        # Pass folder_path instead of img to avoid pickle issues on Windows
         p = multiprocessing.Process(
-            target=process_combination_safe,
-            args=(img, folder_name, scan_output_dir, sigma, thresh, gamma, count, total_combinations)
+            target=process_combination_subprocess,
+            args=(folder_path, folder_name, scan_output_dir, sigma, thresh, gamma, count, total_combinations)
         )
         p.start()
         p.join()

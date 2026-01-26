@@ -1764,7 +1764,10 @@ Viewer.ViewpointZ: -1.8
         
         # If output dir exists, append random suffix to avoid overwrite
         if os.path.exists(self.dataset_seq_dir):
-            seq_name = f"seq_{int(time.time())}_{np.random.randint(0,1000)}"
+            if hasattr(self, "current_branch_name"):
+                seq_name = f"seq_{self.current_branch_name}_{int(time.time())}_{np.random.randint(0,1000)}"
+            else:
+                seq_name = f"seq_{int(time.time())}_{np.random.randint(0,1000)}"
             self.dataset_seq_dir = os.path.join(self.data_folder, self.videos_dir, seq_name)
             
         os.makedirs(self.dataset_seq_dir, exist_ok=True)
