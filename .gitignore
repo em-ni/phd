@@ -1,6 +1,6 @@
 *__pycache__
 
-magnetic_tracking/videos*
+perception/magnetic_tracking/videos*
 
 slam/ORB_SLAM3/em/run/datasets
 slam/ORB_SLAM3/build
@@ -10,19 +10,19 @@ slam/ORB_SLAM3/Thirdparty/Sophus/build
 slam/ORB_SLAM3/Vocabulary/ORBvoc.txt
 slam/live-vlam/*.mp4
 
-vision/data/
-vision/data_collection/
-vision/object_detection_YOLOv3/
-vision/runs/
-vision/yolov10l.pt
-vision/yolov10n.pt
-vision/yolov10x.pt
-vision/yolov3u.pt
-vision/yolov8n.pt
-vision/object_detection/data_collection/data/labelImg
-vision/object_detection/data/formatted_bronchoscopy.zip 
-vision/object_detection/object_detection_YOLOv3/PASCAL_VOC
-vision/object_detection/object_detection_YOLOv3/checkpoints.pth.tar
-vision/object_detection/object_detection_YOLOv3/ignore
-vision/object_detection/yolo*.pt
-vision/object_detection/runs
+perception/vision/data/
+perception/vision/data_collection/
+perception/vision/object_detection_YOLOv3/
+perception/vision/runs/
+perception/vision/yolov10l.pt
+perception/vision/yolov10n.pt
+perception/vision/yolov10x.pt
+perception/vision/yolov3u.pt
+perception/vision/yolov8n.pt
+perception/vision/object_detection/data_collection/data/labelImg
+perception/vision/object_detection/data/formatted_bronchoscopy.zip 
+perception/vision/object_detection/object_detection_YOLOv3/PASCAL_VOC
+perception/vision/object_detection/object_detection_YOLOv3/checkpoints.pth.tar
+perception/vision/object_detection/object_detection_YOLOv3/ignore
+perception/vision/object_detection/yolo*.pt
+perception/vision/object_detection/runs

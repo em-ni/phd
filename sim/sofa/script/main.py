@@ -1,4 +1,4 @@
-# runSofa -l /home/emanuele/Desktop/github/sim/sofa/build/v22.12/lib/libSofaPython3.so ./main.py 
+# runSofa -l /home/emanuele/Desktop/github/phd/sim/sofa/build/v22.12/lib/libSofaPython3.so ./main.py 
 
 import Sofa
 from utils.multiPressureController import MultiPressureController
