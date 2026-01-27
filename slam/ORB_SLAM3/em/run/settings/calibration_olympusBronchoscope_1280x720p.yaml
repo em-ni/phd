@@ -4,7 +4,7 @@ Stereo.ThDepth: 40.0
 Stereo.b: 0.07732
 RGBD.DepthMapFactor: 5000.0
 Camera.bf: 62.4175458258
-Camera.fps: 10
+Camera.fps: 30
 Camera.height: 720
 Camera.type: PinHole
 Camera.width: 1280
@@ -20,7 +20,7 @@ Camera1.p2: -0.00012786969447717484
 File.version: '1.0'
 ORBextractor.iniThFAST: 1
 ORBextractor.minThFAST: 1
-ORBextractor.nFeatures: 60000
+ORBextractor.nFeatures: 100000
 ORBextractor.nLevels: 10
 ORBextractor.scaleFactor: 1.2
 Viewer.CameraLineWidth: 3.0
