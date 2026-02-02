@@ -26,7 +26,7 @@ from constants import (
 )
 from utils.utils import (
     load_centerline_points, filter_connected_component, 
-    density_based_sample
+    density_based_sample, find_centerline_path
 )
 
 
@@ -111,6 +111,49 @@ def compute_ate(gt_positions, pred_positions):
     }
 
 
+def trace_path_on_centerline(pred_positions, centerline_pts):
+    """
+    Trace the predicted trajectory along the centerline instead of straight lines.
+    
+    For each consecutive pair of predictions, finds the centerline path between them
+    using graph-based connectivity and returns all intermediate points for proper visualization.
+    
+    Args:
+        pred_positions: (M, 3) predicted positions (each should be on centerline)
+        centerline_pts: (N, 3) full centerline points
+        
+    Returns:
+        traced_path: (K, 3) path following centerline through all predictions
+    """
+    if len(pred_positions) < 2:
+        return pred_positions
+    
+    # Build kd-tree for centerline
+    tree = cKDTree(centerline_pts)
+    
+    # Build the traced path by finding centerline path between consecutive predictions
+    traced_points = []
+    
+    for i in range(len(pred_positions) - 1):
+        start_pt = pred_positions[i]
+        end_pt = pred_positions[i + 1]
+        
+        # Find path along centerline using graph-based approach
+        path_segment = find_centerline_path(start_pt, end_pt, centerline_pts, tree)
+        
+        # Add path segment (skip first point if not first segment to avoid duplicates)
+        if i == 0:
+            traced_points.extend(path_segment)
+        else:
+            # Skip first point since it should be same as previous segment's last point
+            traced_points.extend(path_segment[1:] if len(path_segment) > 1 else path_segment)
+    
+    if len(traced_points) == 0:
+        return pred_positions
+    
+    return np.array(traced_points)
+
+
 def render_evaluation_plot(plotter, lung_mesh, centerline_pts, 
                            gt_traj, pred_traj, aligned_pred_traj, 
                            seq_name, ate_stats):
@@ -128,7 +171,14 @@ def render_evaluation_plot(plotter, lung_mesh, centerline_pts,
         gt_line = pv.lines_from_points(gt_traj)
         plotter.add_mesh(gt_line, color='blue', line_width=4, label='GT Trajectory')
     
-    if len(pred_traj) > 1:
+    if len(pred_traj) > 1 and centerline_pts is not None:
+        # Trace BIRD predictions along centerline for proper visualization
+        traced_pred = trace_path_on_centerline(pred_traj, centerline_pts)
+        if len(traced_pred) > 1:
+            pred_line = pv.lines_from_points(traced_pred)
+            plotter.add_mesh(pred_line, color='green', line_width=4, label='BIRD')
+    elif len(pred_traj) > 1:
+        # Fallback if no centerline available
         pred_line = pv.lines_from_points(pred_traj)
         plotter.add_mesh(pred_line, color='green', line_width=4, label='BIRD')
     
