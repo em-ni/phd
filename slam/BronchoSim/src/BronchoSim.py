@@ -826,6 +826,40 @@ Viewer.ViewpointZ: -1.8
             print("[INFO] Random path built successfully")
             self.points = points
 
+        elif self.path_name.endswith("trajectories.txt"):
+            # Combined trajectories mode: read trajectories.txt and process each line
+            trajectories_file = os.path.join(self.data_folder, self.path_name)
+            if not os.path.isfile(trajectories_file):
+                print(f"[ERROR] Trajectories file not found: {trajectories_file}")
+                sys.exit(1)
+            
+            # Parse trajectories.txt
+            self.combined_trajectories_queue = []
+            with open(trajectories_file, "r") as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    # Split by comma and map to variation file paths
+                    branch_names = [name.strip() for name in line.split(",")]
+                    branch_files = [
+                        os.path.join("centerlines", "variations", f"{name}.vtp")
+                        for name in branch_names
+                    ]
+                    self.combined_trajectories_queue.append({
+                        "name": f"combined_{line_num}",
+                        "branches": branch_files,
+                        "branch_names": branch_names
+                    })
+            
+            if not self.combined_trajectories_queue:
+                print(f"[ERROR] No valid trajectories found in {trajectories_file}")
+                sys.exit(1)
+            
+            print(f"[INFO] Found {len(self.combined_trajectories_queue)} combined trajectories to process.")
+            self.separate_branches = True  # Process each combination separately
+            self.load_next_combined_trajectory()
+
         elif self.variations_mode:
             # Process all VTP files in the variations subfolder
             centerline_folder_name = self.app_config["PATHS"]["all_branches_folder"]
@@ -938,6 +972,48 @@ Viewer.ViewpointZ: -1.8
                  pass 
              else:
                  self.collect_sequence_dataset_init()
+        
+        return True
+
+    def load_next_combined_trajectory(self):
+        """Load the next combined trajectory from the queue."""
+        if not hasattr(self, "combined_trajectories_queue") or not self.combined_trajectories_queue:
+            print("[INFO] No more combined trajectories to process.")
+            return False
+
+        # Pop the next combined trajectory
+        traj_info = self.combined_trajectories_queue.pop(0)
+        self.current_branch_name = traj_info["name"]
+        branch_files = traj_info["branches"]
+        self.selected_branch_names = traj_info["branch_names"]
+        
+        print(f"[INFO] Loading combined trajectory: {self.current_branch_name}")
+        print(f"[INFO] Branches: {', '.join(self.selected_branch_names)}")
+
+        # Build combined path using existing function
+        from src.utils import build_random_branches_path
+        fs_frames, points = build_random_branches_path(branch_files, self.data_folder)
+
+        if not fs_frames:
+            print(f"[WARNING] Failed to build path for {self.current_branch_name}. Skipping...")
+            return self.load_next_combined_trajectory()
+
+        self.setup_line_multibranch(fs_frames)
+        self.points = points
+        
+        # Reset indices
+        self.current_index = 0
+        self.next_index = 1 if len(self.interpolated_points) > 1 else 0
+        self.robot_tip = self.interpolated_points[0]
+        self.interp_alpha = 0.0
+        
+        # If recording, initialize new sequence
+        if self.record_mode:
+            if self.legacy_record_method:
+                 # Re-initialize legacy recorder (clears temp folder and resets indices)
+                 self.setup_video_recorder()
+            else:
+                self.collect_sequence_dataset_init()
         
         return True
 
@@ -1525,20 +1601,23 @@ Viewer.ViewpointZ: -1.8
         dt = globalClock.getDt()  # type: ignore
 
         # Update the robot tip position
+        # Update the robot tip position
         if self.live_mode == False:
+            use_multibranch = (self.all_branches_bool == "1") or self.separate_branches or hasattr(self, "combined_trajectories_queue")
+            
             if self.autopilot:
-                if self.all_branches_bool == "1":
+                if use_multibranch:
                     self.update_tip_position_all_branches(dt, forward=True)
                 else:
                     self.update_robot_tip_position(dt, forward=True)
             else:
                 if self.keyMap["robot_tip_forward"]:
-                    if self.all_branches_bool == "1":
+                    if use_multibranch:
                         self.update_tip_position_all_branches(dt, forward=True)
                     else:
                         self.update_robot_tip_position(dt, forward=True)
                 if self.keyMap["robot_tip_backward"]:
-                    if self.all_branches_bool == "1":
+                    if use_multibranch:
                         self.update_tip_position_all_branches(dt, forward=False)
                     else:
                         self.update_robot_tip_position(dt, forward=False)
@@ -1625,20 +1704,25 @@ Viewer.ViewpointZ: -1.8
             if self.current_index >= len(self.interpolated_points) - 1:
                 print("[INFO] Robot tip reached the end of the path")
                 if self.autopilot:
-                    if self.separate_branches and hasattr(self, "branch_files_queue"):
+                    if self.separate_branches and (hasattr(self, "branch_files_queue") or hasattr(self, "combined_trajectories_queue")):
                         # Finalize current recording
                         if self.record_mode:
                             if self.legacy_record_method:
-                                # Legacy finalize is quit_app, which stops everything. 
-                                # We might need a custom finalize for legacy if supported.
-                                # For now, assume non-legacy or single session.
-                                pass
+                                self.finalize_legacy_recording()
                             else:
                                 self.collect_sequence_dataset_finalize()
                         
-                        # Load next branch
-                        if self.load_next_branch():
-                            return # Continue with new branch
+                        # Load next branch or combined trajectory
+                        loaded = False
+                        if hasattr(self, "combined_trajectories_queue"):
+                            if self.load_next_combined_trajectory():
+                                loaded = True
+                        elif hasattr(self, "branch_files_queue"):
+                            if self.load_next_branch():
+                                loaded = True
+                        
+                        if loaded:
+                            return # Continue with new branch/trajectory
                         else:
                             # No more branches
                             print("[INFO] All branches processed.")
@@ -2032,6 +2116,189 @@ Viewer.ViewpointZ: -1.8
 
         self.record_frame_idx += 1
 
+    def finalize_legacy_recording(self):
+        """
+        Finalizes the legacy recording: generates videos, saves trajectory, and moves to permanent storage.
+        """
+        if self.record_mode and hasattr(self, "record_dir") and os.path.isdir(self.record_dir):
+            # If random branches were used, write their names to a file in the output folder
+            if hasattr(self, "selected_branch_names") and self.selected_branch_names:
+                branches_txt = os.path.join(self.record_dir, "selected_branches.txt")
+                with open(branches_txt, "w") as f:
+                    f.write(", ".join(self.selected_branch_names) + "\n")
+                print(f"[INFO] Written selected branches to {branches_txt}")
+            # Extract centerline name from path (for naming purposes).
+            if hasattr(self, "current_branch_name"):
+                centerline_name = self.current_branch_name
+            elif self.all_branches_bool == "1":
+                centerline_name = "ball"
+            else:
+                centerline_name = os.path.splitext(os.path.basename(self.path_name))[0]
+
+            # Build RGB Video
+            rgb_video_name = f"record_rgb_{centerline_name}_{time.time()}"
+            rgb_video = os.path.join(self.record_dir, f"{rgb_video_name}.mp4")
+            if sys.platform.startswith("linux"):
+                print("[INFO] Converting RGB images to video with ffmpeg (Linux)...")
+                cmd_rgb = [
+                    "ffmpeg",
+                    "-y",  # Overwrite if exists.
+                    "-framerate",
+                    "15",
+                    "-pattern_type",
+                    "glob",
+                    "-i",
+                    os.path.join(self.rgb_dir, "*.png"),
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    rgb_video,
+                ]
+            elif sys.platform.startswith("win"):
+                print("[INFO] Converting RGB images to video with ffmpeg (Windows)...")
+                file_list_path = os.path.join(self.record_dir, "rgb_frames.txt")
+                rgb_frames = sorted(os.listdir(self.rgb_dir))
+                with open(file_list_path, "w") as f:
+                    for frame in rgb_frames:
+                        full_path = os.path.join(self.rgb_dir, frame).replace("\\", "/")
+                        f.write(f"file '{full_path}'\n")
+                cmd_rgb = [
+                    "ffmpeg",
+                    "-y",
+                    "-r",
+                    "15",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    file_list_path,
+                    "-r",
+                    "15",
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    rgb_video,
+                ]
+            subprocess.run(cmd_rgb, check=True)
+            print(f"[INFO] RGB video saved as {os.path.basename(rgb_video)}")
+
+            # Build Depth Video (if enabled)
+            if self.depth_bool == "1" and self.save_vis_depth == "1":
+                depth_video_name = f"record_depth_{centerline_name}_{time.time()}"
+                depth_video = os.path.join(self.record_dir, f"{depth_video_name}.mp4")
+                if sys.platform.startswith("linux"):
+                    print(
+                        "[INFO] Converting depth images to video with ffmpeg (Linux)..."
+                    )
+                    file_list_path = os.path.join(self.record_dir, "depth_frames.txt")
+                    depth_frames = sorted(os.listdir(self.depth_dir))
+                    with open(file_list_path, "w") as f:
+                        for frame in depth_frames:
+                            # Skip frames with 'raw' in their name
+                            if "raw" not in frame:
+                                full_path = os.path.join(self.depth_dir, frame).replace(
+                                    "\\", "/"
+                                )
+                                f.write(f"file '{full_path}'\n")
+                    cmd_depth = [
+                        "ffmpeg",
+                        "-y",  # Overwrite if exists.
+                        "-r",
+                        "15",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        file_list_path,
+                        "-r",
+                        "15",
+                        "-c:v",
+                        "libx264",
+                        "-pix_fmt",
+                        "yuv420p",
+                        depth_video,
+                    ]
+                elif sys.platform.startswith("win"):
+                    print(
+                        "[INFO] Converting depth images to video with ffmpeg (Windows)..."
+                    )
+                    file_list_path = os.path.join(self.record_dir, "depth_frames.txt")
+                    depth_frames = sorted(os.listdir(self.depth_dir))
+                    with open(file_list_path, "w") as f:
+                        for frame in depth_frames:
+                            full_path = os.path.join(self.depth_dir, frame).replace(
+                                "\\", "/"
+                            )
+                            # Skip raw depth images (only visualization images).
+                            if "raw" not in frame:
+                                f.write(f"file '{full_path}'\n")
+
+                    cmd_depth = [
+                        "ffmpeg",
+                        "-y",
+                        "-r",
+                        "15",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        file_list_path,
+                        "-r",
+                        "15",
+                        "-c:v",
+                        "libx264",
+                        "-pix_fmt",
+                        "yuv420p",
+                        depth_video,
+                    ]
+                subprocess.run(cmd_depth, check=True)
+                print(f"[INFO] Depth video saved as {os.path.basename(depth_video)}")
+
+            # Save trajectory in TUM format
+            # TODO: save trajectory in case of all branches used
+            if self.all_branches_bool == "1" or hasattr(self, "current_branch_name"):
+                fs_trajectory = save_fs_frames_multibranch(
+                    self.data_folder,
+                    self.interpolated_points,
+                    self.tangents,
+                    self.normals,
+                    self.binormals,
+                )
+            else:
+                vtp_trajectory = os.path.join(self.data_folder, self.path_name)
+                fs_trajectory = save_frames_single_branch(vtp_trajectory)
+
+            gt_file_wTc = os.path.join(self.record_dir, "gt", "gt_wTc.txt")
+            gt_file_cTw = os.path.join(self.record_dir, "gt", "gt_cTw.txt")
+
+            # If it doesnt exist, create the gt folder
+            os.makedirs(os.path.join(self.record_dir, "gt"), exist_ok=True)
+
+            convert_fs_to_tum(fs_trajectory, gt_file_wTc, convention="wTc")
+            convert_fs_to_tum(fs_trajectory, gt_file_cTw, convention="cTw")
+            print(f"[INFO] Trajectory saved as {gt_file_wTc} and {gt_file_cTw}")
+
+            # Copy Everything to Permanent Storage
+            # Use self.videos_dir from config to determine final destination.
+            print(
+                "[INFO] Copying all recorded data from temp folder to permanent storage..."
+            )
+            final_path = os.path.join(
+                self.data_folder,
+                self.videos_dir,
+                f"record_{centerline_name}_{time.time()}",
+            )
+            shutil.copytree(self.record_dir, final_path)
+            print(f"[INFO] All recorded data copied to {final_path}")
+
+            # Remove the temporary record folder.
+            shutil.rmtree(self.record_dir)
+
     def quit_app(self):
         """
         Called when the user presses 'q'.
@@ -2051,182 +2318,7 @@ Viewer.ViewpointZ: -1.8
 
         # Save record
         if self.legacy_record_method:
-            if self.record_mode and hasattr(self, "record_dir"):
-                # If random branches were used, write their names to a file in the output folder
-                if hasattr(self, "selected_branch_names") and self.selected_branch_names:
-                    branches_txt = os.path.join(self.record_dir, "selected_branches.txt")
-                    with open(branches_txt, "w") as f:
-                        f.write(", ".join(self.selected_branch_names) + "\n")
-                    print(f"[INFO] Written selected branches to {branches_txt}")
-                # Extract centerline name from path (for naming purposes).
-                if self.all_branches_bool == "1":
-                    centerline_name = "ball"
-                else:
-                    centerline_name = os.path.splitext(os.path.basename(self.path_name))[0]
-
-                # Build RGB Video
-                rgb_video_name = f"record_rgb_{centerline_name}_{time.time()}"
-                rgb_video = os.path.join(self.record_dir, f"{rgb_video_name}.mp4")
-                if sys.platform.startswith("linux"):
-                    print("[INFO] Converting RGB images to video with ffmpeg (Linux)...")
-                    cmd_rgb = [
-                        "ffmpeg",
-                        "-y",  # Overwrite if exists.
-                        "-framerate",
-                        "15",
-                        "-pattern_type",
-                        "glob",
-                        "-i",
-                        os.path.join(self.rgb_dir, "*.png"),
-                        "-c:v",
-                        "libx264",
-                        "-pix_fmt",
-                        "yuv420p",
-                        rgb_video,
-                    ]
-                elif sys.platform.startswith("win"):
-                    print("[INFO] Converting RGB images to video with ffmpeg (Windows)...")
-                    file_list_path = os.path.join(self.record_dir, "rgb_frames.txt")
-                    rgb_frames = sorted(os.listdir(self.rgb_dir))
-                    with open(file_list_path, "w") as f:
-                        for frame in rgb_frames:
-                            full_path = os.path.join(self.rgb_dir, frame).replace("\\", "/")
-                            f.write(f"file '{full_path}'\n")
-                    cmd_rgb = [
-                        "ffmpeg",
-                        "-y",
-                        "-r",
-                        "15",
-                        "-f",
-                        "concat",
-                        "-safe",
-                        "0",
-                        "-i",
-                        file_list_path,
-                        "-r",
-                        "15",
-                        "-c:v",
-                        "libx264",
-                        "-pix_fmt",
-                        "yuv420p",
-                        rgb_video,
-                    ]
-                subprocess.run(cmd_rgb, check=True)
-                print(f"[INFO] RGB video saved as {os.path.basename(rgb_video)}")
-
-                # Build Depth Video (if enabled)
-                if self.depth_bool == "1" and self.save_vis_depth == "1":
-                    depth_video_name = f"record_depth_{centerline_name}_{time.time()}"
-                    depth_video = os.path.join(self.record_dir, f"{depth_video_name}.mp4")
-                    if sys.platform.startswith("linux"):
-                        print(
-                            "[INFO] Converting depth images to video with ffmpeg (Linux)..."
-                        )
-                        file_list_path = os.path.join(self.record_dir, "depth_frames.txt")
-                        depth_frames = sorted(os.listdir(self.depth_dir))
-                        with open(file_list_path, "w") as f:
-                            for frame in depth_frames:
-                                # Skip frames with 'raw' in their name
-                                if "raw" not in frame:
-                                    full_path = os.path.join(self.depth_dir, frame).replace(
-                                        "\\", "/"
-                                    )
-                                    f.write(f"file '{full_path}'\n")
-                        cmd_depth = [
-                            "ffmpeg",
-                            "-y",  # Overwrite if exists.
-                            "-r",
-                            "15",
-                            "-f",
-                            "concat",
-                            "-safe",
-                            "0",
-                            "-i",
-                            file_list_path,
-                            "-r",
-                            "15",
-                            "-c:v",
-                            "libx264",
-                            "-pix_fmt",
-                            "yuv420p",
-                            depth_video,
-                        ]
-                    elif sys.platform.startswith("win"):
-                        print(
-                            "[INFO] Converting depth images to video with ffmpeg (Windows)..."
-                        )
-                        file_list_path = os.path.join(self.record_dir, "depth_frames.txt")
-                        depth_frames = sorted(os.listdir(self.depth_dir))
-                        with open(file_list_path, "w") as f:
-                            for frame in depth_frames:
-                                full_path = os.path.join(self.depth_dir, frame).replace(
-                                    "\\", "/"
-                                )
-                                # Skip raw depth images (only visualization images).
-                                if "raw" not in frame:
-                                    f.write(f"file '{full_path}'\n")
-
-                        cmd_depth = [
-                            "ffmpeg",
-                            "-y",
-                            "-r",
-                            "15",
-                            "-f",
-                            "concat",
-                            "-safe",
-                            "0",
-                            "-i",
-                            file_list_path,
-                            "-r",
-                            "15",
-                            "-c:v",
-                            "libx264",
-                            "-pix_fmt",
-                            "yuv420p",
-                            depth_video,
-                        ]
-                    subprocess.run(cmd_depth, check=True)
-                    print(f"[INFO] Depth video saved as {os.path.basename(depth_video)}")
-
-                # Save trajectory in TUM format
-                # TODO: save trajectory in case of all branches used
-                if self.all_branches_bool == "1":
-                    fs_trajectory = save_fs_frames_multibranch(
-                        self.data_folder,
-                        self.interpolated_points,
-                        self.tangents,
-                        self.normals,
-                        self.binormals,
-                    )
-                else:
-                    vtp_trajectory = os.path.join(self.data_folder, self.path_name)
-                    fs_trajectory = save_frames_single_branch(vtp_trajectory)
-
-                gt_file_wTc = os.path.join(self.record_dir, "gt", "gt_wTc.txt")
-                gt_file_cTw = os.path.join(self.record_dir, "gt", "gt_cTw.txt")
-
-                # If it doesnt exist, create the gt folder
-                os.makedirs(os.path.join(self.record_dir, "gt"), exist_ok=True)
-
-                convert_fs_to_tum(fs_trajectory, gt_file_wTc, convention="wTc")
-                convert_fs_to_tum(fs_trajectory, gt_file_cTw, convention="cTw")
-                print(f"[INFO] Trajectory saved as {gt_file_wTc} and {gt_file_cTw}")
-
-                # Copy Everything to Permanent Storage
-                # Use self.videos_dir from config to determine final destination.
-                print(
-                    "[INFO] Copying all recorded data from temp folder to permanent storage..."
-                )
-                final_path = os.path.join(
-                    self.data_folder,
-                    self.videos_dir,
-                    f"record_{centerline_name}_{time.time()}",
-                )
-                shutil.copytree(self.record_dir, final_path)
-                print(f"[INFO] All recorded data copied to {final_path}")
-
-                # Remove the temporary record folder.
-                shutil.rmtree(self.record_dir)
+            self.finalize_legacy_recording()
         else:
             self.collect_sequence_dataset_finalize()
         # Save trajectory in TUM format
