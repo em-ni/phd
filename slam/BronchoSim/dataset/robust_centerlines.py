@@ -312,6 +312,8 @@ def main():
     parser.add_argument("--dir", default="selected_airways", help="Directory containing VTP models")
     parser.add_argument("--skip-existing", action='store_true', default=True, help="Skip folders with existing b*.vtp files (default: True)")
     parser.add_argument("--no-skip", dest='skip_existing', action='store_false', help="Process all folders even if branches exist")
+    parser.add_argument("--batch", action='store_true', default=False, 
+                        help="Batch mode: select all points first, then compute centerlines without confirmation")
     args = parser.parse_args()
     
     # Recursive search for .vtp files
@@ -332,8 +334,154 @@ def main():
     
     print(f"Found {len(files_to_process)} VTP models to process.")
     
-    for f in files_to_process:
-        process_file(f, skip_existing=args.skip_existing)
+    if args.batch:
+        # === BATCH MODE ===
+        run_batch_mode(files_to_process, skip_existing=args.skip_existing)
+    else:
+        # === INTERACTIVE MODE (original behavior) ===
+        for f in files_to_process:
+            process_file(f, skip_existing=args.skip_existing)
+
+
+def run_batch_mode(files_to_process, skip_existing=True):
+    """
+    Batch mode: First collect all points interactively, then process all centerlines automatically.
+    """
+    import glob
+    
+    # Filter files that should be processed
+    files_to_select = []
+    for input_vtp in files_to_process:
+        scan_dir = os.path.dirname(input_vtp)
+        
+        if skip_existing:
+            existing_branches = glob.glob(os.path.join(scan_dir, "b*.vtp"))
+            existing_branches = [f for f in existing_branches if os.path.basename(f).replace('b','').replace('.vtp','').isdigit()]
+            if existing_branches:
+                print(f"  Skipping {os.path.basename(input_vtp)} - {len(existing_branches)} branches already exist")
+                continue
+        
+        files_to_select.append(input_vtp)
+    
+    if not files_to_select:
+        print("No files to process.")
+        return
+    
+    print(f"\n{'='*60}")
+    print(f"BATCH MODE - PHASE 1: Point Selection")
+    print(f"{'='*60}")
+    print(f"You will select inlet/outlet points for {len(files_to_select)} meshes.")
+    print(f"After selection, centerlines will be computed automatically.\n")
+    
+    # Dictionary to store selections: {file_path: (source_point, [target_points])}
+    selections = {}
+    
+    for i, input_vtp in enumerate(files_to_select):
+        filename = os.path.basename(input_vtp)
+        print(f"\n[{i+1}/{len(files_to_select)}] {filename}")
+        
+        mesh = pv.read(input_vtp)
+        
+        # Pick Source
+        print(f"  Pick ONE Source Point (Inlet)")
+        source_points = pick_points(mesh, f"[{i+1}/{len(files_to_select)}] {filename}\nPick ONE Inlet (Hover + Space, then close)")
+        if not source_points:
+            print(f"  No source picked. Skipping this mesh.")
+            continue
+        source_point = source_points[-1]
+        print(f"  Source: {source_point}")
+        
+        # Pick Targets
+        print(f"  Pick Target Points (Outlets)")
+        target_points = pick_points(mesh, f"[{i+1}/{len(files_to_select)}] {filename}\nPick Outlets (Hover + Space, then close)")
+        if not target_points:
+            print(f"  No targets picked. Skipping this mesh.")
+            continue
+        print(f"  Targets: {len(target_points)} points")
+        
+        selections[input_vtp] = (source_point, target_points)
+    
+    if not selections:
+        print("\nNo meshes selected. Exiting.")
+        return
+    
+    print(f"\n{'='*60}")
+    print(f"BATCH MODE - PHASE 2: Centerline Computation")
+    print(f"{'='*60}")
+    print(f"Processing {len(selections)} meshes automatically...\n")
+    
+    # Process all files with stored points
+    for input_vtp, (source_point, target_points) in selections.items():
+        process_file_batch(input_vtp, source_point, target_points)
+    
+    print(f"\n{'='*60}")
+    print("BATCH MODE COMPLETE")
+    print(f"{'='*60}")
+
+
+def process_file_batch(input_vtp, source_point, target_points, max_retries=3):
+    """
+    Process a single file in batch mode (no confirmation prompts).
+    Automatically retries with smoothing on failure.
+    """
+    scan_dir = os.path.dirname(input_vtp)
+    filename = os.path.basename(input_vtp)
+    
+    print(f"\nProcessing: {filename}")
+    print(f"  Source: {source_point}")
+    print(f"  Targets: {len(target_points)}")
+    
+    successful_branches = []
+    
+    for i, target in enumerate(target_points):
+        print(f"  [Branch {i+1}/{len(target_points)}]", end=" ")
+        
+        branch_output = os.path.join(scan_dir, f"b{i+1}.vtp")
+        
+        # Try with increasing smoothing
+        success = False
+        for attempt in range(max_retries):
+            smooth = attempt * 20  # 0, 20, 40
+            
+            result = run_vmtk_branch(
+                input_vtp, branch_output, source_point, target,
+                flip_normals=0, use_tetgen=0,
+                cap_displacement=0.0, smooth_iter=smooth
+            )
+            
+            if result:
+                print(f"OK (smooth={smooth})")
+                successful_branches.append(branch_output)
+                success = True
+                break
+            else:
+                if attempt < max_retries - 1:
+                    print(f"retry...", end=" ")
+        
+        if not success:
+            print("FAILED")
+    
+    # Combine branches
+    if successful_branches:
+        final_output = os.path.join(scan_dir, "ball.vtp")
+        
+        appender = vtk.vtkAppendPolyData()
+        for vtp in successful_branches:
+            reader = vtk.vtkXMLPolyDataReader()
+            reader.SetFileName(vtp)
+            reader.Update()
+            appender.AddInputData(reader.GetOutput())
+        
+        appender.Update()
+        writer = vtk.vtkXMLPolyDataWriter()
+        writer.SetFileName(final_output)
+        writer.SetInputData(appender.GetOutput())
+        writer.Write()
+        
+        print(f"  Saved: {final_output} ({len(successful_branches)}/{len(target_points)} branches)")
+    else:
+        print(f"  No branches succeeded for {filename}")
+
 
 if __name__ == "__main__":
     main()

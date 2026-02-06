@@ -13,3 +13,6 @@ robust_centerlines.py
 or
 compute_centerlines.py
 
+# Generate trajectories
+generate_trajectories.py
+

@@ -3,7 +3,7 @@ data/mesh/easier_slam_test/videos
 dataset/archive*
 dataset/processed_airways*
 dataset/selected_airways*
-*trajectories*
+*trajectories
 recorded_frames/*
 utils/__pycache__/
 *.pyc
