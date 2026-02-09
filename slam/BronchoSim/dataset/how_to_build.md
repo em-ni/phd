@@ -1,5 +1,5 @@
 # From CT to candidate 3D .stl models 
-build_dataset.py
+CT_to_3D.py
 
 # Visualize for different parameters
 visualize_processed_airways.py

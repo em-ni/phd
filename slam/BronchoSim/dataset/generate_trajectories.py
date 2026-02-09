@@ -407,8 +407,9 @@ def visualize_all_folders(selected_airways_dir: str,
     folders = sorted([f for f in os.listdir(selected_airways_dir) 
                      if os.path.isdir(os.path.join(selected_airways_dir, f))])
     
-    # Limit to first num_folders
-    folders = folders[:num_folders]
+    # Limit to first num_folders (-1 means all folders)
+    if num_folders >= 0:
+        folders = folders[:num_folders]
     
     print(f"Processing {len(folders)} folders: {folders}")
     print(f"Generating {num_variations} variations per centerline")
@@ -593,7 +594,7 @@ def main():
         "--num-folders", "-f",
         type=int,
         default=10,
-        help="Number of folders to process (default: 10)"
+        help="Number of folders to process (default: 10, use -1 for all)"
     )
     
     parser.add_argument(
