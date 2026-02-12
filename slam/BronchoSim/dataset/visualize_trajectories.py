@@ -117,9 +117,31 @@ def points_to_pyvista_line(points: np.ndarray) -> pv.PolyData:
 # Folder Discovery
 # ----------------------------------------------------------------------------
 
-def find_trajectory_files(folder_path: str) -> List[str]:
-    """Find all trajectory VTP files (t*.vtp pattern) in a folder."""
-    return sorted(glob.glob(os.path.join(folder_path, "t*.vtp")))
+def find_trajectory_files(folder_path: str, traj_per_branch: int = -1) -> List[str]:
+    """
+    Find trajectory VTP files (t*.vtp pattern) in a folder.
+    
+    Files follow naming: tb{branch}_v{variation}.vtp (e.g. tb1_v1.vtp, tball_v3.vtp).
+    When traj_per_branch > 0, only the first N variations per branch are returned.
+    """
+    all_files = sorted(glob.glob(os.path.join(folder_path, "t*.vtp")))
+    
+    if traj_per_branch < 0 or traj_per_branch == 0:
+        return all_files
+    
+    # Group by branch: extract branch name before "_v" suffix
+    import re
+    branch_counts: Dict[str, int] = {}
+    filtered = []
+    for f in all_files:
+        basename = os.path.splitext(os.path.basename(f))[0]  # e.g. "tb1_v3"
+        match = re.match(r'^(t.+?)_v\d+$', basename)
+        branch = match.group(1) if match else basename
+        count = branch_counts.get(branch, 0)
+        if count < traj_per_branch:
+            filtered.append(f)
+            branch_counts[branch] = count + 1
+    return filtered
 
 
 def find_centerline_files(folder_path: str) -> List[str]:
@@ -127,19 +149,21 @@ def find_centerline_files(folder_path: str) -> List[str]:
     return sorted(glob.glob(os.path.join(folder_path, "b*.vtp")))
 
 
-def get_folder_stats(folder_path: str) -> Dict:
+def get_folder_stats(folder_path: str, traj_per_branch: int = -1) -> Dict:
     """Get trajectory and centerline counts for a folder."""
     folder_name = os.path.basename(folder_path)
-    trajectories = find_trajectory_files(folder_path)
+    all_trajectories = find_trajectory_files(folder_path)
+    shown_trajectories = find_trajectory_files(folder_path, traj_per_branch)
     centerlines = find_centerline_files(folder_path)
     mesh_path = os.path.join(folder_path, f"{folder_name}.vtp")
     
     return {
         'name': folder_name,
         'path': folder_path,
-        'n_trajectories': len(trajectories),
+        'n_trajectories': len(all_trajectories),
+        'n_shown_trajectories': len(shown_trajectories),
         'n_centerlines': len(centerlines),
-        'trajectory_files': trajectories,
+        'trajectory_files': shown_trajectories,
         'centerline_files': centerlines,
         'mesh_exists': os.path.exists(mesh_path),
         'mesh_path': mesh_path if os.path.exists(mesh_path) else None
@@ -151,23 +175,42 @@ def get_folder_stats(folder_path: str) -> Dict:
 # ----------------------------------------------------------------------------
 
 def create_trajectory_tube(points: np.ndarray, radius: float = 0.15, 
-                           n_sides: int = 6) -> pv.PolyData:
+                           n_sides: int = 6, taper: bool = True) -> pv.PolyData:
     """
     Create a tube mesh from trajectory points.
-    Uses fewer sides for faster rendering with many trajectories.
+    
+    When taper=True, the tube starts very thin (where trajectories overlap
+    near the trachea) and grows progressively thicker toward the distal end,
+    making individual branches easier to distinguish.
     """
     if len(points) < 2:
         return None
     
     line_mesh = points_to_pyvista_line(points)
-    return line_mesh.tube(radius=radius, n_sides=n_sides)
+    
+    if taper:
+        # Quadratic taper: stays thin near the start, flares toward the end
+        t = np.linspace(0.0, 1.0, len(points))
+        line_mesh['radius'] = (1 + 10 * t**2) * radius
+        
+        tube_filter = vtk.vtkTubeFilter()
+        tube_filter.SetInputData(line_mesh)
+        tube_filter.SetNumberOfSides(n_sides)
+        tube_filter.SetVaryRadiusToVaryRadiusByAbsoluteScalar()
+        tube_filter.Update()
+        return pv.wrap(tube_filter.GetOutput())
+    else:
+        return line_mesh.tube(radius=radius, n_sides=n_sides)
 
 
 def visualize_trajectories(selected_airways_dir: str,
                            num_folders: int = 10,
                            show_mesh: bool = True,
                            show_centerlines: bool = False,
-                           tube_radius: float = 0.15):
+                           tube_radius: float = 0.15,
+                           light_mode: bool = False,
+                           grid_shape: Optional[Tuple[int, int]] = None,
+                           traj_per_branch: int = -1):
     """
     Visualize all computed trajectories across selected airways in a grid.
     
@@ -199,12 +242,12 @@ def visualize_trajectories(selected_airways_dir: str,
     
     for folder_name in folders:
         folder_path = os.path.join(selected_airways_dir, folder_name)
-        stats = get_folder_stats(folder_path)
+        stats = get_folder_stats(folder_path, traj_per_branch=traj_per_branch)
         folder_stats.append(stats)
         total_trajectories += stats['n_trajectories']
     
     # Filter to folders with trajectories
-    folder_stats = [s for s in folder_stats if s['n_trajectories'] > 0]
+    folder_stats = [s for s in folder_stats if s['n_shown_trajectories'] > 0]
     
     if not folder_stats:
         print("No trajectory files found! Run generate_trajectories.py --save first.")
@@ -214,27 +257,32 @@ def visualize_trajectories(selected_airways_dir: str,
     print(f"Found {total_trajectories} total trajectories across {n_plots} folders")
     print("-" * 60)
     
-    # Calculate grid dimensions optimized for common screen sizes (16:9 aspect ratio)
-    # We want square cells, so cols:rows should approximate 16:9 ≈ 1.78
-    # Common patterns: 2x1, 3x2, 4x2, 4x3, 5x3, 6x4, 7x4, 8x5
-    GRID_LAYOUTS = {
-        1: (1, 1), 2: (2, 1), 3: (3, 2), 4: (4, 2), 5: (5, 3), 6: (6, 3),
-        7: (4, 2), 8: (4, 2), 9: (5, 2), 10: (5, 2), 11: (6, 2), 12: (6, 2),
-        13: (5, 3), 14: (5, 3), 15: (5, 3), 16: (4, 4), 17: (6, 3), 18: (6, 3),
-        19: (5, 4), 20: (5, 4), 21: (7, 3), 22: (6, 4), 23: (6, 4), 24: (6, 4),
-        25: (5, 5), 26: (7, 4), 27: (7, 4), 28: (7, 4), 29: (6, 5), 30: (6, 5),
-    }
-    
-    if n_plots in GRID_LAYOUTS:
-        cols, rows = GRID_LAYOUTS[n_plots]
+    # Calculate grid dimensions
+    if grid_shape is not None:
+        rows, cols = grid_shape
+        if rows * cols < n_plots:
+            print(f"Warning: grid {rows}x{cols} = {rows*cols} cells but have {n_plots} plots, some will be skipped")
+            folder_stats = folder_stats[:rows * cols]
+            n_plots = len(folder_stats)
     else:
-        # For larger counts, target ~1.5:1 aspect ratio (works well on 16:9)
-        cols = int(math.ceil(math.sqrt(n_plots * 1.5)))
-        rows = int(math.ceil(n_plots / cols))
-    
-    # Ensure we have enough cells
-    while rows * cols < n_plots:
-        rows += 1
+        # Auto-compute: optimized for common screen sizes (16:9 aspect ratio)
+        GRID_LAYOUTS = {
+            1: (1, 1), 2: (2, 1), 3: (3, 2), 4: (4, 2), 5: (5, 3), 6: (6, 3),
+            7: (4, 2), 8: (4, 2), 9: (5, 2), 10: (5, 2), 11: (6, 2), 12: (6, 2),
+            13: (5, 3), 14: (5, 3), 15: (5, 3), 16: (4, 4), 17: (6, 3), 18: (6, 3),
+            19: (5, 4), 20: (5, 4), 21: (7, 3), 22: (6, 4), 23: (6, 4), 24: (6, 4),
+            25: (5, 5), 26: (7, 4), 27: (7, 4), 28: (7, 4), 29: (6, 5), 30: (6, 5),
+        }
+        
+        if n_plots in GRID_LAYOUTS:
+            cols, rows = GRID_LAYOUTS[n_plots]
+        else:
+            cols = int(math.ceil(math.sqrt(n_plots * 1.5)))
+            rows = int(math.ceil(n_plots / cols))
+        
+        # Ensure we have enough cells
+        while rows * cols < n_plots:
+            rows += 1
     
     print(f"Grid layout: {rows} rows x {cols} columns ({rows * cols} cells for {n_plots} plots)")
     
@@ -259,8 +307,10 @@ def visualize_trajectories(selected_airways_dir: str,
         folder_name = stats['name']
         folder_path = stats['path']
         
+        shown_str = (f" (showing {stats['n_shown_trajectories']})"
+                     if stats['n_shown_trajectories'] < stats['n_trajectories'] else "")
         print(f"[{idx+1}/{n_plots}] {folder_name}: "
-              f"{stats['n_trajectories']} trajectories, "
+              f"{stats['n_trajectories']} trajectories{shown_str}, "
               f"{stats['n_centerlines']} centerlines")
         
         # Load and display mesh (if requested)
@@ -303,12 +353,13 @@ def visualize_trajectories(selected_airways_dir: str,
                 print(f"  Warning: Could not load {os.path.basename(traj_file)}: {e}")
         
         # Add label (positioned lower to avoid cell border cutoff)
+        label_color = 'black' if light_mode else 'white'
         plotter.add_text(
-            f"{folder_name}\n{stats['n_trajectories']} traj",
+            f"{folder_name}\n{stats['n_centerlines']} CL\n{stats['n_trajectories']} Traj",
             position=(0.02, 0.68),
             viewport=True,
             font_size=7,
-            color='white',
+            color=label_color,
             shadow=False
         )
         
@@ -326,7 +377,10 @@ def visualize_trajectories(selected_airways_dir: str,
     print("Rendering visualization...")
     print("Controls: Left-drag=rotate, Right-drag=zoom, Middle-drag=pan")
     
-    plotter.set_background('#101030')  # Dark blue, same as pipeline_demo.py
+    if light_mode:
+        plotter.set_background('white')
+    else:
+        plotter.set_background('#101030')  # Dark blue, same as pipeline_demo.py
     plotter.show()
 
 
@@ -396,6 +450,25 @@ def main():
         help="Trajectory tube radius in mm (default: 0.15, smaller=faster)"
     )
     
+    parser.add_argument(
+        "--light-mode",
+        action='store_true',
+        help="Use light background with black text (for paper figures)"
+    )
+    
+    parser.add_argument(
+        "--grid", "-g",
+        type=str,
+        default=None,
+        help="Grid shape as RxC, e.g. 3x3 (default: auto-compute)"
+    )
+    
+    parser.add_argument(
+        "--traj-per-branch", "-t",
+        type=int,
+        default=-1,
+        help="Number of trajectory variations to show per branch (default: -1 = all, use 1 for one per branch)"
+    )
 
     
     parser.add_argument(
@@ -422,12 +495,25 @@ def main():
     if args.summary:
         print_summary(str(base_dir), args.num_folders)
     else:
+        # Parse grid shape if provided
+        grid_shape = None
+        if args.grid:
+            parts = args.grid.lower().split('x')
+            if len(parts) == 2:
+                grid_shape = (int(parts[0]), int(parts[1]))
+            else:
+                print(f"Error: --grid must be in RxC format, e.g. 3x3")
+                sys.exit(1)
+        
         visualize_trajectories(
             str(base_dir),
             num_folders=args.num_folders,
             show_mesh=not args.hide_mesh,
             show_centerlines=args.show_centerlines,
-            tube_radius=args.tube_radius
+            tube_radius=args.tube_radius,
+            light_mode=args.light_mode,
+            grid_shape=grid_shape,
+            traj_per_branch=args.traj_per_branch
         )
 
 
