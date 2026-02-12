@@ -1,4 +1,6 @@
 import os
+import sys
+import gc
 import argparse
 import numpy as np
 import torch
@@ -19,7 +21,7 @@ from utils.utils import load_centerline_points, filter_connected_component, dens
 def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
                    gt_traj_current, pred_traj_current, raw_gt_traj_current,
                    current_gt, current_pred, current_raw_gt, frame_idx, total_frames,
-                   bird_traj_current=None, current_bird=None):
+                   bird_traj_current=None, current_bird=None, clean_mode=False):
     """
     Renders the 3D trajectory view to a numpy array.
     Style matches check_ball.py and check_traj.py.
@@ -48,7 +50,7 @@ def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
     
     # 1. Draw Lung Mesh (Ghostly - like check_ball.py)
     if lung_mesh is not None:
-        plotter.add_mesh(lung_mesh, color='wheat', opacity=0.1, label='Lungs')
+        plotter.add_mesh(lung_mesh, color='peachpuff', opacity=0.15, label='Lungs')
     
     # 2. Draw Centerline (Faint black points - like check_ball.py)
     if centerline_pts is not None:
@@ -86,35 +88,59 @@ def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
     # 5. Draw FPS Points (magenta - what model sees)
     if fps_points is not None and len(fps_points) > 0:
         plotter.add_mesh(pv.PolyData(fps_points), color='magenta', opacity=0.8, 
-                        point_size=6, render_points_as_spheres=True, 
+                        point_size=12, render_points_as_spheres=True, 
                         label=f'FPS Input ({len(fps_points)})')
     
-    # 6. Draw Raw GT Trajectory (Green - actual camera positions)
+    # 6. Draw Raw GT Trajectory (Blue in clean mode, Green otherwise - actual camera positions)
     if len(raw_gt_traj_current) > 1:
         raw_gt_line = pv.lines_from_points(raw_gt_traj_current)
-        plotter.add_mesh(raw_gt_line, color='green', line_width=3, label='Raw GT (actual)')
+        if clean_mode:
+            plotter.add_mesh(raw_gt_line, color='blue', line_width=3, label='GroundTruth')
+        else:
+            plotter.add_mesh(raw_gt_line, color='green', line_width=3, label='Raw GT (actual)')
+    elif clean_mode and len(raw_gt_traj_current) > 0:
+        # In clean mode, always add GroundTruth to legend even if trajectory not started yet
+        dummy_pt = raw_gt_traj_current[0]
+        plotter.add_mesh(pv.PolyData(dummy_pt.reshape(1, 3)), color='blue', point_size=0.01, 
+                        render_points_as_spheres=True, label='GroundTruth')
     
     # 7. Draw Centerline-Projected GT Trajectory (Blue - what model predicts)
-    if len(gt_traj_current) > 1:
+    if not clean_mode and len(gt_traj_current) > 1:
         gt_line = pv.lines_from_points(gt_traj_current)
         plotter.add_mesh(gt_line, color='blue', line_width=4, label='GT Trajectory')
     
     # 8. Draw Predicted Trajectory (Red - building up as frames proceed)  
-    if len(pred_traj_current) > 1:
+    if not clean_mode and len(pred_traj_current) > 1:
         pred_line = pv.lines_from_points(pred_traj_current)
         plotter.add_mesh(pred_line, color='red', line_width=4, label='ANT Trajectory')
     
-    # 9. Draw BIRD Trajectory (Cyan - if available)
+    # 9. Draw BIRD Trajectory (Red in clean mode, Cyan otherwise - if available)
     if bird_traj_current is not None and len(bird_traj_current) > 1:
         bird_line = pv.lines_from_points(bird_traj_current)
-        plotter.add_mesh(bird_line, color='cyan', line_width=4, label='BIRD Trajectory')
+        if clean_mode:
+            plotter.add_mesh(bird_line, color='red', line_width=4, label='BronchoLoc')
+        else:
+            plotter.add_mesh(bird_line, color='cyan', line_width=4, label='BIRD Trajectory')
+    elif clean_mode:
+        # In clean mode, always add BronchoLoc to legend even if trajectory not started yet
+        # Add a dummy point far away to ensure legend entry exists
+        if len(gt_traj_current) > 0:
+            dummy_pt = gt_traj_current[0]
+            plotter.add_mesh(pv.PolyData(dummy_pt.reshape(1, 3)), color='red', point_size=0.01, 
+                            render_points_as_spheres=True, label='BronchoLoc')
     
     # 10. Draw current position markers (spheres)
-    plotter.add_mesh(pv.Sphere(radius=1.0, center=current_raw_gt), color='green')  # Raw GT
-    plotter.add_mesh(pv.Sphere(radius=1.5, center=current_gt), color='blue')  # Centerline GT
-    plotter.add_mesh(pv.Sphere(radius=1.5, center=current_pred), color='red')  # ANT Prediction
+    if clean_mode:
+        plotter.add_mesh(pv.Sphere(radius=1.2, center=current_raw_gt), color='blue')  # Raw GT
+    else:
+        plotter.add_mesh(pv.Sphere(radius=1.2, center=current_raw_gt), color='green')  # Raw GT
+        plotter.add_mesh(pv.Sphere(radius=1.2, center=current_gt), color='blue')  # Centerline GT
+        plotter.add_mesh(pv.Sphere(radius=1.2, center=current_pred), color='red')  # ANT Prediction
     if current_bird is not None:
-        plotter.add_mesh(pv.Sphere(radius=1.5, center=current_bird), color='cyan')  # BIRD Prediction
+        if clean_mode:
+            plotter.add_mesh(pv.Sphere(radius=1.2, center=current_bird), color='red')  # BIRD/BronchoLoc
+        else:
+            plotter.add_mesh(pv.Sphere(radius=1.2, center=current_bird), color='cyan')  # BIRD Prediction
     
     # 11. Add Start label at first GT point
     if len(gt_traj_current) > 0:
@@ -123,11 +149,17 @@ def render_3d_view(plotter, lung_mesh, centerline_pts, centerline_tree,
     
     # 12. Add text overlay (black text for white background)
     text = f"Frame: {frame_idx+1}/{total_frames}\n"
-    text += f"GT (mm):   X={current_gt[0]:+.2f} Y={current_gt[1]:+.2f} Z={current_gt[2]:+.2f}\n"
-    text += f"ANT (mm):  X={current_pred[0]:+.2f} Y={current_pred[1]:+.2f} Z={current_pred[2]:+.2f}"
-    if current_bird is not None:
-        text += f"\nBIRD (mm): X={current_bird[0]:+.2f} Y={current_bird[1]:+.2f} Z={current_bird[2]:+.2f}"
-    plotter.add_text(text, position='upper_left', font_size=10, color='black')
+    if clean_mode:
+        # Clean mode: show only GT and BronchoLoc
+        text += f"GroundTruth (mm): X={current_raw_gt[0]:+.2f} Y={current_raw_gt[1]:+.2f} Z={current_raw_gt[2]:+.2f}\n"
+        if current_bird is not None:
+            text += f"BronchoLoc  (mm): X={current_bird[0]:+.2f} Y={current_bird[1]:+.2f} Z={current_bird[2]:+.2f}"
+    else:
+        text += f"GroundTruth (mm): X={current_gt[0]:+.2f} Y={current_gt[1]:+.2f} Z={current_gt[2]:+.2f}\n"
+        text += f"ANT (mm):  X={current_pred[0]:+.2f} Y={current_pred[1]:+.2f} Z={current_pred[2]:+.2f}"
+        if current_bird is not None:
+            text += f"\nBIRD (mm): X={current_bird[0]:+.2f} Y={current_bird[1]:+.2f} Z={current_bird[2]:+.2f}"
+    plotter.add_text(text, position='upper_left', font_size=14, color='white')
     
     # 11. Set camera to good viewpoint (like check_ball.py)
     # Focus on the current GT position
@@ -477,17 +509,34 @@ def test(args):
     
     # Initialize PyVista off-screen plotter for 3D rendering
     pv.start_xvfb()  # For headless environments
-    plotter = pv.Plotter(off_screen=True, window_size=(640, 480))
-    plotter.set_background('white')  # White background like check_ball.py
+    plotter = pv.Plotter(off_screen=True, window_size=(1920, 1440))  # High resolution for quality
+    plotter.set_background([0, 0.168627, 0.211765])  # Dark teal background like BronchoSim
     
-    # Collect all frames
-    all_frames = []
+    # Set up video output path
+    if args.debug_one:
+        output_path = os.path.join(args.output_dir, "test_debug_one.mp4")
+    elif args.overfit:
+        output_path = os.path.join(args.output_dir, "test_overfit.mp4")
+    elif args.seq_filter:
+        # Extract sequence name from filter and include in output filename
+        seq_name = os.path.basename(args.seq_filter.rstrip('/\\'))
+        output_path = os.path.join(args.output_dir, f"test_{seq_name}.mp4")
+    else:
+        output_path = os.path.join(args.output_dir, "test_results.mp4")
+    
+    # VideoWriter will be initialized on first frame (to get correct dimensions)
+    video_writer = None
+    frame_count = 0
     
     # --- State for chained predictions ---
     # In chain mode, we carry forward the last predicted position as the anchor for the next window
     chain_pred_anchor = None  # Will be set after first window
     prev_seq_path = None  # Track sequence changes to reset chain
     bird_mem_state = None  # BIRD memory state (chains across windows)
+    
+    # --- Accumulated trajectories for clean mode (persist across windows) ---
+    accumulated_raw_gt = []  # Full raw GT trajectory
+    accumulated_bird = []  # Full BIRD/BronchoLoc trajectory
     
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(test_loader, desc="Processing batches")):
@@ -548,6 +597,9 @@ def test(args):
                     if bird_model is not None:
                         print(f"[BIRD] New sequence detected, resetting memory.")
                         bird_mem_state = None
+                    # Reset accumulated trajectories for new sequence
+                    accumulated_raw_gt = []
+                    accumulated_bird = []
                 prev_seq_path = curr_seq_path
                 
                 # Transform LOCAL to GLOBAL coordinates
@@ -662,20 +714,29 @@ def test(args):
                         
                         current_gt_global = gt_all_positions[f_idx]
                         current_pred_global = pred_all_positions[f_idx]
+                        current_raw_gt = raw_traj_full[f_idx]
                         
-                        # Trajectory up to current frame
+                        # Accumulate positions for clean mode (full motion trail)
+                        if args.clean:
+                            accumulated_raw_gt.append(current_raw_gt.copy())
+                            raw_gt_traj_current = np.array(accumulated_raw_gt)
+                        else:
+                            raw_gt_traj_current = raw_traj_full[:f_idx+1]
+                        
+                        # Trajectory up to current frame (for non-clean mode)
                         gt_traj_current = gt_all_positions[:f_idx+1]
                         pred_traj_current = pred_all_positions[:f_idx+1]
-                        # Use actual raw trajectory positions
-                        raw_gt_traj_current = raw_traj_full[:f_idx+1]
-                        current_raw_gt = raw_traj_full[f_idx]
                         
                         # BIRD trajectory up to current frame
                         bird_traj_current = None
                         current_bird = None
                         if bird_all_positions is not None:
-                            bird_traj_current = bird_all_positions[:f_idx+1]
                             current_bird = bird_all_positions[f_idx]
+                            if args.clean:
+                                accumulated_bird.append(current_bird.copy())
+                                bird_traj_current = np.array(accumulated_bird)
+                            else:
+                                bird_traj_current = bird_all_positions[:f_idx+1]
                         
                         # Render 3D view (with BIRD trajectory)
                         img_3d = render_3d_view(
@@ -683,16 +744,24 @@ def test(args):
                             gt_traj_current, pred_traj_current, raw_gt_traj_current,
                             current_gt_global, current_pred_global, current_raw_gt,
                             f_idx, total_full_frames,
-                            bird_traj_current=bird_traj_current, current_bird=current_bird
+                            bird_traj_current=bird_traj_current, current_bird=current_bird,
+                            clean_mode=args.clean
                         )
                         
-                        # Combine video frame and 3D view
+                        # Place video frame on fixed black canvas (no stretching)
                         h_3d, w_3d = img_3d.shape[:2]
+                        canvas = np.zeros((h_3d, h_3d, 3), dtype=np.uint8)  # Square black canvas
                         h_frame, w_frame = frame_rgb.shape[:2]
-                        scale = h_3d / h_frame
-                        new_w_frame = int(w_frame * scale)
-                        frame_resized = cv2.resize(frame_rgb, (new_w_frame, h_3d))
-                        combined_rgb = np.hstack([frame_resized, img_3d])
+                        # Center the original frame on the canvas
+                        y_off = (h_3d - h_frame) // 2
+                        x_off = (h_3d - w_frame) // 2
+                        y_off = max(0, y_off)
+                        x_off = max(0, x_off)
+                        # Crop frame if larger than canvas
+                        paste_h = min(h_frame, h_3d)
+                        paste_w = min(w_frame, h_3d)
+                        canvas[y_off:y_off+paste_h, x_off:x_off+paste_w] = frame_rgb[:paste_h, :paste_w]
+                        combined_rgb = np.hstack([canvas, img_3d])
                         combined_bgr = cv2.cvtColor(combined_rgb, cv2.COLOR_RGB2BGR)
                         
                         # Add overlay
@@ -701,15 +770,45 @@ def test(args):
                         cv2.putText(combined_bgr, f"Frame: {f_idx+1}/{total_full_frames} (interpolated)", (10, 60),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                         
-                        all_frames.append(combined_bgr)
+                        # Initialize VideoWriter on first frame
+                        if video_writer is None:
+                            h, w = combined_bgr.shape[:2]
+                            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                            video_writer = cv2.VideoWriter(output_path, fourcc, args.fps, (w, h))
+                            print(f"[INFO] Streaming video to {output_path} ({w}x{h})")
+                        
+                        # Write frame directly to video (streaming - saves memory)
+                        video_writer.write(combined_bgr)
+                        frame_count += 1
                     
                     print(f"[Batch {batch_idx+1} | Sample {b+1}] Processed {total_full_frames} frames (full interpolation)")
                     
                 else:
-                    # --- KEYFRAME ONLY MODE (original behavior) ---
+                    # --- KEYFRAME ONLY MODE ---
+                    # Load original-resolution frames from video.npy (not the 128x128 model input)
+                    if hasattr(test_ds, 'dataset'):  # Subset
+                        sample_idx_for_path = test_ds.indices[batch_idx * args.batch_size + b]
+                        vid_path, _, start_idx = test_ds.dataset.samples[sample_idx_for_path]
+                        frame_skip = test_ds.dataset.frame_skip
+                    else:
+                        vid_path, _, start_idx = test_ds.samples[batch_idx * args.batch_size + b]
+                        frame_skip = test_ds.frame_skip
+                    
+                    vid_mmap = np.load(vid_path, mmap_mode='r')
+                    keyframe_indices = [start_idx + i * frame_skip for i in range(T)]
+                    
                     for t in range(T):
-                        frame_bgr = video_np[b, t].transpose(1, 2, 0)
-                        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                        # Load original resolution frame
+                        kf_idx = keyframe_indices[t]
+                        if kf_idx < len(vid_mmap):
+                            frame_orig = np.array(vid_mmap[kf_idx])
+                            if len(frame_orig.shape) == 3 and frame_orig.shape[0] == 3:
+                                frame_orig = np.transpose(frame_orig, (1, 2, 0))  # CHW -> HWC
+                            frame_rgb = cv2.cvtColor(frame_orig.astype(np.uint8), cv2.COLOR_BGR2RGB)
+                        else:
+                            # Fallback to model input if index out of range
+                            frame_bgr = video_np[b, t].transpose(1, 2, 0)
+                            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
                         
                         current_gt_local = gt_window_local[t]
                         current_pred_local = pred_window_local[t]
@@ -725,31 +824,50 @@ def test(args):
                             print_line += f" | BIRD: ({current_bird_global[0]:+.3f}, {current_bird_global[1]:+.3f}, {current_bird_global[2]:+.3f}) mm"
                         print(print_line)
                         
-                        raw_gt_traj_current = raw_positions[b, :t+1]
                         current_raw_gt = raw_positions[b, t]
+                        
+                        # Accumulate positions for clean mode (full motion trail)
+                        if args.clean:
+                            accumulated_raw_gt.append(current_raw_gt.copy())
+                            raw_gt_traj_current = np.array(accumulated_raw_gt)
+                        else:
+                            raw_gt_traj_current = raw_positions[b, :t+1]
+                        
                         gt_traj_current = gt_window_global[:t+1]
                         pred_traj_current = pred_window_global[:t+1]
+                        
                         # Get BIRD trajectory if available
                         bird_traj_current = None
                         current_bird_global = None
                         if bird_window_global is not None:
-                            bird_traj_current = bird_window_global[:t+1]
                             current_bird_global = bird_window_global[t]
+                            if args.clean:
+                                accumulated_bird.append(current_bird_global.copy())
+                                bird_traj_current = np.array(accumulated_bird)
+                            else:
+                                bird_traj_current = bird_window_global[:t+1]
                         
                         img_3d = render_3d_view(
                             plotter, lung_mesh, centerline_pts, centerline_tree,
                             gt_traj_current, pred_traj_current, raw_gt_traj_current,
                             current_gt_global, current_pred_global, current_raw_gt,
                             t, T,
-                            bird_traj_current=bird_traj_current, current_bird=current_bird_global
+                            bird_traj_current=bird_traj_current, current_bird=current_bird_global,
+                            clean_mode=args.clean
                         )
                         
+                        # Place video frame on fixed black canvas (no stretching)
                         h_3d, w_3d = img_3d.shape[:2]
+                        canvas = np.zeros((h_3d, h_3d, 3), dtype=np.uint8)  # Square black canvas
                         h_frame, w_frame = frame_rgb.shape[:2]
-                        scale = h_3d / h_frame
-                        new_w_frame = int(w_frame * scale)
-                        frame_resized = cv2.resize(frame_rgb, (new_w_frame, h_3d))
-                        combined_rgb = np.hstack([frame_resized, img_3d])
+                        # Center the original frame on the canvas
+                        y_off = max(0, (h_3d - h_frame) // 2)
+                        x_off = max(0, (h_3d - w_frame) // 2)
+                        # Crop frame if larger than canvas
+                        paste_h = min(h_frame, h_3d)
+                        paste_w = min(w_frame, h_3d)
+                        canvas[y_off:y_off+paste_h, x_off:x_off+paste_w] = frame_rgb[:paste_h, :paste_w]
+                        combined_rgb = np.hstack([canvas, img_3d])
                         combined_bgr = cv2.cvtColor(combined_rgb, cv2.COLOR_RGB2BGR)
                         
                         cv2.putText(combined_bgr, f"Window: {batch_idx+1}", (10, 30),
@@ -757,7 +875,16 @@ def test(args):
                         cv2.putText(combined_bgr, f"Frame: {t+1}/{T}", (10, 60),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                         
-                        all_frames.append(combined_bgr)
+                        # Initialize VideoWriter on first frame
+                        if video_writer is None:
+                            h, w = combined_bgr.shape[:2]
+                            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                            video_writer = cv2.VideoWriter(output_path, fourcc, args.fps, (w, h))
+                            print(f"[INFO] Streaming video to {output_path} ({w}x{h})")
+                        
+                        # Write frame directly to video (streaming - saves memory)
+                        video_writer.write(combined_bgr)
+                        frame_count += 1
                     
                     # --- Print Error Summary (AFTER all frame prints) ---
                     ant_error = np.linalg.norm(pred_window_global - gt_window_global, axis=1).mean()
@@ -768,45 +895,20 @@ def test(args):
                         improved_label = " (BIRD improved)" if improvement > 0 else ""
                         summary_line += f" | BIRD: error={bird_error:.2f}mm | Δ={improvement:+.2f}mm{improved_label}"
                     print(summary_line)
+            
+            # Garbage collection after each batch to free memory
+            gc.collect()
 
     
     plotter.close()
     
-    # Save video
-    if args.debug_one:
-        output_path = os.path.join(args.output_dir, "test_debug_one.mp4")
-    elif args.overfit:
-        output_path = os.path.join(args.output_dir, "test_overfit.mp4")
-    else:
-        output_path = os.path.join(args.output_dir, "test_results.mp4")
-    
-    print(f"[INFO] Saving video to {output_path}")
-    
-    if len(all_frames) > 0:
-        # Check for inconsistent frame shapes
-        shapes = [f.shape for f in all_frames]
-        unique_shapes = set(shapes)
-        if len(unique_shapes) > 1:
-            print(f"[WARNING] Inconsistent frame shapes detected: {unique_shapes}")
-            # Find the most common shape and filter to only those frames
-            from collections import Counter
-            shape_counts = Counter(shapes)
-            most_common_shape = shape_counts.most_common(1)[0][0]
-            print(f"[WARNING] Keeping only frames with shape {most_common_shape}")
-            all_frames = [f for f in all_frames if f.shape == most_common_shape]
-        
-        h, w = all_frames[0].shape[:2]
-        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # H.264 codec for better compatibility
-        out = cv2.VideoWriter(output_path, fourcc, args.fps, (w, h))
-        
-        for frame in tqdm(all_frames, desc="Writing video"):
-            out.write(frame)
-        
-        out.release()
+    # Finalize video (streaming write already complete)
+    if video_writer is not None:
+        video_writer.release()
         print(f"[INFO] Video saved: {output_path}")
-        print(f"[INFO] Total frames: {len(all_frames)}")
+        print(f"[INFO] Total frames: {frame_count}")
     else:
-        print("[WARNING] No frames to save!")
+        print("[WARNING] No frames were written!")
 
 
 if __name__ == "__main__":
@@ -824,6 +926,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug_one', action='store_true', help="Test on SINGLE batch (matches debug_one training)")
     parser.add_argument('--img_size', type=int, default=128, help="Image resolution (default: 128)")
     parser.add_argument('--seq_filter', type=str, default=None, help="Filter sequences by name (substring match, e.g. 'seq_001')")
+    parser.add_argument('--seq_folder', type=str, default=None, help="Run all sequences in this folder (generates separate video per sequence)")
     
     # Test-specific arguments
     parser.add_argument('--output_dir', type=str, default='./dataset/test/results', help="Output directory for videos")
@@ -831,7 +934,40 @@ if __name__ == "__main__":
     parser.add_argument('--chain_ant', action='store_true', help="Chain ANT predictions: last pred of window N becomes anchor for window N+1")
     parser.add_argument('--interpolate', action='store_true', help="Interpolate trajectory along centerline for smooth visualization")
     parser.add_argument('--frame_skip', type=int, default=None, help="Override frame_skip (default: use config). Use 20 for phantom sequences.")
+    parser.add_argument('--clean', action='store_true', help="Clean mode: only show BronchoLoc (BIRD) and GroundTruth (raw GT) trajectories")
     
     args = parser.parse_args()
-    test(args)
+    
+    # If seq_folder is provided, run all sequences in the folder
+    if args.seq_folder:
+        seq_folder_abs = os.path.abspath(args.seq_folder)
+        if not os.path.isdir(seq_folder_abs):
+            print(f"[ERROR] seq_folder not found: {args.seq_folder}")
+            exit(1)
+        
+        # Find all VALID sequence directories (must contain video.npy)
+        seq_dirs = []
+        for d in os.listdir(seq_folder_abs):
+            seq_path = os.path.join(seq_folder_abs, d)
+            if os.path.isdir(seq_path) and os.path.exists(os.path.join(seq_path, 'video.npy')):
+                seq_dirs.append(d)
+        seq_dirs = sorted(seq_dirs)  # Process in sorted order
+        
+        if not seq_dirs:
+            print(f"[ERROR] No valid sequence directories (containing video.npy) found in {args.seq_folder}")
+            exit(1)
+        
+        print(f"[INFO] Found {len(seq_dirs)} valid sequences in {args.seq_folder}")
+        for i, seq_name in enumerate(seq_dirs):
+            print(f"\n{'='*60}")
+            print(f"[INFO] Processing sequence {i+1}/{len(seq_dirs)}: {seq_name}")
+            print(f"{'='*60}")
+            
+            # Set seq_filter to ABSOLUTE path to this sequence
+            args.seq_filter = os.path.join(seq_folder_abs, seq_name)
+            test(args)
+        
+        print(f"\n[INFO] Completed all {len(seq_dirs)} sequences!")
+    else:
+        test(args)
 
