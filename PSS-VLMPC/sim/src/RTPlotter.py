@@ -1,0 +1,437 @@
+import time
+from matplotlib.animation import FuncAnimation
+import matplotlib.pyplot as plt
+import matplotlib.patches
+import numpy as np
+from collections import deque
+
+class RTPlotter:
+    def __init__(self, rods, targets=None, obstacles=None, xlim=(-1.5, 1.5), ylim=(-1.5, 1.5), zlim=(-1.5, 1.5), 
+                 show_reference=True, trajectory_history_length=50):
+        self.rods = rods
+        self.targets = targets if targets is not None else []
+        self.obstacles = obstacles if obstacles is not None else []
+        self.xlim = xlim
+        self.ylim = ylim
+        self.zlim = zlim
+        self.show_reference = show_reference
+        self.trajectory_history_length = trajectory_history_length
+        
+        # Storage for reference trajectory and history
+        self.reference_position = None
+        self.reference_history = deque(maxlen=trajectory_history_length)
+        self.tip_history = deque(maxlen=trajectory_history_length)
+        self.connecting_line_history = deque(maxlen=trajectory_history_length)  # Store connecting line points
+        
+        # Track if we need to draw the connecting line from start to trajectory
+        self.trajectory_started = False
+        self.start_tip_position = None
+        
+        # Setup the figure and axes
+        plt.ion()  # Turn on interactive mode
+        self.fig = plt.figure(figsize=(18, 6))
+        
+        # Create subplots for different views
+        self.ax_xy = self.fig.add_subplot(131)
+        self.ax_xz = self.fig.add_subplot(132)
+        self.ax_3d = self.fig.add_subplot(133, projection='3d')
+        
+        # Set limits and labels
+        self.ax_xy.set_xlim(xlim)
+        self.ax_xy.set_ylim(ylim)
+        self.ax_xy.set_xlabel('X (m)')
+        self.ax_xy.set_ylabel('Y (m)')
+        self.ax_xy.set_title('XY View')
+        self.ax_xy.set_aspect('equal')
+        self.ax_xy.grid(True, alpha=0.3)
+        
+        self.ax_xz.set_xlim(xlim)
+        self.ax_xz.set_ylim(zlim)
+        self.ax_xz.set_xlabel('X (m)')
+        self.ax_xz.set_ylabel('Z (m)')
+        self.ax_xz.set_title('XZ View')
+        self.ax_xz.set_aspect('equal')
+        self.ax_xz.grid(True, alpha=0.3)
+        
+        self.ax_3d.set_xlim(xlim)
+        self.ax_3d.set_ylim(ylim)
+        self.ax_3d.set_zlim(zlim)
+        self.ax_3d.set_xlabel('X (m)')
+        self.ax_3d.set_ylabel('Y (m)')
+        self.ax_3d.set_zlabel('Z (m)')
+        self.ax_3d.set_title('3D View')
+        
+        # Initialize line objects for each rod
+        self.lines_xy = []
+        self.lines_xz = []
+        self.lines_3d = []
+        
+        # Initialize sphere objects for targets
+        self.spheres_xy = []
+        self.spheres_xz = []
+        self.spheres_3d = []
+        
+        # Initialize cylinder objects for obstacles
+        self.cylinders_xy = []
+        self.cylinders_xz = []
+        self.cylinders_3d = []
+        
+        # Use light blue for all rods
+        rod_color = 'lightblue'
+        
+        for i, rod in enumerate(self.rods):
+            # XY view lines
+            line_xy, = self.ax_xy.plot([], [], color=rod_color, linewidth=3, 
+                                     marker='o', markersize=3, label=f'Rod {i+1}')
+            self.lines_xy.append(line_xy)
+            
+            # XZ view lines
+            line_xz, = self.ax_xz.plot([], [], color=rod_color, linewidth=3, 
+                                     marker='o', markersize=3, label=f'Rod {i+1}')
+            self.lines_xz.append(line_xz)
+            
+            # 3D view lines
+            line_3d, = self.ax_3d.plot([], [], [], color=rod_color, linewidth=3, 
+                                     marker='o', markersize=4, label=f'Rod {i+1}')
+            self.lines_3d.append(line_3d)
+            
+        # Initialize target sphere visualizations
+        for i, target in enumerate(self.targets):
+            # Get target color if available, otherwise use default
+            if hasattr(target, 'target_color'):
+                sphere_color = target.target_color
+                # Create edge color (darker version)
+                edge_color_map = {
+                    'red': 'darkred',
+                    'blue': 'darkblue', 
+                    'orange': 'darkorange',
+                    'purple': 'indigo'
+                }
+                edge_color = edge_color_map.get(sphere_color, 'black')
+            else:
+                sphere_color = 'orange'
+                edge_color = 'darkorange'
+                
+            markersize = 50  # Large marker to represent sphere
+            
+            # XY view sphere
+            sphere_xy, = self.ax_xy.plot([], [], 'o', color=sphere_color, markersize=markersize/10, 
+                                        markeredgecolor=edge_color, markeredgewidth=2,
+                                        label=f'Target {i+1}', zorder=5, alpha=0.8)
+            self.spheres_xy.append(sphere_xy)
+            
+            # XZ view sphere
+            sphere_xz, = self.ax_xz.plot([], [], 'o', color=sphere_color, markersize=markersize/10, 
+                                        markeredgecolor=edge_color, markeredgewidth=2,
+                                        label=f'Target {i+1}', zorder=5, alpha=0.8)
+            self.spheres_xz.append(sphere_xz)
+            
+            # 3D view sphere
+            sphere_3d, = self.ax_3d.plot([], [], [], 'o', color=sphere_color, markersize=markersize/7, 
+                                        markeredgecolor=edge_color, markeredgewidth=2,
+                                        label=f'Target {i+1}', zorder=5, alpha=0.8)
+            self.spheres_3d.append(sphere_3d)
+        
+        # Initialize obstacle cylinder visualizations
+        for i, obstacle in enumerate(self.obstacles):
+            # Get obstacle color if available, otherwise use default
+            if hasattr(obstacle, 'obstacle_color'):
+                cylinder_color = obstacle.obstacle_color
+                edge_color = 'black'  # Dark edge for cylinders
+            else:
+                cylinder_color = 'gray'
+                edge_color = 'black'
+                
+            # For cylinders, we'll draw them as thick lines with markers at ends
+            # XY view cylinder (show as thick line)
+            cylinder_xy, = self.ax_xy.plot([], [], color=cylinder_color, linewidth=8, 
+                                          markeredgecolor=edge_color, markeredgewidth=1,
+                                          label=f'Obstacle {i+1}', zorder=3, alpha=0.7,
+                                          solid_capstyle='round')
+            self.cylinders_xy.append(cylinder_xy)
+            
+            # XZ view cylinder
+            cylinder_xz, = self.ax_xz.plot([], [], color=cylinder_color, linewidth=8, 
+                                          markeredgecolor=edge_color, markeredgewidth=1,
+                                          label=f'Obstacle {i+1}', zorder=3, alpha=0.7,
+                                          solid_capstyle='round')
+            self.cylinders_xz.append(cylinder_xz)
+            
+            # 3D view cylinder
+            cylinder_3d, = self.ax_3d.plot([], [], [], color=cylinder_color, linewidth=6, 
+                                          markeredgecolor=edge_color, markeredgewidth=1,
+                                          label=f'Obstacle {i+1}', zorder=3, alpha=0.7,
+                                          solid_capstyle='round')
+            self.cylinders_3d.append(cylinder_3d)
+        
+        # Initialize reference trajectory visualization elements
+        if self.show_reference:
+            # Current reference target (point slightly bigger than trajectory line)
+            self.ref_target_xy, = self.ax_xy.plot([], [], 'go', markersize=8, 
+                                                 markeredgecolor='darkgreen', markeredgewidth=1,
+                                                 label='Target', zorder=10)
+            self.ref_target_xz, = self.ax_xz.plot([], [], 'go', markersize=8, 
+                                                 markeredgecolor='darkgreen', markeredgewidth=1,
+                                                 label='Target', zorder=10)
+            self.ref_target_3d, = self.ax_3d.plot([], [], [], 'go', markersize=8, 
+                                                 markeredgecolor='darkgreen', markeredgewidth=1,
+                                                 label='Target', zorder=10)
+            
+            # Reference trajectory history (green solid line)
+            self.ref_history_xy, = self.ax_xy.plot([], [], 'g-', linewidth=3, alpha=0.8,
+                                                   label='Target Path')
+            self.ref_history_xz, = self.ax_xz.plot([], [], 'g-', linewidth=3, alpha=0.8,
+                                                   label='Target Path')
+            self.ref_history_3d, = self.ax_3d.plot([], [], [], 'g-', linewidth=3, alpha=0.8,
+                                                   label='Target Path')
+            
+            # Connecting line from start tip to trajectory start (dotted green)
+            self.connecting_line_xy, = self.ax_xy.plot([], [], 'g:', linewidth=2, alpha=0.7,
+                                                      label='Connection')
+            self.connecting_line_xz, = self.ax_xz.plot([], [], 'g:', linewidth=2, alpha=0.7,
+                                                      label='Connection')
+            self.connecting_line_3d, = self.ax_3d.plot([], [], [], 'g:', linewidth=2, alpha=0.7,
+                                                      label='Connection')
+            
+            # Tip trajectory history (blue solid line)
+            self.tip_history_xy, = self.ax_xy.plot([], [], 'b-', linewidth=2, alpha=0.8,
+                                                   label='Tip Path')
+            self.tip_history_xz, = self.ax_xz.plot([], [], 'b-', linewidth=2, alpha=0.8,
+                                                   label='Tip Path')
+            self.tip_history_3d, = self.ax_3d.plot([], [], [], 'b-', linewidth=2, alpha=0.8,
+                                                   label='Tip Path')
+            
+            # Current connection line between target and tip (thin black dotted)
+            self.current_connection_xy, = self.ax_xy.plot([], [], 'k:', linewidth=1, alpha=0.5)
+            self.current_connection_xz, = self.ax_xz.plot([], [], 'k:', linewidth=1, alpha=0.5)
+            self.current_connection_3d, = self.ax_3d.plot([], [], [], 'k:', linewidth=1, alpha=0.5)
+        
+        # Add legends
+        self.ax_xy.legend(loc='upper right', bbox_to_anchor=(1, 1))
+        self.ax_xz.legend(loc='upper right', bbox_to_anchor=(1, 1))
+        self.ax_3d.legend(loc='upper right', bbox_to_anchor=(1, 1))
+        
+        plt.tight_layout()
+        plt.show(block=False)
+        
+        # Add text for tracking error display
+        if self.show_reference:
+            self.error_text_xy = self.ax_xy.text(0.02, 0.98, '', transform=self.ax_xy.transAxes,
+                                               verticalalignment='top', fontsize=10,
+                                               bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7))
+            self.error_text_xz = self.ax_xz.text(0.02, 0.98, '', transform=self.ax_xz.transAxes,
+                                               verticalalignment='top', fontsize=10,
+                                               bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7))
+            self.error_text_3d = self.ax_3d.text2D(0.02, 0.98, '', transform=self.ax_3d.transAxes,
+                                                  verticalalignment='top', fontsize=10,
+                                                  bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7))
+        
+    def set_reference_target(self, target_position):
+        """Set the current reference target position"""
+        self.reference_position = np.array(target_position)
+        
+        # Add to reference history
+        if len(self.reference_position) >= 3:  # Ensure it's a 3D position
+            self.reference_history.append(self.reference_position.copy())
+    
+    def update_plot(self, time_step, target_position=None):
+        """Update the plot with current rod positions and reference"""
+        
+        # Get current tip position
+        current_tip = None
+        if len(self.rods) > 0:
+            current_tip = self.rods[-1].position_collection[:, -1]  # Last node is the tip
+            self.tip_history.append(current_tip.copy())
+            
+            # Store initial tip position for connecting line
+            if not self.trajectory_started and current_tip is not None:
+                self.start_tip_position = current_tip.copy()
+        
+        # Update reference target if provided
+        if target_position is not None:
+            self.set_reference_target(target_position)
+            
+            # Mark trajectory as started when we first get a target
+            if not self.trajectory_started:
+                self.trajectory_started = True
+        
+        # Update rod visualizations
+        for i, rod in enumerate(self.rods):
+            # Get current rod position
+            pos = rod.position_collection
+            
+            # Update XY view
+            self.lines_xy[i].set_data(pos[0, :], pos[1, :])
+            
+            # Update XZ view  
+            self.lines_xz[i].set_data(pos[0, :], pos[2, :])
+            
+            # Update 3D view
+            self.lines_3d[i].set_data_3d(pos[0, :], pos[1, :], pos[2, :])
+        
+        # Update target sphere visualizations
+        for i, target in enumerate(self.targets):
+            # Get target position (for spheres, position_collection is the center)
+            if hasattr(target, 'position_collection') and target.position_collection.size > 0:
+                if target.position_collection.ndim == 1:
+                    # Single position vector
+                    target_pos = target.position_collection
+                else:
+                    # Multiple positions, take the center
+                    target_pos = target.position_collection[:, 0] if target.position_collection.shape[1] > 0 else target.position_collection
+                
+                # Update sphere positions
+                self.spheres_xy[i].set_data([target_pos[0]], [target_pos[1]])
+                self.spheres_xz[i].set_data([target_pos[0]], [target_pos[2]])
+                self.spheres_3d[i].set_data_3d([target_pos[0]], [target_pos[1]], [target_pos[2]])
+        
+        # Update obstacle cylinder visualizations
+        for i, obstacle in enumerate(self.obstacles):
+            # Get obstacle position and geometry
+            if hasattr(obstacle, 'position_collection') and obstacle.position_collection.size > 0:
+                # Get obstacle base position - this is the start of the cylinder, not center
+                pos_data = obstacle.position_collection
+                if pos_data.ndim == 1:
+                    base_pos = pos_data.copy()
+                else:
+                    base_pos = pos_data[:, 0].copy() if pos_data.shape[1] > 0 else pos_data.flatten()
+                
+                # Ensure base_pos is a 1D array with 3 elements
+                base_pos = np.asarray(base_pos).flatten()[:3]
+                
+                # For visualization, we need to show the cylinder extent
+                # Try to get the actual length from the obstacle
+                if hasattr(obstacle, 'base_length'):
+                    cylinder_length = float(obstacle.base_length)
+                elif hasattr(obstacle, 'length'):
+                    cylinder_length = float(obstacle.length)
+                else:
+                    cylinder_length = 0.4  # Default length
+                
+                # Calculate start and end points for vertical cylinder
+                # base_pos is the start (bottom), so end is base_pos + length in z direction
+                start_pos = base_pos.copy()
+                end_pos = base_pos + np.array([0.0, 0.0, cylinder_length])
+                
+                # Update cylinder visualizations
+                # XY view (show as circle - cross-section of vertical cylinder)
+                circle = matplotlib.patches.Circle((start_pos[0], start_pos[1]), 
+                                   obstacle.base_radius if hasattr(obstacle, 'base_radius') else 0.05, 
+                                   color=obstacle.obstacle_color if hasattr(obstacle, 'obstacle_color') else 'gray',
+                                   alpha=0.7, zorder=3)
+                # Remove previous circle if exists
+                if hasattr(self.cylinders_xy[i], '_circle'):
+                    self.cylinders_xy[i]._circle.remove()
+                # Add new circle
+                self.cylinders_xy[i]._circle = self.ax_xy.add_patch(circle)
+                # Keep line data empty for XY view since we're using circle
+                self.cylinders_xy[i].set_data([], [])
+                
+                # XZ view (should show as a vertical line for vertical cylinders)
+                self.cylinders_xz[i].set_data([start_pos[0], end_pos[0]], [start_pos[2], end_pos[2]])
+                
+                # 3D view
+                self.cylinders_3d[i].set_data_3d([start_pos[0], end_pos[0]], 
+                                                 [start_pos[1], end_pos[1]], 
+                                                 [start_pos[2], end_pos[2]])
+        
+        # Update reference trajectory visualization
+        if self.show_reference and self.reference_position is not None:
+            # Update current target position (green point)
+            self.ref_target_xy.set_data([self.reference_position[0]], [self.reference_position[1]])
+            self.ref_target_xz.set_data([self.reference_position[0]], [self.reference_position[2]])
+            self.ref_target_3d.set_data_3d([self.reference_position[0]], 
+                                          [self.reference_position[1]], 
+                                          [self.reference_position[2]])
+            
+            # Update reference trajectory history (green line)
+            if len(self.reference_history) > 1:
+                ref_hist = np.array(list(self.reference_history))
+                self.ref_history_xy.set_data(ref_hist[:, 0], ref_hist[:, 1])
+                self.ref_history_xz.set_data(ref_hist[:, 0], ref_hist[:, 2])
+                self.ref_history_3d.set_data_3d(ref_hist[:, 0], ref_hist[:, 1], ref_hist[:, 2])
+            
+            # Update connecting line from initial tip position to trajectory start (dotted green)
+            if (self.trajectory_started and self.start_tip_position is not None and 
+                len(self.reference_history) > 0):
+                first_target = list(self.reference_history)[0]
+                
+                # Only show connecting line if there's a significant distance
+                distance = np.linalg.norm(self.start_tip_position - first_target)
+                if distance > 0.01:  # 1cm threshold
+                    self.connecting_line_xy.set_data(
+                        [self.start_tip_position[0], first_target[0]], 
+                        [self.start_tip_position[1], first_target[1]]
+                    )
+                    self.connecting_line_xz.set_data(
+                        [self.start_tip_position[0], first_target[0]], 
+                        [self.start_tip_position[2], first_target[2]]
+                    )
+                    self.connecting_line_3d.set_data_3d(
+                        [self.start_tip_position[0], first_target[0]], 
+                        [self.start_tip_position[1], first_target[1]], 
+                        [self.start_tip_position[2], first_target[2]]
+                    )
+                else:
+                    # Clear connecting line if distance is too small
+                    self.connecting_line_xy.set_data([], [])
+                    self.connecting_line_xz.set_data([], [])
+                    self.connecting_line_3d.set_data_3d([], [], [])
+            
+            # Update tip trajectory history (blue line)
+            if len(self.tip_history) > 1:
+                tip_hist = np.array(list(self.tip_history))
+                self.tip_history_xy.set_data(tip_hist[:, 0], tip_hist[:, 1])
+                self.tip_history_xz.set_data(tip_hist[:, 0], tip_hist[:, 2])
+                self.tip_history_3d.set_data_3d(tip_hist[:, 0], tip_hist[:, 1], tip_hist[:, 2])
+            
+            # Update current connection line between target and tip (thin black dotted)
+            if current_tip is not None:
+                self.current_connection_xy.set_data(
+                    [self.reference_position[0], current_tip[0]], 
+                    [self.reference_position[1], current_tip[1]]
+                )
+                self.current_connection_xz.set_data(
+                    [self.reference_position[0], current_tip[0]], 
+                    [self.reference_position[2], current_tip[2]]
+                )
+                self.current_connection_3d.set_data_3d(
+                    [self.reference_position[0], current_tip[0]], 
+                    [self.reference_position[1], current_tip[1]], 
+                    [self.reference_position[2], current_tip[2]]
+                )
+                
+                # Calculate and display tracking error
+                tracking_error = np.linalg.norm(current_tip - self.reference_position)
+                error_text = f'Error: {tracking_error:.4f}m'
+                
+                self.error_text_xy.set_text(error_text)
+                self.error_text_xz.set_text(error_text)
+                self.error_text_3d.set_text(error_text)
+        
+        # Add time annotation
+        self.fig.suptitle(f'Continuum Robot Control - Time: {time_step:.3f}s', fontsize=16, fontweight='bold')
+        
+        # Refresh the plot
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+        plt.pause(0.01)  # Small pause to allow GUI to update
+    
+    def clear_history(self):
+        """Clear trajectory history"""
+        self.reference_history.clear()
+        self.tip_history.clear()
+        self.connecting_line_history.clear()
+        self.trajectory_started = False
+        self.start_tip_position = None
+    
+    def save_current_view(self, filename=None):
+        """Save the current plot view"""
+        if filename is None:
+            filename = f'realtime_plot_{time.time():.0f}.png'
+        self.fig.savefig(filename, dpi=150, bbox_inches='tight')
+        print(f"Saved current view to {filename}")
+    
+    def close(self):
+        """Close the plot window"""
+        plt.close(self.fig)
